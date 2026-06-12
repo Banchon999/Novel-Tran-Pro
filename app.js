@@ -6350,19 +6350,29 @@ function marathonUpdateUI() {
   if (stopBtn)  stopBtn.disabled = !mState.running;
 }
 
-async function marathonTranslateChapter(ch) {
-  const ws  = S.currentWs;
-  const cfg = marathonGetConfig();
-  const presetBase = PRESETS[cfg.presetId] || PRESETS.literary;
-  const custom     = ws.customPresets?.[cfg.presetId];
+// ─── Shared Translation Core ───
+// แปล 1 ตอนแบบ headless (glossary → prompt → stream → polish → save → auto-glossary → ctx summary)
+// ใช้ร่วมกันระหว่าง Marathon และ Reader prefetch
+// awaitGlossary: true → รอ auto-glossary + context summary เสร็จก่อน resolve
+//   (จำเป็นสำหรับ prefetch แบบเรียงตอน — ตอน N+1 ต้องเห็นศัพท์/บริบทจากตอน N)
+async function translateChapterCore(ch, {
+  presetId = S.currentWs?.presetId ?? 'literary',
+  model = null,
+  signal = null,
+  onDelta = null,
+  awaitGlossary = false,
+} = {}) {
+  const ws = S.currentWs;
+  const presetBase = PRESETS[presetId] || PRESETS.literary;
+  const custom     = ws.customPresets?.[presetId];
   const systemPrompt = custom?.systemPrompt || presetBase.systemPrompt;
   const temperature  = custom?.temperature  ?? presetBase.temperature;
-  const model = ws.settings?.translateModel || document.getElementById('translateModel')?.value || 'google/gemini-2.5-flash';
+  const useModel = model || ws.settings?.translateModel || document.getElementById('translateModel')?.value || 'google/gemini-2.5-flash';
 
   const smartGloss  = getSmartGlossary(ch.sourceText, S.glossaryData);
   const glossObj    = smartGloss.reduce(function(a, g) { a[g.korean] = { thai: g.thai, type: g.type, note: g.note, gender: g.gender }; return a; }, {});
   const glossaryStr = buildGlossaryStr(glossObj);
-  const mtlDraft    = cfg.presetId === 'mtlFix' ? (ch.translation || '') : '';
+  const mtlDraft    = presetId === 'mtlFix' ? (ch.translation || '') : '';
 
   const prompt = systemPrompt
     .replace('{style_note}', '')
@@ -6371,21 +6381,18 @@ async function marathonTranslateChapter(ch) {
     .replace('{text}',       prepareSourceForTranslation(ch.sourceText))
     .replace('{mtl_draft}',  mtlDraft || '(ไม่มี MTL draft)');
 
-  const ctrl = new AbortController();
-  if (mState.slots[ch.id]) mState.slots[ch.id].ctrl = ctrl;
-
   let inTok = 0, outTok = 0;
   let fullText = '';
   try {
     fullText = await sseStream(
       'https://openrouter.ai/api/v1/chat/completions',
-      { model: model, temperature: temperature, max_tokens: Math.max(16000, Math.ceil(ch.sourceText.length * 4)), messages: [{ role: 'user', content: prompt }] },
-      function() {},
+      { model: useModel, temperature: temperature, max_tokens: Math.max(16000, Math.ceil(ch.sourceText.length * 4)), messages: [{ role: 'user', content: prompt }] },
+      onDelta || function() {},
       function(i, o) { inTok = i; outTok = o; },
-      ctrl.signal
+      signal
     );
   } finally {
-    if (inTok || outTok) addCosts(inTok, outTok, model);
+    if (inTok || outTok) addCosts(inTok, outTok, useModel);
   }
 
   if (!fullText || !fullText.trim()) throw new Error('AI ส่งผลลัพธ์ว่าง');
@@ -6393,7 +6400,7 @@ async function marathonTranslateChapter(ch) {
   if (presetBase.polish) {
     try {
       const pr = await callOpenRouter({
-        model: model,
+        model: useModel,
         messages: [{ role: 'user', content: POLISH_PROMPT.replace('{glossary}', glossaryStr).replace('{text}', fullText) }],
         temperature: 0.5,
         max_tokens: Math.max(3000, Math.ceil(fullText.length * 1.2)),
@@ -6407,9 +6414,24 @@ async function marathonTranslateChapter(ch) {
   ch.wordCount   = fullText.length;
   ch.updatedAt   = Date.now();
   await lsSaveWorkspace(ws);
-  autoExtractGlossaryAfterTranslation(ch.sourceText, model, { id: ch.id, title: ch.title, chapterNum: ch.chapterNum }, fullText);
-  // Context Memory: generate summary (non-blocking — ไม่ block chapter ถัดไป)
-  ctxAddSummary(ws, ch.id, ch.chapterNum, ch.title, fullText).catch(e => console.warn('[CTX]', e));
+
+  // auto-glossary จับ error ภายในตัวเองอยู่แล้ว / ctx summary อาจ throw → catch เสมอ
+  const glossP = autoExtractGlossaryAfterTranslation(ch.sourceText, useModel, { id: ch.id, title: ch.title, chapterNum: ch.chapterNum }, fullText);
+  const ctxP   = ctxAddSummary(ws, ch.id, ch.chapterNum, ch.title, fullText);
+  if (awaitGlossary) {
+    await glossP;
+    await ctxP.catch(e => console.warn('[CTX]', e));
+  } else {
+    ctxP.catch(e => console.warn('[CTX]', e));
+  }
+  return fullText;
+}
+
+async function marathonTranslateChapter(ch) {
+  const cfg  = marathonGetConfig();
+  const ctrl = new AbortController();
+  if (mState.slots[ch.id]) mState.slots[ch.id].ctrl = ctrl;
+  const fullText = await translateChapterCore(ch, { presetId: cfg.presetId, signal: ctrl.signal });
   return fullText.length;
 }
 
