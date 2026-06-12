@@ -44,7 +44,7 @@
     <input type="file" id="importWsFile" accept=".json" style="display:none" onchange="importWorkspace(event)"/>
     <button class="sb-action-btn" onclick="openMultiExport()">📦 Export หลาย Workspace</button>
     <button class="sb-action-btn" onclick="exportAllWorkspacesJSON()" style="background:rgba(201,168,76,0.12);border-color:var(--gold);color:var(--gold-light)">💾 Backup ทั้งหมด (1-click)</button>
-    <button class="sb-action-btn" onclick="openModal('modal-settings')">⚙ ตั้งค่า API Key</button>
+    <button class="sb-action-btn" onclick="openApiSettings()">⚙ ตั้งค่า API Key</button>
     <button class="sb-action-btn" onclick="openThemeEditor()">🎨 Theme Editor</button>
   </div>
 </aside>
@@ -149,39 +149,8 @@
         <button class="btn btn-secondary" onclick="openFindReplace()">⇄ Find</button>
         <button class="btn btn-secondary" onclick="openExportModal()">📤 Export</button>
         <div class="quick-settings">
-          <select id="translateModel" class="mini-select">
-            <optgroup label="── Google ──">
-              <option value="google/gemini-2.5-flash">Gemini 2.5 Flash 🔥</option>
-              <option value="google/gemini-2.5-flash-lite">Gemini 2.5 Flash Lite</option>
-              <option value="google/gemini-2.5-pro">Gemini 2.5 Pro</option>
-              <option value="google/gemini-2.0-flash-001">Gemini 2.0 Flash</option>
-              <option value="google/gemini-1.5-flash">Gemini 1.5 Flash</option>
-            </optgroup>
-            <optgroup label="── OpenAI ──">
-              <option value="openai/gpt-5-nano">GPT-5 Nano ✨</option>
-              <option value="openai/gpt-5">GPT-5</option>
-              <option value="openai/gpt-4.1-nano">GPT-4.1 Nano</option>
-              <option value="openai/gpt-4o-mini">GPT-4o Mini</option>
-              <option value="openai/gpt-4o">GPT-4o</option>
-              <option value="openai/gpt-oss-120b">GPT-OSS 120B</option>
-            </optgroup>
-            <optgroup label="── DeepSeek ──">
-              <option value="deepseek/deepseek-v3.2">DeepSeek V3.2 🆕</option>
-              <option value="deepseek/deepseek-chat-v3-0324">DeepSeek V3 (Mar)</option>
-              <option value="deepseek/deepseek-chat">DeepSeek V3</option>
-              <option value="deepseek/deepseek-r1">DeepSeek R1</option>
-            </optgroup>
-            <optgroup label="── xAI ──">
-              <option value="x-ai/grok-4">Grok 4</option>
-              <option value="x-ai/grok-4-fast">Grok 4 Fast</option>
-            </optgroup>
-            <optgroup label="── อื่นๆ ──">
-              <option value="anthropic/claude-haiku-4.5">Claude Haiku 4.5</option>
-              <option value="anthropic/claude-3-haiku">Claude Haiku 3</option>
-              <option value="meta-llama/llama-3.3-70b-instruct:free">Llama 3.3 70B (ฟรี)</option>
-              <option value="meta-llama/llama-4-scout:free">Llama 4 Scout (ฟรี)</option>
-            </optgroup>
-          </select>
+          <select id="translateProvider" class="mini-select" title="AI Provider" onchange="onProviderChange(this.value)"></select>
+          <select id="translateModel" class="mini-select" onchange="onModelChange(this.value)"></select>
           <select id="activeStyleSelect" class="mini-select" title="Style"></select>
           <label class="toggle-mini"><input type="checkbox" id="usePolish"/> Polish</label>
           <label class="toggle-mini"><input type="checkbox" id="useMemory" checked/> Memory</label>
@@ -206,6 +175,7 @@
     <div class="tab-content" id="tab-chapters" style="display:none">
       <div class="tab-toolbar">
         <button class="btn btn-primary btn-sm" onclick="openModal('modal-new-chapter')">＋ เพิ่มตอน</button>
+        <button class="btn btn-secondary btn-sm" onclick="openReaderResume()" title="เปิดโหมดอ่าน ต่อจากตำแหน่งล่าสุด">📖 อ่านต่อ</button>
         <button class="btn btn-secondary btn-sm" onclick="openEpubImport()">📗 Import EPUB</button>
         <input type="file" id="epubFileInput" accept=".epub" style="display:none" onchange="handleEpubImport(event)"/>
         <button class="btn btn-secondary btn-sm" onclick="openBatchChapters()">⚡ แปล Batch</button>
@@ -262,6 +232,7 @@
         <button class="btn btn-secondary btn-sm" onclick="checkDuplicateGlossary()">🔎 ซ้ำ</button>
         <button class="btn btn-secondary btn-sm" onclick="openGlossaryQA()">🧪 QA</button>
         <button class="btn btn-ghost btn-sm" onclick="openConsistencyCheck()">🔗 เช็ค</button>
+        <button class="btn btn-ghost btn-sm" onclick="openPronounCheck()" title="หาจุดที่สรรพนามขัดกับเพศตัวละครใน Glossary">🚻 สรรพนาม</button>
         <button class="btn btn-ghost btn-sm" onclick="openGlossaryExport()">📤 Export</button>
         <button class="btn btn-ghost btn-sm" onclick="openGlossaryCSVImport()">📥 CSV Import</button>
         <button class="btn btn-ghost btn-sm" onclick="openGlossaryInherit()">🔗 Import จาก WS อื่น</button>
@@ -368,44 +339,25 @@
               <button class="btn btn-ghost btn-sm" onclick="openPresetEditor()" title="แก้ไข Prompt ของ Preset">✏ Customize</button>
             </div>
           </div>
+          <div class="sf-group"><div class="sf-label">AI Provider</div>
+            <select id="wsProviderSelect" class="select-input" onchange="onProviderChange(this.value)"></select>
+            <div style="font-size:0.70rem;color:var(--text-muted);margin-top:4px">
+              OpenRouter = key เดียวหลายโมเดล · เจ้าตรง (Gemini/OpenAI/Claude/DeepSeek) ต้องตั้ง key ของเจ้านั้นใน ⚙ ตั้งค่า API Key
+            </div>
+          </div>
           <div class="sf-group"><div class="sf-label">โมเดลแปล</div>
-            <select id="wsTranslateModel" class="select-input">
-              <optgroup label="── Google ──">
-                <option value="google/gemini-2.5-flash">Gemini 2.5 Flash 🔥</option>
-                <option value="google/gemini-2.5-flash-lite">Gemini 2.5 Flash Lite</option>
-                <option value="google/gemini-2.5-pro">Gemini 2.5 Pro</option>
-                <option value="google/gemini-2.0-flash-001">Gemini 2.0 Flash</option>
-                <option value="google/gemini-1.5-flash">Gemini 1.5 Flash</option>
-              </optgroup>
-              <optgroup label="── OpenAI ──">
-                <option value="openai/gpt-5-nano">GPT-5 Nano ✨</option>
-                <option value="openai/gpt-5">GPT-5</option>
-                <option value="openai/gpt-4.1-nano">GPT-4.1 Nano</option>
-                <option value="openai/gpt-4o-mini">GPT-4o Mini</option>
-                <option value="openai/gpt-4o">GPT-4o</option>
-                <option value="openai/gpt-oss-120b">GPT-OSS 120B</option>
-              </optgroup>
-              <optgroup label="── DeepSeek ──">
-                <option value="deepseek/deepseek-v3.2">DeepSeek V3.2 🆕</option>
-                <option value="deepseek/deepseek-chat-v3-0324">DeepSeek V3 (Mar)</option>
-                <option value="deepseek/deepseek-chat">DeepSeek V3</option>
-                <option value="deepseek/deepseek-r1">DeepSeek R1</option>
-              </optgroup>
-              <optgroup label="── xAI ──">
-                <option value="x-ai/grok-4">Grok 4</option>
-                <option value="x-ai/grok-4-fast">Grok 4 Fast</option>
-              </optgroup>
-              <optgroup label="── อื่นๆ ──">
-                <option value="anthropic/claude-haiku-4.5">Claude Haiku 4.5</option>
-                <option value="anthropic/claude-3-haiku">Claude Haiku 3</option>
-                <option value="meta-llama/llama-3.3-70b-instruct:free">Llama 3.3 70B (ฟรี)</option>
-                <option value="meta-llama/llama-4-scout:free">Llama 4 Scout (ฟรี)</option>
-              </optgroup>
-            </select>
+            <select id="wsTranslateModel" class="select-input" onchange="onModelChange(this.value)"></select>
           </div>
           <div class="sf-group">
             <div class="sf-label">Temperature <span id="wsTempVal">0.7</span></div>
             <input type="range" id="wsTemp" min="0" max="1" step="0.1" value="0.7" class="range-input" oninput="document.getElementById('wsTempVal').textContent=this.value"/>
+          </div>
+          <div class="sf-group">
+            <div class="sf-label">ความยาว Context จากตอน/chunk ก่อนหน้า</div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <input type="number" id="wsPrevCtxChars" class="text-input" style="width:110px" min="100" max="4000" step="100" value="400"/>
+              <span style="font-size:0.72rem;color:var(--text-muted)">ตัวอักษร (default 400) — มาก = ต่อเนื่องขึ้นแต่เปลือง token</span>
+            </div>
           </div>
           <div class="sf-group">
             <div class="sf-label">Auto Glossary หลังแปล</div>
@@ -533,6 +485,7 @@
     </div>
     <div class="modal-footer">
       <button class="btn btn-danger btn-sm" onclick="deleteCurrentChapter()" style="margin-right:auto">🗑 ลบ</button>
+      <button class="btn btn-ghost btn-sm" onclick="openReaderFromModal()">📖 อ่าน</button>
       <button class="btn btn-ghost btn-sm" onclick="openSplitChapter()">✂ Split</button>
       <button class="btn btn-ghost btn-sm" onclick="openMergeChapter()">🔗 Merge</button>
       <button class="btn btn-secondary" onclick="loadChapterToTranslate()">⚡ โหลดแปล</button>
@@ -607,15 +560,10 @@
   <div class="modal">
     <div class="modal-header"><span>⚙ ตั้งค่า API Key</span><button class="icon-btn" onclick="closeModal('modal-settings')">✕</button></div>
     <div class="modal-body">
-      <div class="sf-group">
-        <div class="sf-label">OpenRouter API Key</div>
-        <input id="settingsApiKey" type="password" class="text-input" placeholder="sk-or-v1-..."/>
-        <div style="font-size:0.72rem;color:var(--text-muted);margin-top:4px">สมัครฟรีที่ openrouter.ai/keys</div>
+      <div style="font-size:0.74rem;color:var(--text-muted);margin-bottom:10px">
+        ตั้ง key เฉพาะ provider ที่ใช้ก็พอ — OpenRouter key เดียวใช้ได้หลายโมเดล ส่วน provider ตรงเจ้าต้องมี key ของเจ้านั้น
       </div>
-      <div class="sf-group" style="display:flex;align-items:center;gap:10px">
-        <button class="btn btn-secondary btn-sm" onclick="testApiKey()">▶ ทดสอบ</button>
-        <span id="apiTestResult" style="font-size:0.8rem"></span>
-      </div>
+      <div id="apiKeysContainer"></div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('modal-settings')">ยกเลิก</button>
@@ -663,15 +611,7 @@
 
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px">
         <button class="btn btn-primary btn-sm" id="agRunBtn" onclick="runAutoGlossary()">🤖 วิเคราะห์</button>
-        <select id="agModel" class="mini-select">
-          <option value="google/gemini-2.5-flash">Gemini 2.5 Flash</option>
-          <option value="google/gemini-2.5-flash-lite">Gemini 2.5 Flash Lite</option>
-          <option value="deepseek/deepseek-v3.2">DeepSeek V3.2</option>
-          <option value="deepseek/deepseek-chat">DeepSeek V3</option>
-          <option value="openai/gpt-4.1-nano">GPT-4.1 Nano</option>
-          <option value="openai/gpt-5-nano">GPT-5 Nano</option>
-          <option value="x-ai/grok-4">Grok 4</option>
-        </select>
+        <select id="agModel" class="mini-select"><!-- populate ตาม provider ตอนเปิด modal --></select>
         <button class="btn btn-ghost btn-sm" onclick="agTogglePromptEditor()" id="agPromptToggleBtn" title="แก้ไข Prompt ที่ใช้วิเคราะห์">✏ Prompt</button>
         <span style="font-size:0.74rem;color:var(--text-muted)">เลือกโมเดลสำหรับ Auto Glossary</span>
         <span id="agStatus" style="font-size:0.78rem;color:var(--gold)"></span>
@@ -1035,22 +975,7 @@
       </div>
       <div id="bchChapterList" style="display:flex;flex-direction:column;gap:4px;max-height:220px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius);padding:6px;background:var(--bg-deep)"></div>
       <div style="margin-top:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-        <select id="bchModel" class="mini-select">
-          <optgroup label="── Google ──">
-            <option value="google/gemini-2.5-flash">Gemini 2.5 Flash 🔥</option>
-            <option value="google/gemini-2.5-flash-lite">Gemini 2.5 Flash Lite</option>
-            <option value="google/gemini-2.0-flash-001">Gemini 2.0 Flash</option>
-          </optgroup>
-          <optgroup label="── DeepSeek ──">
-            <option value="deepseek/deepseek-v3.2">DeepSeek V3.2 🆕</option>
-            <option value="deepseek/deepseek-chat-v3-0324">DeepSeek V3 (Mar)</option>
-            <option value="deepseek/deepseek-chat">DeepSeek V3</option>
-          </optgroup>
-          <optgroup label="── OpenAI ──">
-            <option value="openai/gpt-5-nano">GPT-5 Nano</option>
-            <option value="openai/gpt-4.1-nano">GPT-4.1 Nano</option>
-          </optgroup>
-        </select>
+        <select id="bchModel" class="mini-select"><!-- populate ตาม provider ตอนเปิด modal --></select>
         <label class="toggle-mini"><input type="checkbox" id="bchUsePolish"/> Polish</label>
         <label class="toggle-mini" title="ข้ามตอนที่แปลแล้ว"><input type="checkbox" id="bchSkipTranslated" checked/> ข้ามตอนที่แปลแล้ว</label>
         <label class="toggle-mini" title="ส่งท้ายตอนก่อนหน้า ~600 ตัวอักษรเป็น context ให้ AI รู้จักตัวละครและสำนวน"><input type="checkbox" id="bchUsePrevContext" checked/> Prev Context</label>
@@ -1532,6 +1457,69 @@
       <button class="btn btn-primary" id="pe-validate-btn" onclick="validateAndSaveCustomPreset()">🤖 Validate &amp; บันทึก</button>
     </div>
   </div>
+</div>
+
+<div class="modal-backdrop" id="modal-pronoun-check">
+  <div class="modal modal-wide">
+    <div class="modal-header"><span>🚻 ตรวจสรรพนาม/เพศ</span><button class="icon-btn" onclick="closeModal('modal-pronoun-check')">✕</button></div>
+    <div class="modal-body">
+      <div style="font-size:0.76rem;color:var(--text-muted);margin-bottom:10px">
+        สแกนหาจุดที่คำแปลใช้สรรพนามขัดกับเพศของตัวละครใน Glossary (เช่น ใช้ "เขา" ใกล้ชื่อตัวละครหญิง)
+        — เป็นการเดาเบื้องต้น ควรเปิดดูบริบทจริงก่อนแก้
+      </div>
+      <div id="pronounCheckResults" style="display:flex;flex-direction:column;gap:8px"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-pronoun-check')">ปิด</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ READER MODE OVERLAY ═══ -->
+<div id="readerOverlay" class="reader-overlay reader-theme-sepia" style="display:none">
+  <header class="reader-topbar" id="readerTopBar">
+    <button class="reader-icon-btn" onclick="closeReader()" title="ปิดโหมดอ่าน (Esc)">✕</button>
+    <span id="readerChTitle" class="reader-ch-title"></span>
+    <button class="reader-icon-btn" onclick="readerToggleSettings()" title="ตั้งค่าการอ่าน">⚙</button>
+  </header>
+  <div class="reader-settings" id="readerSettingsBar" style="display:none">
+    <div class="reader-set-group">
+      <span class="reader-set-label">ขนาด</span>
+      <button class="reader-set-btn" onclick="readerSetFontSize(-1)">A−</button>
+      <span id="readerFontSizeVal" style="min-width:20px;text-align:center">19</span>
+      <button class="reader-set-btn" onclick="readerSetFontSize(1)">A＋</button>
+    </div>
+    <div class="reader-set-group">
+      <span class="reader-set-label">บรรทัด</span>
+      <select id="readerLineHeight" class="reader-set-select" onchange="readerSetLineHeight(this.value)">
+        <option value="1.6">1.6</option><option value="1.8">1.8</option><option value="1.9">1.9</option>
+        <option value="2">2.0</option><option value="2.2">2.2</option>
+      </select>
+    </div>
+    <div class="reader-set-group">
+      <span class="reader-set-label">ธีม</span>
+      <button class="reader-theme-btn" data-theme="light" onclick="readerSetTheme('light')">สว่าง</button>
+      <button class="reader-theme-btn" data-theme="sepia" onclick="readerSetTheme('sepia')">ซีเปีย</button>
+      <button class="reader-theme-btn" data-theme="dark" onclick="readerSetTheme('dark')">มืด</button>
+    </div>
+    <div class="reader-set-group">
+      <span class="reader-set-label">แปลล่วงหน้า</span>
+      <select id="readerPrefetchCount" class="reader-set-select" onchange="readerSetPrefetchCount(this.value)">
+        <option value="0">ปิด</option><option value="1">1 ตอน</option><option value="2">2 ตอน</option>
+      </select>
+    </div>
+  </div>
+  <div class="reader-scroll" id="readerScroll">
+    <article id="readerContent" class="reader-content"></article>
+  </div>
+  <footer class="reader-bottombar" id="readerBottomBar">
+    <button class="reader-nav-btn" id="readerPrevBtn" onclick="readerNav(-1)">← ตอนก่อน</button>
+    <div class="reader-progress">
+      <span id="readerProgressLabel"></span>
+      <span id="readerPrefetchChip" class="reader-prefetch-chip" style="display:none"></span>
+    </div>
+    <button class="reader-nav-btn" id="readerNextBtn" onclick="readerNav(1)">ตอนถัดไป →</button>
+  </footer>
 </div>
 
 <script src="app.js"></script>

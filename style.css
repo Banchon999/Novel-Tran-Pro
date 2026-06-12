@@ -355,6 +355,7 @@ body {
 }
 .status-badge.translated { background: rgba(76,175,80,0.1); color: #4caf50; border: 1px solid rgba(76,175,80,0.3); }
 .status-badge.pending { background: rgba(201,168,76,0.08); color: var(--gold-dim); border: 1px solid rgba(201,168,76,0.2); }
+.status-badge.partial { background: rgba(66,165,245,0.10); color: #64b5f6; border: 1px solid rgba(66,165,245,0.3); }
 
 /* ─── Glossary Table ─── */
 .glossary-table-wrap { flex: 1; overflow: auto; padding: 0 10px 10px; }
@@ -892,3 +893,164 @@ mark.glossary-term { background: rgba(201,168,76,0.2); border-bottom: 1px solid 
   font-family: 'JetBrains Mono', monospace;
 }
 .mp-log:empty { display: none; }
+
+/* ═══════════════════════════════════════════════ */
+/* ─── Reader Mode ─────────────────────────────── */
+/* ธีมของ reader แยกจากธีมแอพ (scoped variables ไม่พึ่ง :root) */
+.reader-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  background: var(--r-bg);
+  color: var(--r-text);
+}
+.reader-theme-light { --r-bg:#fafaf7; --r-text:#2a2a28; --r-muted:#8a8a84; --r-bar:#f0f0ec; --r-border:#ddddd6; --r-accent:#9a6c2e; }
+.reader-theme-sepia { --r-bg:#f4ecd8; --r-text:#5b4636; --r-muted:#9b8a76; --r-bar:#ede3cb; --r-border:#dfd2b8; --r-accent:#8a5a2b; }
+.reader-theme-dark  { --r-bg:#15151a; --r-text:#c8c8c2; --r-muted:#6e6e76; --r-bar:#1c1c22; --r-border:#2a2a32; --r-accent:#c9a356; }
+
+.reader-topbar, .reader-bottombar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  background: var(--r-bar);
+  border-bottom: 1px solid var(--r-border);
+  flex-shrink: 0;
+}
+.reader-bottombar {
+  border-bottom: none;
+  border-top: 1px solid var(--r-border);
+  padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+}
+.reader-ch-title {
+  flex: 1;
+  text-align: center;
+  font-size: 0.9rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.reader-icon-btn {
+  background: none;
+  border: none;
+  color: var(--r-muted);
+  font-size: 1.05rem;
+  cursor: pointer;
+  padding: 4px 10px;
+  border-radius: 6px;
+}
+.reader-icon-btn:hover { color: var(--r-text); background: rgba(128,128,128,0.12); }
+
+.reader-settings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: center;
+  padding: 8px 14px;
+  background: var(--r-bar);
+  border-bottom: 1px solid var(--r-border);
+  font-size: 0.8rem;
+  flex-shrink: 0;
+}
+.reader-set-group { display: flex; align-items: center; gap: 6px; }
+.reader-set-label { color: var(--r-muted); font-size: 0.74rem; }
+.reader-set-btn, .reader-theme-btn {
+  background: var(--r-bg);
+  border: 1px solid var(--r-border);
+  color: var(--r-text);
+  border-radius: 6px;
+  padding: 3px 9px;
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-family: inherit;
+}
+.reader-theme-btn.active {
+  border-color: var(--r-accent);
+  color: var(--r-accent);
+  font-weight: 600;
+}
+.reader-set-select {
+  background: var(--r-bg);
+  border: 1px solid var(--r-border);
+  color: var(--r-text);
+  border-radius: 6px;
+  padding: 3px 6px;
+  font-size: 0.78rem;
+  font-family: inherit;
+}
+
+.reader-scroll {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.reader-content {
+  max-width: 42rem;
+  margin: 0 auto;
+  padding: 26px 20px 60px;
+  font-family: 'Noto Serif Thai', 'Noto Sans Thai', serif;
+}
+.reader-content p { margin: 0 0 1em; }
+.reader-h2 {
+  font-size: 1.15em;
+  margin: 0 0 1.4em;
+  text-align: center;
+  font-weight: 600;
+  color: inherit;
+}
+.reader-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 70px 20px;
+  color: var(--r-muted);
+  text-align: center;
+  font-size: 0.95rem;
+}
+
+.reader-nav-btn {
+  background: var(--r-bg);
+  border: 1px solid var(--r-border);
+  color: var(--r-text);
+  border-radius: 8px;
+  padding: 7px 14px;
+  cursor: pointer;
+  font-size: 0.82rem;
+  white-space: nowrap;
+  font-family: inherit;
+}
+.reader-nav-btn:disabled { opacity: 0.35; cursor: default; }
+.reader-progress {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  font-size: 0.74rem;
+  color: var(--r-muted);
+  min-width: 0;
+}
+.reader-prefetch-chip {
+  font-size: 0.7rem;
+  color: var(--r-accent);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+/* ปุ่มอ่านใน chapter card */
+.ch-read-btn {
+  flex-shrink: 0;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px 8px;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+.ch-read-btn:hover { border-color: var(--gold); }

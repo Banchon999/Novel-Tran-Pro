@@ -439,37 +439,320 @@ async function migrateFromLocalStorage() {
 
 function genId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
 
-// API key: stays in localStorage (< 100 bytes, never causes quota issues)
-function getApiKey() { return localStorage.getItem(LS_KEY_API) || ''; }
+// ═══════════════════════════════════════════════
+// ─── AI Providers ───────────────────────────────
+// ═══════════════════════════════════════════════
+// dispatch table: ทุก provider บอกวิธีสร้าง request + วิธีอ่านผล/usage + รูปแบบ SSE
+// เรียกใช้ผ่าน 2 ฟังก์ชันกลาง: aiCall (ไม่ stream) / aiStream (stream)
 
-// ─── OpenRouter API ───
-async function callOpenRouter({ model, messages, temperature = 0.7, max_tokens = 2000, stream = false }) {
-  const key = getApiKey();
-  if (!key) throw new Error('ยังไม่ได้ตั้ง API Key — ไปที่ ⚙ ตั้งค่า');
-
-  const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${key}`,
-      'HTTP-Referer': location.origin,
-      'X-Title': 'NovelTrans v10 Pro',
+const PROVIDERS = {
+  openrouter: {
+    label: 'OpenRouter',
+    lsKey: LS_KEY_API, // key เดิม — ผู้ใช้เก่าไม่ต้องตั้งใหม่
+    keyPlaceholder: 'sk-or-v1-...',
+    keyHint: 'สมัครฟรีที่ openrouter.ai/keys — key เดียวใช้ได้หลายโมเดล',
+    sse: 'openai',
+    models: [
+      ['── Google ──', [['google/gemini-2.5-flash','Gemini 2.5 Flash 🔥'],['google/gemini-2.5-flash-lite','Gemini 2.5 Flash Lite'],['google/gemini-2.5-pro','Gemini 2.5 Pro'],['google/gemini-2.0-flash-001','Gemini 2.0 Flash'],['google/gemini-1.5-flash','Gemini 1.5 Flash']]],
+      ['── OpenAI ──', [['openai/gpt-5-nano','GPT-5 Nano ✨'],['openai/gpt-5','GPT-5'],['openai/gpt-4.1-nano','GPT-4.1 Nano'],['openai/gpt-4o-mini','GPT-4o Mini'],['openai/gpt-4o','GPT-4o'],['openai/gpt-oss-120b','GPT-OSS 120B']]],
+      ['── DeepSeek ──', [['deepseek/deepseek-v3.2','DeepSeek V3.2 🆕'],['deepseek/deepseek-chat-v3-0324','DeepSeek V3 (Mar)'],['deepseek/deepseek-chat','DeepSeek V3'],['deepseek/deepseek-r1','DeepSeek R1']]],
+      ['── xAI ──', [['x-ai/grok-4','Grok 4'],['x-ai/grok-4-fast','Grok 4 Fast']]],
+      ['── อื่นๆ ──', [['anthropic/claude-haiku-4.5','Claude Haiku 4.5'],['anthropic/claude-3-haiku','Claude Haiku 3'],['meta-llama/llama-3.3-70b-instruct:free','Llama 3.3 70B (ฟรี)'],['meta-llama/llama-4-scout:free','Llama 4 Scout (ฟรี)']]],
+    ],
+    buildRequest({ model, messages, temperature, max_tokens, stream, key }) {
+      return {
+        url: 'https://openrouter.ai/api/v1/chat/completions',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}`, 'HTTP-Referer': location.origin, 'X-Title': 'NovelTrans v10 Pro' },
+        body: { model, messages, temperature, max_tokens, stream },
+      };
     },
-    body: JSON.stringify({ model, messages, temperature, max_tokens, stream }),
-  });
+    testEndpoint: key => ({ url: 'https://openrouter.ai/api/v1/models', headers: { 'Authorization': `Bearer ${key}` } }),
+    extractText: d => d.choices?.[0]?.message?.content ?? '',
+    extractUsage: d => ({ inTok: d.usage?.prompt_tokens || 0, outTok: d.usage?.completion_tokens || 0 }),
+  },
 
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error?.message || `HTTP ${res.status}`);
+  gemini: {
+    label: 'Google Gemini',
+    lsKey: 'nt8_apikey_gemini',
+    keyPlaceholder: 'AIza...',
+    keyHint: 'สร้าง key ฟรีที่ aistudio.google.com/apikey',
+    sse: 'gemini',
+    models: [[null, [['gemini-2.5-flash','Gemini 2.5 Flash 🔥'],['gemini-2.5-flash-lite','Gemini 2.5 Flash Lite'],['gemini-2.5-pro','Gemini 2.5 Pro'],['gemini-2.0-flash','Gemini 2.0 Flash']]]],
+    buildRequest({ model, messages, temperature, max_tokens, stream, key }) {
+      // แอพนี้ส่ง user message เดียวเสมอ — รวม content เป็น turn เดียว
+      const text = messages.map(m => m.content).join('\n\n');
+      return {
+        url: `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:${stream ? 'streamGenerateContent?alt=sse' : 'generateContent'}`,
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+        body: { contents: [{ role: 'user', parts: [{ text }] }], generationConfig: { temperature, maxOutputTokens: max_tokens } },
+      };
+    },
+    testEndpoint: key => ({ url: 'https://generativelanguage.googleapis.com/v1beta/models', headers: { 'x-goog-api-key': key } }),
+    extractText: d => (d.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join(''),
+    extractUsage: d => ({ inTok: d.usageMetadata?.promptTokenCount || 0, outTok: d.usageMetadata?.candidatesTokenCount || 0 }),
+  },
+
+  openai: {
+    label: 'OpenAI',
+    lsKey: 'nt8_apikey_openai',
+    keyPlaceholder: 'sk-...',
+    keyHint: 'สร้าง key ที่ platform.openai.com/api-keys',
+    sse: 'openai',
+    models: [[null, [['gpt-5-nano','GPT-5 Nano ✨'],['gpt-5-mini','GPT-5 Mini'],['gpt-5','GPT-5'],['gpt-4.1-nano','GPT-4.1 Nano'],['gpt-4o-mini','GPT-4o Mini'],['gpt-4o','GPT-4o']]]],
+    buildRequest({ model, messages, temperature, max_tokens, stream, key }) {
+      return {
+        url: 'https://api.openai.com/v1/chat/completions',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
+        // stream_options จำเป็นเพื่อให้ OpenAI ส่ง usage ใน chunk สุดท้าย
+        body: { model, messages, temperature, max_tokens: max_tokens, ...(stream ? { stream: true, stream_options: { include_usage: true } } : {}) },
+      };
+    },
+    testEndpoint: key => ({ url: 'https://api.openai.com/v1/models', headers: { 'Authorization': `Bearer ${key}` } }),
+    extractText: d => d.choices?.[0]?.message?.content ?? '',
+    extractUsage: d => ({ inTok: d.usage?.prompt_tokens || 0, outTok: d.usage?.completion_tokens || 0 }),
+  },
+
+  anthropic: {
+    label: 'Anthropic Claude',
+    lsKey: 'nt8_apikey_anthropic',
+    keyPlaceholder: 'sk-ant-...',
+    keyHint: 'สร้าง key ที่ console.anthropic.com',
+    sse: 'anthropic',
+    models: [[null, [['claude-haiku-4-5','Claude Haiku 4.5'],['claude-sonnet-4-6','Claude Sonnet 4.6'],['claude-opus-4-8','Claude Opus 4.8']]]],
+    buildRequest({ model, messages, temperature, max_tokens, stream, key }) {
+      return {
+        url: 'https://api.anthropic.com/v1/messages',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': key,
+          'anthropic-version': '2023-06-01',
+          // จำเป็น: Anthropic บล็อก browser CORS เว้นแต่ใส่ header นี้ (key อยู่ในเครื่องผู้ใช้เอง)
+          'anthropic-dangerous-direct-browser-access': 'true',
+        },
+        body: { model, max_tokens: max_tokens || 4000, temperature: Math.min(1, temperature), messages, ...(stream ? { stream: true } : {}) },
+      };
+    },
+    testEndpoint: key => ({ url: 'https://api.anthropic.com/v1/models', headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' } }),
+    extractText: d => (d.content || []).map(b => b.text || '').join(''),
+    extractUsage: d => ({ inTok: d.usage?.input_tokens || 0, outTok: d.usage?.output_tokens || 0 }),
+  },
+
+  deepseek: {
+    label: 'DeepSeek',
+    lsKey: 'nt8_apikey_deepseek',
+    keyPlaceholder: 'sk-...',
+    keyHint: 'สร้าง key ที่ platform.deepseek.com',
+    sse: 'openai',
+    models: [[null, [['deepseek-chat','DeepSeek Chat (V3)'],['deepseek-reasoner','DeepSeek Reasoner (R1)']]]],
+    buildRequest({ model, messages, temperature, max_tokens, stream, key }) {
+      return {
+        url: 'https://api.deepseek.com/chat/completions',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
+        body: { model, messages, temperature, max_tokens, stream },
+      };
+    },
+    testEndpoint: key => ({ url: 'https://api.deepseek.com/models', headers: { 'Authorization': `Bearer ${key}` } }),
+    extractText: d => d.choices?.[0]?.message?.content ?? '',
+    extractUsage: d => ({ inTok: d.usage?.prompt_tokens || 0, outTok: d.usage?.completion_tokens || 0 }),
+  },
+};
+
+// timeout ของการเรียก AI (วินาที) — ตั้งได้ใน ⚙ ตั้งค่า API Key, default 120
+// kind: 'chunk' = ต่อ chunk/segment, 'full' = ทั้งตอน (ให้เวลา 1.5 เท่า)
+function getTimeoutMs(kind = 'chunk') {
+  const base = Math.max(20, Math.min(900, parseInt(localStorage.getItem('nt8_timeout_s')) || 120));
+  return Math.round(base * (kind === 'full' ? 1.5 : 1) * 1000);
+}
+
+// provider ปัจจุบันของ workspace — default openrouter เพื่อให้ workspace เก่าทำงานเหมือนเดิม
+function getProvider() {
+  const p = S.currentWs?.settings?.aiProvider || 'openrouter';
+  return PROVIDERS[p] ? p : 'openrouter';
+}
+
+// ไม่ส่ง argument = key ของ provider ปัจจุบัน (call-site เดิมทั้งหมดใช้ได้ต่อ)
+function getApiKey(provider) {
+  const prov = PROVIDERS[provider || getProvider()] || PROVIDERS.openrouter;
+  return localStorage.getItem(prov.lsKey) || '';
+}
+
+// แปลง HTTP error เป็นข้อความไทยที่บอกสาเหตุ + วิธีแก้
+async function aiHttpError(prov, res) {
+  let msg = '';
+  try {
+    const err = await res.json();
+    msg = err.error?.message || err.message || '';
+  } catch {}
+  const s = res.status;
+  if (s === 401 || s === 403) return new Error(`🔑 ${prov.label}: API Key ไม่ถูกต้องหรือหมดสิทธิ์${msg ? ` — ${msg}` : ''}`);
+  if (s === 429) {
+    const retry = res.headers.get('retry-after');
+    return new Error(`⏳ ${prov.label}: ติด Rate Limit${retry ? ` — รอ ${retry} วินาที` : ''} แล้วลองใหม่`);
   }
+  if (s === 402) return new Error(`💳 ${prov.label}: เครดิตหมด — เติมเงินก่อนใช้งาน`);
+  if (s >= 500) return new Error(`⚠ ${prov.label}: เซิร์ฟเวอร์มีปัญหา (HTTP ${s}) — ลองใหม่อีกครั้ง`);
+  return new Error(`${prov.label}: HTTP ${s}${msg ? ` — ${msg}` : ''}`);
+}
 
-  if (stream) return res;
+function aiNetworkError(prov, provName) {
+  return new Error(`🌐 ${prov.label}: เชื่อมต่อไม่ได้ — อาจติด CORS หรืออินเทอร์เน็ตขัดข้อง${provName !== 'openrouter' ? ' (แนะนำลองใช้ OpenRouter แทน)' : ''}`);
+}
+
+// ── เรียก AI แบบไม่ stream — คืนรูป choices แบบ OpenAI เสมอ (call-site เดิมอ่าน choices[0].message.content) ──
+async function aiCall({ model, messages, temperature = 0.7, max_tokens = 2000 }) {
+  const provName = getProvider();
+  const prov = PROVIDERS[provName];
+  const key = getApiKey(provName);
+  if (!key) throw new Error(`ยังไม่ได้ตั้ง API Key ของ ${prov.label} — ไปที่ ⚙ ตั้งค่า`);
+
+  const req = prov.buildRequest({ model, messages, temperature, max_tokens, stream: false, key });
+  let res;
+  try {
+    res = await fetch(req.url, { method: 'POST', headers: req.headers, body: JSON.stringify(req.body) });
+  } catch (e) {
+    if (e.name === 'AbortError') throw e;
+    throw aiNetworkError(prov, provName);
+  }
+  if (!res.ok) throw await aiHttpError(prov, res);
 
   const data = await res.json();
-  // Track costs
-  const usage = data.usage || {};
-  addCosts(usage.prompt_tokens || 0, usage.completion_tokens || 0, model);
-  return data;
+  const usage = prov.extractUsage(data);
+  addCosts(usage.inTok, usage.outTok, model, provName);
+  return { choices: [{ message: { content: prov.extractText(data) } }], usage: data.usage || usage, _raw: data };
+}
+
+// alias เดิม — call-site ไม่ stream ทั้งหมดใช้ต่อได้โดยไม่แก้
+const callOpenRouter = aiCall;
+
+// ── เรียก AI แบบ stream — parser ตามรูปแบบ SSE ของแต่ละ provider ──
+async function aiStream({ model, messages, temperature = 0.7, max_tokens = 2000 }, onChunk, onUsage, signal) {
+  const provName = getProvider();
+  const prov = PROVIDERS[provName];
+  const key = getApiKey(provName);
+  if (!key) throw new Error(`ยังไม่ได้ตั้ง API Key ของ ${prov.label} — ไปที่ ⚙ ตั้งค่า`);
+
+  const req = prov.buildRequest({ model, messages, temperature, max_tokens, stream: true, key });
+  let res;
+  try {
+    res = await fetch(req.url, { method: 'POST', headers: req.headers, body: JSON.stringify(req.body), signal });
+  } catch (e) {
+    if (e.name === 'AbortError') throw e;
+    throw aiNetworkError(prov, provName);
+  }
+  if (!res.ok) throw await aiHttpError(prov, res);
+
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  let buf = '', fullText = '', done = false;
+  let inTok = 0, outTok = 0;
+
+  const handleData = (raw) => {
+    if (raw === '[DONE]') { done = true; return; }
+    let evt;
+    try { evt = JSON.parse(raw); } catch { return; }
+    if (prov.sse === 'openai') {
+      const delta = evt.choices?.[0]?.delta?.content;
+      if (delta) { fullText += delta; onChunk(delta); }
+      if (evt.usage) { inTok = evt.usage.prompt_tokens || 0; outTok = evt.usage.completion_tokens || 0; onUsage(inTok, outTok); }
+      if (evt.choices?.[0]?.finish_reason === 'stop') done = true;
+    } else if (prov.sse === 'gemini') {
+      const delta = (evt.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join('');
+      if (delta) { fullText += delta; onChunk(delta); }
+      if (evt.usageMetadata) { inTok = evt.usageMetadata.promptTokenCount || 0; outTok = evt.usageMetadata.candidatesTokenCount || 0; onUsage(inTok, outTok); }
+    } else if (prov.sse === 'anthropic') {
+      if (evt.type === 'content_block_delta' && evt.delta?.type === 'text_delta' && evt.delta.text) { fullText += evt.delta.text; onChunk(evt.delta.text); }
+      else if (evt.type === 'message_start') { inTok = evt.message?.usage?.input_tokens || 0; onUsage(inTok, outTok); }
+      else if (evt.type === 'message_delta') { outTok = evt.usage?.output_tokens || outTok; onUsage(inTok, outTok); }
+      else if (evt.type === 'message_stop') done = true;
+      else if (evt.type === 'error') throw new Error(`${prov.label}: ${evt.error?.message || 'stream error'}`);
+    }
+  };
+
+  while (!done) {
+    const { done: d, value } = await reader.read();
+    if (d) break;
+    buf += dec.decode(value, { stream: true });
+    const lines = buf.split('\n');
+    buf = lines.pop() ?? '';
+    for (const line of lines) {
+      if (!line.startsWith('data:')) continue; // ข้าม event:/comment/keep-alive
+      handleData(line.slice(5).trim());
+      if (done) break;
+    }
+  }
+  reader.cancel().catch(() => {});
+  return fullText;
+}
+
+// ── Provider / Model selection UI ──
+function defaultModelFor(provName) {
+  return provName === 'openrouter' ? 'deepseek/deepseek-chat' : PROVIDERS[provName].models[0][1][0][0];
+}
+
+function renderProviderSelect(sel, current) {
+  if (!sel) return;
+  sel.innerHTML = Object.entries(PROVIDERS).map(([id, p]) =>
+    `<option value="${id}">${p.label}${getApiKey(id) ? '' : ' ⚠'}</option>`).join('');
+  sel.value = current;
+}
+
+function renderModelSelect(sel, provName, selected, includeCustomOption = true) {
+  if (!sel) return;
+  const prov = PROVIDERS[provName];
+  let found = false;
+  let html = '';
+  for (const [group, items] of prov.models) {
+    const opts = items.map(([id, label]) => {
+      if (id === selected) found = true;
+      return `<option value="${id}">${label}</option>`;
+    }).join('');
+    html += group ? `<optgroup label="${group}">${opts}</optgroup>` : opts;
+  }
+  // custom model id ที่ผู้ใช้เคยเพิ่มของ provider นี้
+  for (const id of (S.currentWs?.settings?.customModels?.[provName] || [])) {
+    if (id === selected) found = true;
+    html += `<option value="${id}">⭐ ${id}</option>`;
+  }
+  if (selected && !found) html += `<option value="${selected}">⭐ ${selected}</option>`;
+  if (includeCustomOption) html += `<option value="__custom__">✏ กำหนดเอง…</option>`;
+  sel.innerHTML = html;
+  sel.value = selected || defaultModelFor(provName);
+}
+
+// sync provider+model selects ทั้ง quick bar และหน้า settings จากค่าใน workspace
+// (ไม่มี workspace → แสดง default openrouter เพื่อให้แท็บแปลใช้งานได้)
+function renderProviderUI() {
+  const provName = getProvider();
+  const model = S.currentWs?.settings?.translateModel || defaultModelFor(provName);
+  renderProviderSelect(document.getElementById('translateProvider'), provName);
+  renderProviderSelect(document.getElementById('wsProviderSelect'), provName);
+  renderModelSelect(document.getElementById('translateModel'), provName, model);
+  renderModelSelect(document.getElementById('wsTranslateModel'), provName, model);
+}
+
+async function onProviderChange(p) {
+  if (!S.currentWs || !PROVIDERS[p]) return;
+  S.currentWs.settings = { ...(S.currentWs.settings || {}), aiProvider: p, translateModel: defaultModelFor(p) };
+  await lsSaveWorkspace(S.currentWs);
+  renderProviderUI();
+  checkHealth();
+  if (!getApiKey(p)) showToast(`ยังไม่มี API Key ของ ${PROVIDERS[p].label} — ตั้งได้ที่ ⚙ ตั้งค่า API Key`, '');
+}
+
+async function onModelChange(v) {
+  if (!S.currentWs) return;
+  const provName = getProvider();
+  if (v === '__custom__') {
+    const id = prompt(`ใส่ model id ของ ${PROVIDERS[provName].label} (เช่น ${defaultModelFor(provName)}):`);
+    if (!id || !id.trim()) { renderProviderUI(); return; }
+    v = id.trim();
+    const cm = S.currentWs.settings?.customModels || {};
+    cm[provName] = [...new Set([...(cm[provName] || []), v])];
+    S.currentWs.settings = { ...(S.currentWs.settings || {}), customModels: cm };
+  }
+  S.currentWs.settings = { ...(S.currentWs.settings || {}), translateModel: v };
+  await lsSaveWorkspace(S.currentWs);
+  renderProviderUI();
 }
 
 const MODEL_COSTS = {
@@ -499,10 +782,27 @@ const MODEL_COSTS = {
   'anthropic/claude-3-haiku':          { in: 0.25,  out: 1.25 },
   'meta-llama/llama-3.3-70b-instruct:free': { in: 0, out: 0 },
   'meta-llama/llama-4-scout:free':     { in: 0,     out: 0 },
+  // ── Direct providers (namespaced 'provider:model') ──
+  'gemini:gemini-2.5-flash':           { in: 0.30,  out: 2.50 },
+  'gemini:gemini-2.5-flash-lite':      { in: 0.10,  out: 0.40 },
+  'gemini:gemini-2.5-pro':             { in: 1.25,  out: 10.0 },
+  'gemini:gemini-2.0-flash':           { in: 0.10,  out: 0.40 },
+  'openai:gpt-5-nano':                 { in: 0.05,  out: 0.40 },
+  'openai:gpt-5-mini':                 { in: 0.25,  out: 2.00 },
+  'openai:gpt-5':                      { in: 1.25,  out: 10.0 },
+  'openai:gpt-4.1-nano':               { in: 0.10,  out: 0.40 },
+  'openai:gpt-4o-mini':                { in: 0.15,  out: 0.60 },
+  'openai:gpt-4o':                     { in: 2.50,  out: 10.0 },
+  'anthropic:claude-haiku-4-5':        { in: 1.00,  out: 5.00 },
+  'anthropic:claude-sonnet-4-6':       { in: 3.00,  out: 15.0 },
+  'anthropic:claude-opus-4-8':         { in: 5.00,  out: 25.0 },
+  'deepseek:deepseek-chat':            { in: 0.27,  out: 1.10 },
+  'deepseek:deepseek-reasoner':        { in: 0.55,  out: 2.19 },
 };
 
-function addCosts(inputTok, outputTok, model) {
-  const rates = MODEL_COSTS[model] || { in: 0.1, out: 0.3 };  // fallback ใช้ค่ากลาง ไม่เกินจริง
+function addCosts(inputTok, outputTok, model, provider) {
+  const prov = provider || getProvider();
+  const rates = MODEL_COSTS[prov + ':' + model] || MODEL_COSTS[model] || { in: 0.1, out: 0.3 };  // fallback ใช้ค่ากลาง ไม่เกินจริง
   const usd = (inputTok / 1e6 * rates.in) + (outputTok / 1e6 * rates.out);
   // ─ Global cost ─
   S.costs.tokens.input += inputTok;
@@ -613,6 +913,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const lastWs = await getLastWs();
   if (lastWs) await selectWorkspace(lastWs);
+  else renderProviderUI(); // ไม่มี workspace ก็ยังต้องมีรายการ provider/model ใน quick bar
 
   checkBackupReminderOnLoad();
 });
@@ -621,13 +922,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 function checkHealth() {
   const dot = document.getElementById('statusDot');
   const txt = document.getElementById('statusText');
-  const key = getApiKey();
-  if (key) {
+  const provName = getProvider();
+  const label = PROVIDERS[provName].label;
+  if (getApiKey(provName)) {
     dot.className = 'status-dot ok';
-    txt.textContent = 'API Key พร้อมใช้';
+    txt.textContent = `${label}: Key พร้อมใช้`;
   } else {
     dot.className = 'status-dot error';
-    txt.textContent = 'ยังไม่ได้ตั้ง API Key';
+    txt.textContent = `${label}: ยังไม่ได้ตั้ง Key`;
   }
 }
 
@@ -662,19 +964,22 @@ async function loadWorkspaceList() {
 }
 
 async function selectWorkspace(id) {
+  // ปิด reader + ยกเลิก prefetch ก่อนสลับ workspace (กันแปลข้ามเรื่อง)
+  if (typeof rState !== 'undefined' && rState.active) closeReader();
   const ws = await lsGetWorkspace(id);
   if (!ws) { showToast('ไม่พบ Workspace', 'error'); return; }
   S.currentWsId = id;
   S.currentWs = ws;
   S.glossaryData = ws.glossary || [];
   await setLastWs(id);
+  populateGlossaryTypeSelects(); // custom types ของ workspace นี้ (รวม filter)
 
   document.getElementById('noWsMsg').style.display = 'none';
   document.getElementById('wsContent').className = 'ws-content-visible';
   document.getElementById('wsNameHeader').textContent = `${ws.emoji || '📖'} ${ws.name}`;
 
-  const model = ws.settings?.translateModel || 'deepseek/deepseek-chat';
-  document.getElementById('translateModel').value = model;
+  renderProviderUI();
+  checkHealth();
 
   // Restore custom activeStyleId from workspace settings
   const savedStyle = ws.settings?.activeStyleId;
@@ -763,12 +1068,14 @@ function renderWsSettings() {
   document.getElementById('wsEditName').value = w.name || '';
   document.getElementById('wsEditDesc').value = w.description || '';
   document.getElementById('wsEditEmoji').value = w.emoji || '📖';
-  document.getElementById('wsTranslateModel').value = w.settings?.translateModel || 'deepseek/deepseek-chat';
+  renderProviderUI();
   const temp = w.settings?.temperature ?? 0.7;
   document.getElementById('wsTemp').value = temp;
   document.getElementById('wsTempVal').textContent = temp;
   const autoGlossary = w.settings?.autoGlossary !== false;
   document.getElementById('wsAutoGlossary').checked = autoGlossary;
+  const pcc = document.getElementById('wsPrevCtxChars');
+  if (pcc) pcc.value = w.settings?.prevCtxChars || 400;
   const presetSel = document.getElementById('wsPresetSelect');
   if (presetSel) presetSel.value = w.presetId || 'literary';
   // Context Memory settings
@@ -787,11 +1094,15 @@ async function saveWsSettings() {
   S.currentWs.name = document.getElementById('wsEditName').value.trim();
   S.currentWs.description = document.getElementById('wsEditDesc').value.trim();
   S.currentWs.emoji = document.getElementById('wsEditEmoji').value.trim() || '📖';
+  const wsModelVal = document.getElementById('wsTranslateModel').value;
   S.currentWs.settings = {
     ...(S.currentWs.settings || {}),
-    translateModel: document.getElementById('wsTranslateModel').value,
+    aiProvider: document.getElementById('wsProviderSelect')?.value || 'openrouter',
+    // '__custom__' ถูก resolve แล้วใน onModelChange — กันค่าหลุดมาที่นี่
+    ...(wsModelVal && wsModelVal !== '__custom__' ? { translateModel: wsModelVal } : {}),
     temperature: parseFloat(document.getElementById('wsTemp').value),
     autoGlossary: document.getElementById('wsAutoGlossary').checked,
+    prevCtxChars: Math.max(100, Math.min(4000, parseInt(document.getElementById('wsPrevCtxChars')?.value) || 400)),
   };
   const presetSel = document.getElementById('wsPresetSelect');
   if (presetSel) S.currentWs.presetId = presetSel.value || 'literary';
@@ -1248,9 +1559,12 @@ function renderChapters() {
           <div class="ch-meta">${ch.updatedAt ? new Date(ch.updatedAt).toLocaleDateString('th-TH') : ''} ${ch.wordCount ? `· ${ch.wordCount.toLocaleString()} ตัวอักษร` : ''}</div>
         </div>
         <div class="ch-status">
-          <span class="status-badge ${ch.status === 'translated' ? 'translated' : 'pending'}">
-            ${ch.status === 'translated' ? '✓ แปลแล้ว' : '○ รอแปล'}
+          <span class="status-badge ${ch.status === 'translated' ? 'translated' : ch.status === 'partial' ? 'partial' : 'pending'}">
+            ${ch.status === 'translated' ? '✓ แปลแล้ว'
+              : ch.status === 'partial' ? `◐ แปลค้าง${ch.chunkProgress?.chunks?.length ? ` (${ch.chunkProgress.chunks.length} chunk)` : ''}`
+              : '○ รอแปล'}
           </span>
+          ${!_bulkMode && ch.translation ? `<button class="ch-read-btn" onclick="event.stopPropagation();openReader('${ch.id}')" title="เปิดโหมดอ่าน">📖</button>` : ''}
         </div>
       </div>
     `).join('');
@@ -1433,6 +1747,12 @@ function loadChapterToTranslate() {
   if (!ch) return;
   document.getElementById('sourceText').value = ch.sourceText || '';
   updateSourceStats();
+  // มีงานแปลค้าง → ตั้ง chunk size เดิมให้เลย จะได้ resume ได้ทันทีตอนกดแปล
+  if (ch.chunkProgress?.chunkSize) {
+    const cs = document.getElementById('chunkSize');
+    if (cs) cs.value = ch.chunkProgress.chunkSize;
+    showToast(`มีงานแปลค้าง ${ch.chunkProgress.chunks?.length || 0} chunk — กดแปลเพื่อทำต่อ`, '');
+  }
   closeModal('modal-view-chapter');
   switchTab('translate');
   showToast(`โหลด "${ch.title}" แล้ว`, 'success');
@@ -1517,6 +1837,7 @@ function openAddGlossary() {
   S.editingGlossaryKorean = null;
   document.getElementById('glossaryModalTitle').textContent = '＋ เพิ่มคำศัพท์';
   ['gKorean','gThai','gNote'].forEach(id => document.getElementById(id).value = '');
+  populateGlossaryTypeSelects();
   document.getElementById('gType').value = 'term';
   document.getElementById('gGenderGroup').style.display = 'none';
   document.getElementById('gGender').value = '';
@@ -1532,7 +1853,8 @@ function editGlossaryEntry(korean) {
   document.getElementById('gKorean').value = entry.korean;
   document.getElementById('gKorean').readOnly = true;
   document.getElementById('gThai').value = entry.thai;
-  // Auto-add type if not in preset dropdown
+  populateGlossaryTypeSelects();
+  // Auto-add type if not in preset dropdown (legacy types ที่ยังไม่อยู่ใน customGlossaryTypes)
   ensureTypeInDropdown(entry.type);
   document.getElementById('gType').value = entry.type || 'term';
   document.getElementById('gNote').value = entry.note || '';
@@ -1548,6 +1870,11 @@ async function saveGlossaryEntry() {
   const thai = document.getElementById('gThai').value.trim();
   if (!korean || !thai) { showToast('กรอก Korean และ Thai ก่อน', 'error'); return; }
   const type = document.getElementById('gType').value;
+  if (type === '__newtype__') { showToast('เลือกประเภทก่อน', 'error'); return; }
+  // type ที่ไม่ใช่ preset → persist ลง workspace (เดิมหายตอน reload)
+  if (!PRESET_TYPES[type] && S.currentWs && !(S.currentWs.customGlossaryTypes || []).includes(type)) {
+    S.currentWs.customGlossaryTypes = [...(S.currentWs.customGlossaryTypes || []), type];
+  }
   const gender = type === 'character' ? document.getElementById('gGender').value : '';
   const entry = { korean, thai, type, note: document.getElementById('gNote').value.trim(), ...(gender ? { gender } : {}) };
   if (S.editingGlossaryKorean) {
@@ -1832,6 +2159,12 @@ async function previewStyle() {
 
 // ─── Translation Core (v10 — True Stream, Sequential) ───
 
+// ความยาว context จากตอน/chunk ก่อนหน้า (ตัวอักษร) — ตั้งได้ต่อ workspace, default 400
+function getPrevCtxChars() {
+  const v = parseInt(S.currentWs?.settings?.prevCtxChars);
+  return Math.max(100, Math.min(4000, v || 400));
+}
+
 function getOptions() {
   const styleId = document.getElementById('activeStyleSelect')?.value || S.activeStyleId;
   let customStylePrompt = null;
@@ -1863,7 +2196,7 @@ function getOptions() {
       const ctxText = srcType === 'source' ? prevCh.sourceText : prevCh.translation;
       if (ctxText?.trim()) {
         const label = srcType === 'source' ? 'PREVIOUS CHAPTER (Original)' : 'PREVIOUS CHAPTER (Thai Translation)';
-        const snippet = ctxText.trim().slice(-800);
+        const snippet = ctxText.trim().slice(-(getPrevCtxChars() * 2)); // ระดับตอนให้ context ยาวกว่า chunk 2 เท่า
         prevChapterContext = `${label} — last part:\n${snippet}\n`;
       }
     }
@@ -1879,67 +2212,6 @@ function getOptions() {
     wsGlossary,
     prevChapterContext,
   };
-}
-
-async function translateChapter() {
-  const rawContent = document.getElementById('rawInput').value.trim();
-  if (!rawContent) return showToast('กรุณาใส่เนื้อหาที่ต้องการแปล', 'error');
-
-  const activeStyle = BUILTIN_STYLES[S.activeStyleId];
-  const apiKey = localStorage.getItem('nt8_apikey');
-  if (!apiKey) return showToast('ไม่พบ API Key ในระบบ', 'error');
-
-  S.translating = true;
-  updateUI();
-  
-  const outBox = document.getElementById('translatedOutput');
-  outBox.innerHTML = ''; 
-  S.abortCtrl = new AbortController();
-
-  try {
-    // [V11 UPDATE] Smart Filtering: เลือกเฉพาะคำศัพท์ที่ปรากฏในเนื้อหาบทนี้
-    const relevantGlossary = getSmartGlossary(rawContent, S.glossaryData);
-    
-    let glossaryBlock = "";
-    if (relevantGlossary.length > 0) {
-      const PRONOUN_3RD = { male: '3rd→เขา/ของเขา', female: '3rd→เธอ/นาง/ของเธอ' };
-      const PRONOUN_1ST = { male: '1st→ผม/กู/ข้า', female: '1st→ฉัน/หนู/อิฉัน' };
-      glossaryBlock = "\n### REQUIRED GLOSSARY (ใช้คำแปลและสรรพนามตามนี้อย่างเคร่งครัด):\n" +
-        relevantGlossary.map(g => {
-          let line = `- ${g.korean} = ${g.thai}`;
-          if (g.type === 'character' && g.gender && g.gender !== 'neutral') {
-            line += ` | gender:${g.gender === 'male' ? 'male/ชาย' : 'female/หญิง'}`;
-            line += ` | ${PRONOUN_3RD[g.gender]} | ${PRONOUN_1ST[g.gender]}`;
-          }
-          if (g.note) line += ` [${g.note}]`;
-          return line;
-        }).join('\n') + "\n";
-    }
-
-    const systemPrompt = `${activeStyle.prompt}
-
-THAI PRONOUN RULES — CRITICAL: Male characters → 3rd: เขา/ของเขา, 1st: ผม/กู/ข้า. Female characters → 3rd: เธอ/นาง/ของเธอ, 1st: ฉัน/หนู. NEVER mix genders.
-${glossaryBlock}
-แปลจากเกาหลีเป็นไทยโดยรักษาสำนวนนิยายและความต่อเนื่องของสรรพนามตามเพศที่ระบุในคำศัพท์`;
-
-    // เรียกใช้ SSE Stream (ต้องมีฟังก์ชัน sseStream เดิมของคุณอยู่ในไฟล์)
-    await sseStream(apiKey, systemPrompt, rawContent, (chunk) => {
-      outBox.innerHTML += chunk; 
-    }, S.abortCtrl.signal);
-
-    showToast('แปลเสร็จสิ้น ✓', 'success');
-  } catch (err) {
-    if (err.name === 'AbortError') {
-      showToast('หยุดการแปลแล้ว', 'info');
-    } else {
-      console.error(err);
-      showToast('เกิดข้อผิดพลาดในการแปล', 'error');
-    }
-  } finally {
-    S.translating = false;
-    S.abortCtrl = null;
-    updateUI();
-  }
 }
 
 function splitText(text) {
@@ -1999,55 +2271,7 @@ function _mcGet(key) {
   return _memoryCache[key];
 }
 
-// ── True SSE streaming per segment ──
-// ── core SSE streaming helper ──
-async function sseStream(url, body, onChunk, onUsage, signal) {
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${getApiKey()}`,
-      'HTTP-Referer': location.origin,
-      'X-Title': 'NovelTrans v10 Pro',
-    },
-    body: JSON.stringify({ ...body, stream: true }),
-    signal,
-  });
-
-  if (!res.ok) {
-    const errData = await res.json().catch(() => ({}));
-    throw new Error(errData.error?.message || `HTTP ${res.status}`);
-  }
-
-  const reader = res.body.getReader();
-  const dec = new TextDecoder();
-  let buf = '', fullText = '', done = false;
-
-  while (!done) {
-    const { done: d, value } = await reader.read();
-    if (d) break;
-    buf += dec.decode(value, { stream: true });
-    const lines = buf.split('\n');
-    buf = lines.pop() ?? '';
-
-    for (const line of lines) {
-      if (!line.startsWith('data: ')) continue;
-      const raw = line.slice(6).trim();
-      if (raw === '[DONE]') { done = true; break; }
-      try {
-        const evt = JSON.parse(raw);
-        const delta = evt.choices?.[0]?.delta?.content;
-        if (delta) { fullText += delta; onChunk(delta); }
-        if (evt.usage) onUsage(evt.usage.prompt_tokens||0, evt.usage.completion_tokens||0);
-        // finish_reason = stop also means done
-        if (evt.choices?.[0]?.finish_reason === 'stop') { done = true; break; }
-      } catch {}
-    }
-  }
-  reader.cancel().catch(() => {});
-  return fullText;
-}
-
+// ── True SSE streaming per segment — ใช้ aiStream (provider-aware) ──
 async function streamSegment(text, contextSegs, options, onChunk, onDone) {
   const { model, temperature = 0.7, customStylePrompt, wsGlossary = {}, useMemory = true } = options;
   const cacheKey = text.slice(0, 120);
@@ -2073,13 +2297,12 @@ async function streamSegment(text, contextSegs, options, onChunk, onDone) {
 
   // AbortController with 120s timeout
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 120000);
+  const timer = setTimeout(() => ctrl.abort(), getTimeoutMs('chunk'));
 
   let inTok = 0, outTok = 0;
   let fullText = '';
   try {
-    fullText = await sseStream(
-      'https://openrouter.ai/api/v1/chat/completions',
+    fullText = await aiStream(
       { model, temperature, max_tokens: Math.max(2000, Math.ceil(text.length * 2)), messages: [{ role: 'user', content: prompt }] },
       onChunk,
       (i, o) => { inTok = i; outTok = o; },
@@ -2127,6 +2350,7 @@ async function startTranslation() {
   const rawText = document.getElementById('sourceText').value.trim();
   if (!rawText) { showToast('ใส่ข้อความก่อน', 'error'); return; }
   if (S.translating) return;
+  if (typeof rState !== 'undefined') readerCancelPrefetch(); // งาน manual มาก่อน prefetch
   // normalize Korean slang/jamo ก่อนส่ง AI (ไม่แก้ textarea)
   const text = prepareSourceForTranslation(rawText);
   const opts = getOptions();
@@ -2272,14 +2496,13 @@ async function translateAllStream(text) {
   try {
     let charCount = 0;
     S.abortCtrl = new AbortController();
-    const timer = setTimeout(() => S.abortCtrl.abort(), 180000);
+    const timer = setTimeout(() => S.abortCtrl.abort(), getTimeoutMs('full'));
 
     let inTok = 0, outTok = 0;
     let fullText = '';
 
     try {
-      fullText = await sseStream(
-        'https://openrouter.ai/api/v1/chat/completions',
+      fullText = await aiStream(
         { model: options.model, temperature: preset.temperature ?? options.temperature, max_tokens: Math.max(4000, Math.ceil(text.length * 2)), messages: [{ role: 'user', content: prompt }] },
         (delta) => {
           charCount += delta.length;
@@ -2380,6 +2603,11 @@ function splitByChunkSize(text, size) {
   return chunks.filter(c => c.trim());
 }
 
+// hash เบาๆ ไว้เช็คว่า source เดิมไหม (length + หัว/ท้าย 64 ตัวอักษร)
+function _chunkSrcHash(text) {
+  return text.length + ':' + text.slice(0, 64) + ':' + text.slice(-64);
+}
+
 async function translateChunked(text, options) {
   setTranslating(true);
   clearTranslation();
@@ -2394,16 +2622,47 @@ async function translateChunked(text, options) {
 
   const chunks = splitByChunkSize(text, options.chunkSize);
   const n = chunks.length;
-  showToast(`แบ่งเป็น ${n} chunk (${options.chunkSize} ตัวอักษร/chunk)`, '');
 
   const styleNote = options.customStylePrompt ? `STYLE GUIDE:\n${options.customStylePrompt}\n` : '';
   const key = getApiKey();
   if (!key) { showToast('ยังไม่ได้ตั้ง API Key', 'error'); setTranslating(false); showProgress(false); return; }
 
   let completedTranslations = [];
+  let startIdx = 0;
+
+  // ── Resume งานแปลค้าง: chapter เดิม + source/chunkSize ตรงกัน → แปลต่อจาก chunk ล่าสุด ──
+  const _srcHash = _chunkSrcHash(text);
+  if (S.editingChapterId && S.currentWs) {
+    const _rCh = S.currentWs.chapters?.find(ch => ch.id === S.editingChapterId);
+    const cp = _rCh?.chunkProgress;
+    if (cp && cp.srcHash === _srcHash && cp.chunkSize === options.chunkSize
+        && Array.isArray(cp.chunks) && cp.chunks.length > 0 && cp.chunks.length < n) {
+      if (confirm(`พบงานแปลค้างไว้ ${cp.chunks.length}/${n} chunk — แปลต่อจากเดิมเลยไหม?\n(ยกเลิก = เริ่มแปลใหม่ทั้งหมด)`)) {
+        completedTranslations = [...cp.chunks];
+        startIdx = cp.chunks.length;
+      }
+    }
+  }
+
+  showToast(startIdx > 0
+    ? `แปลต่อจาก chunk ${startIdx + 1}/${n} (${options.chunkSize} ตัวอักษร/chunk)`
+    : `แบ่งเป็น ${n} chunk (${options.chunkSize} ตัวอักษร/chunk)`, '');
+
+  // แสดง chunk ที่เสร็จค้างไว้แล้ว
+  for (let i = 0; i < startIdx; i++) {
+    const wrapEl = document.createElement('div');
+    wrapEl.className = 'translation-segment';
+    wrapEl.innerHTML = `<div class="segment-index"><span>chunk ${i + 1}/${n}</span><span class="seg-status cached">📦 ค้างไว้</span></div>`;
+    const txtEl = document.createElement('div');
+    txtEl.className = 'segment-text';
+    txtEl.style.whiteSpace = 'pre-wrap';
+    txtEl.textContent = completedTranslations[i];
+    wrapEl.appendChild(txtEl);
+    output.appendChild(wrapEl);
+  }
 
   try {
-    for (let i = 0; i < n; i++) {
+    for (let i = startIdx; i < n; i++) {
       const chunk = chunks[i];
       updateProgress(Math.round(i / n * 100), `chunk ${i+1}/${n} (${chunk.length} ตัวอักษร)`);
 
@@ -2449,7 +2708,7 @@ async function translateChunked(text, options) {
 
       // Build context from tail of previous translation only (ลด token)
       const prevTail = completedTranslations.length
-        ? completedTranslations[completedTranslations.length - 1].slice(-400)
+        ? completedTranslations[completedTranslations.length - 1].slice(-getPrevCtxChars())
         : '';
       const chunkCtx = prevTail ? `CONTEXT (ท้ายของ chunk ก่อนหน้า):\n${prevTail}\n` : '';
       const _baseCtx = (options.prevChapterContext && !completedTranslations.length)
@@ -2474,10 +2733,9 @@ async function translateChunked(text, options) {
       try {
         // ใช้ global abort + timeout 120s
         S.abortCtrl = new AbortController();
-        const timer = setTimeout(() => S.abortCtrl.abort(), 120000);
+        const timer = setTimeout(() => S.abortCtrl.abort(), getTimeoutMs('chunk'));
         try {
-          chunkFull = await sseStream(
-            'https://openrouter.ai/api/v1/chat/completions',
+          chunkFull = await aiStream(
             { model: options.model, temperature: chunkPreset.temperature ?? options.temperature, max_tokens: Math.max(2000, Math.ceil(chunk.length * 2)), messages: [{ role: 'user', content: prompt }] },
             (delta) => {
               chunkFull += delta;
@@ -2513,11 +2771,17 @@ async function translateChunked(text, options) {
         updateProgress(Math.round((i+1)/n*100), `chunk ${i+1}/${n} เสร็จ`);
 
         // Partial save: บันทึก chunk ที่เสร็จแล้วเข้า chapter ทันที (กัน data loss ถ้าหยุดกลางคัน)
+        // + chunkProgress สำหรับ resume — ลบทิ้งเมื่อแปลครบ
         if (S.editingChapterId && S.currentWs) {
           const _pCh = S.currentWs.chapters?.find(ch => ch.id === S.editingChapterId);
           if (_pCh) {
             _pCh.translation = completedTranslations.join('\n\n');
             _pCh.status = i + 1 < n ? 'partial' : 'translated';
+            if (i + 1 < n) {
+              _pCh.chunkProgress = { chunkSize: options.chunkSize, srcHash: _srcHash, chunks: [...completedTranslations], updatedAt: Date.now() };
+            } else {
+              delete _pCh.chunkProgress;
+            }
             _pCh.updatedAt = Date.now();
             lsSaveWorkspace(S.currentWs).catch(() => {});
           }
@@ -2623,26 +2887,66 @@ function hideHighlight() {
   document.getElementById('sourceText').style.display = 'block';
 }
 
-// ─── API Key Settings ───
-function saveApiKey() {
-  const key = document.getElementById('settingsApiKey').value.trim();
-  if (!key) return;
-  localStorage.setItem(LS_KEY_API, key);
-  closeModal('modal-settings');
-  checkHealth();
-  showToast('บันทึก API Key แล้ว ✓', 'success');
+// ─── API Key Settings (ต่อ provider) ───
+function openApiSettings() {
+  const c = document.getElementById('apiKeysContainer');
+  const active = getProvider();
+  c.innerHTML = Object.entries(PROVIDERS).map(([id, p]) => `
+    <div class="sf-group" style="border-bottom:1px solid var(--border);padding-bottom:10px;margin-bottom:10px">
+      <div class="sf-label">${p.label}${id === active ? ' <span style="color:var(--gold);font-size:0.68rem">← ใช้อยู่</span>' : ''}</div>
+      <input id="apiKey-${id}" type="password" class="text-input" placeholder="${p.keyPlaceholder}"/>
+      <div style="display:flex;align-items:center;gap:10px;margin-top:4px;flex-wrap:wrap">
+        <button class="btn-xs" onclick="testApiKey('${id}')">▶ ทดสอบ</button>
+        <span id="apiTestResult-${id}" style="font-size:0.72rem;color:var(--text-muted)">${p.keyHint}</span>
+      </div>
+    </div>`).join('');
+  c.innerHTML += `
+    <div class="sf-group" style="margin-top:4px">
+      <div class="sf-label">⏱ Timeout การเรียก AI (วินาที)</div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <input id="apiTimeoutSec" type="number" class="text-input" style="width:90px" min="20" max="900" step="10"/>
+        <span style="font-size:0.72rem;color:var(--text-muted)">default 120 — โมเดลช้า/ตอนยาวให้เพิ่ม (ทั้งตอนได้เวลา 1.5 เท่า)</span>
+      </div>
+    </div>`;
+  // เติมค่า key เดิมผ่าน .value (เลี่ยงปัญหา escape ใน attribute)
+  for (const [id, p] of Object.entries(PROVIDERS)) {
+    const el = document.getElementById('apiKey-' + id);
+    if (el) el.value = localStorage.getItem(p.lsKey) || '';
+  }
+  document.getElementById('apiTimeoutSec').value = parseInt(localStorage.getItem('nt8_timeout_s')) || 120;
+  openModal('modal-settings');
 }
 
-async function testApiKey() {
-  const key = document.getElementById('settingsApiKey').value.trim();
-  const result = document.getElementById('apiTestResult');
+function saveApiKey() {
+  let saved = 0;
+  for (const [id, p] of Object.entries(PROVIDERS)) {
+    const el = document.getElementById('apiKey-' + id);
+    if (!el) continue;
+    const v = el.value.trim();
+    if (v) { localStorage.setItem(p.lsKey, v); saved++; }
+    else localStorage.removeItem(p.lsKey);
+  }
+  const tSec = Math.max(20, Math.min(900, parseInt(document.getElementById('apiTimeoutSec')?.value) || 120));
+  localStorage.setItem('nt8_timeout_s', String(tSec));
+  closeModal('modal-settings');
+  checkHealth();
+  renderProviderUI();
+  showToast(`บันทึก API Key แล้ว ✓ (${saved} provider)`, 'success');
+}
+
+async function testApiKey(provId) {
+  const p = PROVIDERS[provId];
+  if (!p) return;
+  const key = document.getElementById('apiKey-' + provId)?.value.trim();
+  const result = document.getElementById('apiTestResult-' + provId);
   if (!key) { result.textContent = '⚠ ใส่ key ก่อน'; result.style.color = 'var(--gold)'; return; }
   result.textContent = 'กำลังทดสอบ...'; result.style.color = 'var(--text-muted)';
   try {
-    const res = await fetch('https://openrouter.ai/api/v1/models', { headers: { 'Authorization': `Bearer ${key}` } });
+    const t = p.testEndpoint(key);
+    const res = await fetch(t.url, { headers: t.headers });
     if (res.ok) { result.textContent = '✓ Key ใช้งานได้'; result.style.color = '#4caf50'; }
-    else { result.textContent = '✗ Key ไม่ถูกต้อง'; result.style.color = 'var(--crimson-light)'; }
-  } catch { result.textContent = '✗ ทดสอบไม่สำเร็จ'; result.style.color = 'var(--crimson-light)'; }
+    else { result.textContent = `✗ Key ไม่ถูกต้อง (HTTP ${res.status})`; result.style.color = 'var(--crimson-light)'; }
+  } catch { result.textContent = '✗ ทดสอบไม่สำเร็จ (เครือข่าย/CORS)'; result.style.color = 'var(--crimson-light)'; }
 }
 
 // ─── Cost Tracker ───
@@ -2727,6 +3031,7 @@ function openAutoGlossary() {
   _agTab = 'manual';
   agSwitchTab('manual');
   agRenderChapterList();
+  renderModelSelect(document.getElementById('agModel'), getProvider(), document.getElementById('translateModel')?.value, false);
   openModal('modal-autoglossary');
 }
 
@@ -3906,7 +4211,8 @@ function openBatchChapters() {
       <span style="font-size:0.68rem;color:var(--text-muted)">${ch.sourceText?ch.sourceText.length.toLocaleString()+' ตัวอักษร':'&#8212;'}</span>
     </label>
   `).join('');
-  document.getElementById('bchModel').value = document.getElementById('translateModel').value;
+  // populate รายการโมเดลตาม provider ปัจจุบัน (ไม่มีตัวเลือกกำหนดเอง — เลือกจาก quick bar แทน)
+  renderModelSelect(document.getElementById('bchModel'), getProvider(), document.getElementById('translateModel').value, false);
   document.getElementById('bchProgressBox').style.display = 'none';
   document.getElementById('bchLog').innerHTML = '';
   document.getElementById('bchStartBtn').disabled = false;
@@ -4018,7 +4324,7 @@ async function startBatchChapters() {
           _summaryCache[prevCh.id] = res.choices?.[0]?.message?.content?.trim() || '';
         } catch {
           // fallback: ท้าย 600 ตัวอักษร — mark ด้วย key พิเศษ
-          _summaryCache[prevCh.id] = '__fallback__' + prevCh.translation.trim().slice(-600);
+          _summaryCache[prevCh.id] = '__fallback__' + prevCh.translation.trim().slice(-Math.round(getPrevCtxChars() * 1.5));
         }
         doneSum++;
         document.getElementById('bchProgressLabel').textContent = `[เฟส 1/2] สรุปบริบท ${doneSum}/${toSummarize.length} ตอน...`;
@@ -4076,11 +4382,10 @@ async function startBatchChapters() {
         ws: S.currentWs,
       });
       S.abortCtrl = new AbortController();
-      const timer = setTimeout(() => S.abortCtrl.abort(), 180000);
+      const timer = setTimeout(() => S.abortCtrl.abort(), getTimeoutMs('full'));
       let fullText = '', inTok = 0, outTok = 0;
       try {
-        fullText = await sseStream(
-          'https://openrouter.ai/api/v1/chat/completions',
+        fullText = await aiStream(
           { model, temperature: batchPreset.temperature ?? 0.65, max_tokens: Math.max(4000, Math.ceil(ch.sourceText.length * 2)), messages: [{role:'user',content:prompt}] },
           d => { fullText += d; }, (inp,out) => { inTok=inp; outTok=out; }, S.abortCtrl.signal
         );
@@ -4379,6 +4684,10 @@ async function parseEpub(file) {
 
 // Minimal ZIP reader for EPUB (no external lib)
 async function loadZip(arrayBuffer) {
+  // WebView เก่า (Termux/Android รุ่นเก่า) ไม่มี DecompressionStream — บอกตรงๆ ดีกว่าพังเงียบ
+  if (typeof DecompressionStream === 'undefined') {
+    throw new Error('เบราว์เซอร์นี้ไม่รองรับการแตกไฟล์ ZIP (ต้องใช้ Chrome/WebView เวอร์ชัน 80+)');
+  }
   // Use JSZip-like approach via DataView
   const bytes = new Uint8Array(arrayBuffer);
   const decoder = new TextDecoder('utf-8', { fatal: false });
@@ -4386,14 +4695,23 @@ async function loadZip(arrayBuffer) {
   function readUint16(offset) { return bytes[offset] | (bytes[offset+1] << 8); }
   function readUint32(offset) { return bytes[offset] | (bytes[offset+1]<<8) | (bytes[offset+2]<<16) | (bytes[offset+3]<<24); }
 
-  // Find End of Central Directory
+  // Find End of Central Directory — สแกนเฉพาะท้ายไฟล์ตามสเปก (EOCD + comment สูงสุด 65,557 bytes)
   let eocdOffset = -1;
-  for (let i = bytes.length - 22; i >= 0; i--) {
+  const scanFloor = Math.max(0, bytes.length - 65557);
+  for (let i = bytes.length - 22; i >= scanFloor; i--) {
     if (bytes[i]===0x50 && bytes[i+1]===0x4B && bytes[i+2]===0x05 && bytes[i+3]===0x06) {
       eocdOffset = i; break;
     }
   }
-  if (eocdOffset < 0) return null;
+  if (eocdOffset < 0) {
+    // แยกเคส ZIP64 ให้ข้อความชัด
+    for (let i = bytes.length - 56; i >= scanFloor; i--) {
+      if (bytes[i]===0x50 && bytes[i+1]===0x4B && bytes[i+2]===0x06 && bytes[i+3]===0x06) {
+        throw new Error('ไฟล์ EPUB ใช้รูปแบบ ZIP64 ซึ่งยังไม่รองรับ (ไฟล์ใหญ่เกิน 4GB?)');
+      }
+    }
+    throw new Error('ไม่ใช่ไฟล์ ZIP/EPUB ที่ถูกต้อง หรือไฟล์เสียหาย/ถูกตัดท้าย');
+  }
 
   const cdOffset = readUint32(eocdOffset + 16);
   const cdEntries = readUint16(eocdOffset + 8);
@@ -4423,6 +4741,7 @@ async function loadZip(arrayBuffer) {
     const fnLen2 = readUint16(lPos + 26);
     const extraLen2 = readUint16(lPos + 28);
     lPos += 30 + fnLen2 + extraLen2;
+    if (lPos + entry.compSize > bytes.length) return null; // entry ชี้เกินไฟล์ — ไฟล์ถูกตัดท้าย
     const compData = bytes.slice(lPos, lPos + entry.compSize);
     let result;
     if (entry.compression === 0) {
@@ -4889,22 +5208,51 @@ function ensureTypeInDropdown(type) {
   }
 }
 
-// Also refresh the glossaryTypeFilter with any custom types from current glossary
+// Rebuild glossaryTypeFilter จาก preset + custom types ของ workspace + types ใน glossary
+// (rebuild ทุกครั้ง — กัน option ค้างข้าม workspace)
 function refreshTypeFilter() {
   const sel = document.getElementById('glossaryTypeFilter');
-  if (!sel || !S.glossaryData) return;
-  const existing = new Set([...sel.options].map(o => o.value));
-  S.glossaryData.forEach(g => {
-    const t = g.type?.trim();
-    if (t && !existing.has(t)) {
-      const opt = document.createElement('option');
-      opt.value = t;
-      opt.textContent = t;
-      sel.appendChild(opt);
-      existing.add(t);
-    }
-  });
+  if (!sel) return;
+  const cur = sel.value;
+  const types = new Set([...Object.keys(PRESET_TYPES), ...(S.currentWs?.customGlossaryTypes || [])]);
+  (S.glossaryData || []).forEach(g => { const t = g.type?.trim(); if (t) types.add(t); });
+  sel.innerHTML = '<option value="">ทุกประเภท</option>' +
+    [...types].map(t => `<option value="${esc(t)}">${PRESET_TYPES[t] || t}</option>`).join('');
+  if (cur && [...sel.options].some(o => o.value === cur)) sel.value = cur;
 }
+
+// Rebuild gType select: preset + custom types (persist ใน ws.customGlossaryTypes) + ตัวเลือกเพิ่มประเภทใหม่
+function populateGlossaryTypeSelects() {
+  const sel = document.getElementById('gType');
+  if (sel) {
+    const cur = sel.value;
+    const customs = S.currentWs?.customGlossaryTypes || [];
+    sel.innerHTML =
+      Object.entries(PRESET_TYPES).map(([v, label]) => `<option value="${v}">${label}</option>`).join('') +
+      customs.map(t => `<option value="${esc(t)}">${esc(t)} (custom)</option>`).join('') +
+      `<option value="__newtype__">＋ ประเภทใหม่…</option>`;
+    sel.value = (cur && [...sel.options].some(o => o.value === cur)) ? cur : 'term';
+  }
+  refreshTypeFilter();
+}
+
+// "＋ ประเภทใหม่…" — ถามชื่อ บันทึกเข้า workspace แล้วเลือกให้เลย
+(function initCustomTypeOption() {
+  const sel = document.getElementById('gType');
+  if (!sel) return;
+  sel.addEventListener('change', function () {
+    if (this.value !== '__newtype__') return;
+    const v = (prompt('ชื่อประเภทใหม่ (สั้นๆ เช่น ยานพาหนะ):') || '').trim();
+    if (!v) { this.value = 'term'; return; }
+    if (S.currentWs) {
+      S.currentWs.customGlossaryTypes = [...new Set([...(S.currentWs.customGlossaryTypes || []), v])];
+      lsSaveWorkspace(S.currentWs).catch(() => {});
+    }
+    populateGlossaryTypeSelects();
+    this.value = v;
+    document.getElementById('gGenderGroup').style.display = 'none';
+  });
+})();
 
 // Get CSS class for any type (preset or custom)
 function getTagClass(type) {
@@ -6350,19 +6698,29 @@ function marathonUpdateUI() {
   if (stopBtn)  stopBtn.disabled = !mState.running;
 }
 
-async function marathonTranslateChapter(ch) {
-  const ws  = S.currentWs;
-  const cfg = marathonGetConfig();
-  const presetBase = PRESETS[cfg.presetId] || PRESETS.literary;
-  const custom     = ws.customPresets?.[cfg.presetId];
+// ─── Shared Translation Core ───
+// แปล 1 ตอนแบบ headless (glossary → prompt → stream → polish → save → auto-glossary → ctx summary)
+// ใช้ร่วมกันระหว่าง Marathon และ Reader prefetch
+// awaitGlossary: true → รอ auto-glossary + context summary เสร็จก่อน resolve
+//   (จำเป็นสำหรับ prefetch แบบเรียงตอน — ตอน N+1 ต้องเห็นศัพท์/บริบทจากตอน N)
+async function translateChapterCore(ch, {
+  presetId = S.currentWs?.presetId ?? 'literary',
+  model = null,
+  signal = null,
+  onDelta = null,
+  awaitGlossary = false,
+} = {}) {
+  const ws = S.currentWs;
+  const presetBase = PRESETS[presetId] || PRESETS.literary;
+  const custom     = ws.customPresets?.[presetId];
   const systemPrompt = custom?.systemPrompt || presetBase.systemPrompt;
   const temperature  = custom?.temperature  ?? presetBase.temperature;
-  const model = ws.settings?.translateModel || document.getElementById('translateModel')?.value || 'google/gemini-2.5-flash';
+  const useModel = model || ws.settings?.translateModel || document.getElementById('translateModel')?.value || 'google/gemini-2.5-flash';
 
   const smartGloss  = getSmartGlossary(ch.sourceText, S.glossaryData);
   const glossObj    = smartGloss.reduce(function(a, g) { a[g.korean] = { thai: g.thai, type: g.type, note: g.note, gender: g.gender }; return a; }, {});
   const glossaryStr = buildGlossaryStr(glossObj);
-  const mtlDraft    = cfg.presetId === 'mtlFix' ? (ch.translation || '') : '';
+  const mtlDraft    = presetId === 'mtlFix' ? (ch.translation || '') : '';
 
   const prompt = systemPrompt
     .replace('{style_note}', '')
@@ -6371,21 +6729,28 @@ async function marathonTranslateChapter(ch) {
     .replace('{text}',       prepareSourceForTranslation(ch.sourceText))
     .replace('{mtl_draft}',  mtlDraft || '(ไม่มี MTL draft)');
 
-  const ctrl = new AbortController();
-  if (mState.slots[ch.id]) mState.slots[ch.id].ctrl = ctrl;
+  // timeout ภายใน + เคารพ signal จาก caller (เดิม path Marathon ไม่มี timeout เลย — slot ค้างได้)
+  const _ctrl = new AbortController();
+  const _onAbort = () => _ctrl.abort();
+  if (signal) {
+    if (signal.aborted) _ctrl.abort();
+    else signal.addEventListener('abort', _onAbort, { once: true });
+  }
+  const _timer = setTimeout(() => _ctrl.abort(), getTimeoutMs('full'));
 
   let inTok = 0, outTok = 0;
   let fullText = '';
   try {
-    fullText = await sseStream(
-      'https://openrouter.ai/api/v1/chat/completions',
-      { model: model, temperature: temperature, max_tokens: Math.max(16000, Math.ceil(ch.sourceText.length * 4)), messages: [{ role: 'user', content: prompt }] },
-      function() {},
+    fullText = await aiStream(
+      { model: useModel, temperature: temperature, max_tokens: Math.max(16000, Math.ceil(ch.sourceText.length * 4)), messages: [{ role: 'user', content: prompt }] },
+      onDelta || function() {},
       function(i, o) { inTok = i; outTok = o; },
-      ctrl.signal
+      _ctrl.signal
     );
   } finally {
-    if (inTok || outTok) addCosts(inTok, outTok, model);
+    clearTimeout(_timer);
+    if (signal) signal.removeEventListener('abort', _onAbort);
+    if (inTok || outTok) addCosts(inTok, outTok, useModel);
   }
 
   if (!fullText || !fullText.trim()) throw new Error('AI ส่งผลลัพธ์ว่าง');
@@ -6393,7 +6758,7 @@ async function marathonTranslateChapter(ch) {
   if (presetBase.polish) {
     try {
       const pr = await callOpenRouter({
-        model: model,
+        model: useModel,
         messages: [{ role: 'user', content: POLISH_PROMPT.replace('{glossary}', glossaryStr).replace('{text}', fullText) }],
         temperature: 0.5,
         max_tokens: Math.max(3000, Math.ceil(fullText.length * 1.2)),
@@ -6407,9 +6772,24 @@ async function marathonTranslateChapter(ch) {
   ch.wordCount   = fullText.length;
   ch.updatedAt   = Date.now();
   await lsSaveWorkspace(ws);
-  autoExtractGlossaryAfterTranslation(ch.sourceText, model, { id: ch.id, title: ch.title, chapterNum: ch.chapterNum }, fullText);
-  // Context Memory: generate summary (non-blocking — ไม่ block chapter ถัดไป)
-  ctxAddSummary(ws, ch.id, ch.chapterNum, ch.title, fullText).catch(e => console.warn('[CTX]', e));
+
+  // auto-glossary จับ error ภายในตัวเองอยู่แล้ว / ctx summary อาจ throw → catch เสมอ
+  const glossP = autoExtractGlossaryAfterTranslation(ch.sourceText, useModel, { id: ch.id, title: ch.title, chapterNum: ch.chapterNum }, fullText);
+  const ctxP   = ctxAddSummary(ws, ch.id, ch.chapterNum, ch.title, fullText);
+  if (awaitGlossary) {
+    await glossP;
+    await ctxP.catch(e => console.warn('[CTX]', e));
+  } else {
+    ctxP.catch(e => console.warn('[CTX]', e));
+  }
+  return fullText;
+}
+
+async function marathonTranslateChapter(ch) {
+  const cfg  = marathonGetConfig();
+  const ctrl = new AbortController();
+  if (mState.slots[ch.id]) mState.slots[ch.id].ctrl = ctrl;
+  const fullText = await translateChapterCore(ch, { presetId: cfg.presetId, signal: ctrl.signal });
   return fullText.length;
 }
 
@@ -6471,6 +6851,8 @@ async function marathonStart() {
   if (mState.running)                      return;
   if (!getApiKey())                        { showToast('ยังไม่ได้ตั้ง API Key', 'error'); return; }
   if (!S.currentWs.marathonQueue?.length) { showToast('Queue ว่าง — กด "+ ทุกตอนที่ยังไม่แปล" ก่อน', 'error'); return; }
+
+  if (typeof rState !== 'undefined') readerCancelPrefetch(); // Marathon มาก่อน prefetch
 
   if (!Array.isArray(S.currentWs.marathonQueue)) S.currentWs.marathonQueue = [];
   marathonSyncStats();
@@ -6634,4 +7016,432 @@ async function resetPresetToDefault() {
   await lsSaveWorkspace(S.currentWs);
   loadPresetForEdit();
   showToast('คืนค่าเดิมแล้ว', '');
+}
+
+// ═══════════════════════════════════════════════
+// ─── Reader Mode ────────────────────────────────
+// ═══════════════════════════════════════════════
+// อ่านเต็มจอ + จำตำแหน่ง/ตั้งค่าต่อ workspace — ธีม reader แยกจากธีมแอพ
+
+const READER_DEFAULTS = { fontSize: 19, lineHeight: 1.9, theme: 'sepia', prefetchCount: 1 };
+
+const rState = {
+  active: false,
+  chapterId: null,
+  _scrollTimer: null,
+  _pushedHistory: false,
+  _navIdx: 0,
+  _navTotal: 0,
+  prefetch: { state: 'IDLE', ctrl: null, chapterId: null, retries: 0 },
+};
+
+function readerGetSettings() {
+  return { ...READER_DEFAULTS, ...(S.currentWs?.readerSettings || {}) };
+}
+
+function openReader(chId) {
+  const ch = S.currentWs?.chapters?.find(c => c.id === chId);
+  if (!ch) { showToast('ไม่พบตอน', 'error'); return; }
+  rState.active = true;
+  rState.chapterId = chId;
+  document.getElementById('readerOverlay').style.display = 'flex';
+  readerApplySettings();
+  readerRenderChapter(ch);
+  // คืนตำแหน่ง scroll เฉพาะตอนที่บันทึกไว้ล่าสุด
+  const pos = S.currentWs.readerPosition;
+  const scroller = document.getElementById('readerScroll');
+  requestAnimationFrame(() => {
+    const denom = scroller.scrollHeight - scroller.clientHeight;
+    scroller.scrollTop = (pos && pos.chapterId === chId && pos.scrollPct && denom > 0)
+      ? pos.scrollPct * denom : 0;
+    readerUpdateProgress();
+  });
+  if (!rState._pushedHistory) {
+    try { history.pushState({ ntReader: true }, ''); rState._pushedHistory = true; } catch {}
+  }
+  readerSavePosition(true);
+  readerKickPrefetch();
+}
+
+function openReaderResume() {
+  const ws = S.currentWs;
+  if (!ws) { showToast('เลือก Workspace ก่อน', 'error'); return; }
+  const pos = ws.readerPosition;
+  let ch = pos ? ws.chapters?.find(c => c.id === pos.chapterId) : null;
+  if (!ch) ch = _getSortedChapters()[0];
+  if (!ch) { showToast('ยังไม่มีตอนใน Workspace นี้', 'error'); return; }
+  openReader(ch.id);
+}
+
+function openReaderFromModal() {
+  const id = S.editingChapterId;
+  closeModal('modal-view-chapter');
+  if (id) openReader(id);
+}
+
+function closeReader(fromPopstate = false) {
+  if (!rState.active) return;
+  readerSavePosition(true);
+  readerCancelPrefetch();
+  rState.active = false;
+  document.getElementById('readerOverlay').style.display = 'none';
+  if (rState._pushedHistory && !fromPopstate) { try { history.back(); } catch {} }
+  rState._pushedHistory = false;
+  if (S.currentTab === 'chapters') renderChapters();
+}
+
+function readerRenderChapter(ch) {
+  rState.chapterId = ch.id;
+  document.getElementById('readerChTitle').textContent = `#${ch.chapterNum || '?'} ${ch.title || ''}`;
+  const el = document.getElementById('readerContent');
+  if (ch.translation?.trim()) {
+    el.innerHTML = `<h2 class="reader-h2">${esc(ch.title || '')}</h2>` +
+      ch.translation.split(/\n+/).map(p => p.trim()).filter(Boolean)
+        .map(p => `<p>${esc(p)}</p>`).join('');
+  } else {
+    el.innerHTML = `<div class="reader-empty">
+      <div style="font-size:2rem">📖</div>
+      <div>ตอนนี้ยังไม่ได้แปล</div>
+      ${ch.sourceText?.trim()
+        ? `<button class="reader-nav-btn" style="font-size:0.9rem" onclick="readerTranslateCurrent()">⚡ แปลตอนนี้</button>`
+        : `<div style="font-size:0.8rem">ไม่มีต้นฉบับ — เพิ่มต้นฉบับในแท็บ "ตอน" ก่อน</div>`}
+    </div>`;
+  }
+  readerUpdateNav();
+}
+
+function readerUpdateNav() {
+  const sorted = _getSortedChapters();
+  const idx = sorted.findIndex(c => c.id === rState.chapterId);
+  rState._navIdx = idx;
+  rState._navTotal = sorted.length;
+  const prev = document.getElementById('readerPrevBtn');
+  const next = document.getElementById('readerNextBtn');
+  if (prev) prev.disabled = idx <= 0;
+  if (next) next.disabled = idx >= sorted.length - 1;
+  readerUpdateProgress();
+}
+
+function readerUpdateProgress() {
+  const scroller = document.getElementById('readerScroll');
+  const label = document.getElementById('readerProgressLabel');
+  if (!scroller || !label) return;
+  const denom = scroller.scrollHeight - scroller.clientHeight;
+  const pct = denom > 0 ? Math.min(100, Math.round(scroller.scrollTop / denom * 100)) : 100;
+  label.textContent = rState._navTotal
+    ? `ตอน ${rState._navIdx + 1}/${rState._navTotal} · ${pct}%` : '';
+}
+
+function readerNav(dir) {
+  const sorted = _getSortedChapters();
+  const idx = sorted.findIndex(c => c.id === rState.chapterId);
+  const next = sorted[idx + dir];
+  if (!next) return;
+  readerRenderChapter(next);
+  document.getElementById('readerScroll').scrollTop = 0;
+  readerSavePosition(true);
+  readerKickPrefetch();
+}
+
+// debounce 2s ระหว่าง scroll / ทันทีเมื่อ immediate (ปิด reader, เปลี่ยนตอน)
+function readerSavePosition(immediate = false) {
+  if (!S.currentWs || !rState.chapterId) return;
+  const scroller = document.getElementById('readerScroll');
+  const denom = scroller.scrollHeight - scroller.clientHeight;
+  S.currentWs.readerPosition = {
+    chapterId: rState.chapterId,
+    scrollPct: denom > 0 ? Math.min(1, scroller.scrollTop / denom) : 0,
+    updatedAt: Date.now(),
+  };
+  clearTimeout(rState._scrollTimer);
+  if (immediate) lsSaveWorkspace(S.currentWs).catch(() => {});
+  else rState._scrollTimer = setTimeout(() => lsSaveWorkspace(S.currentWs).catch(() => {}), 2000);
+}
+
+// ── Reader settings ──
+function readerToggleSettings() {
+  const bar = document.getElementById('readerSettingsBar');
+  bar.style.display = bar.style.display === 'none' ? 'flex' : 'none';
+}
+
+function readerSaveSettings(patch) {
+  if (!S.currentWs) return;
+  S.currentWs.readerSettings = { ...readerGetSettings(), ...patch };
+  readerApplySettings();
+  lsSaveWorkspace(S.currentWs).catch(() => {});
+}
+
+function readerSetFontSize(delta) {
+  const cur = readerGetSettings().fontSize;
+  readerSaveSettings({ fontSize: Math.min(28, Math.max(16, cur + delta)) });
+}
+function readerSetLineHeight(v) { readerSaveSettings({ lineHeight: parseFloat(v) || READER_DEFAULTS.lineHeight }); }
+function readerSetTheme(t) { readerSaveSettings({ theme: ['light','sepia','dark'].includes(t) ? t : 'sepia' }); }
+function readerSetPrefetchCount(v) {
+  readerSaveSettings({ prefetchCount: Math.min(2, Math.max(0, parseInt(v) || 0)) });
+  readerKickPrefetch();
+}
+
+function readerApplySettings() {
+  const s = readerGetSettings();
+  const ov = document.getElementById('readerOverlay');
+  ov.classList.remove('reader-theme-light', 'reader-theme-sepia', 'reader-theme-dark');
+  ov.classList.add('reader-theme-' + s.theme);
+  const content = document.getElementById('readerContent');
+  content.style.fontSize = s.fontSize + 'px';
+  content.style.lineHeight = s.lineHeight;
+  document.getElementById('readerFontSizeVal').textContent = s.fontSize;
+  document.getElementById('readerLineHeight').value = String(s.lineHeight);
+  document.getElementById('readerPrefetchCount').value = String(s.prefetchCount);
+  document.querySelectorAll('.reader-theme-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.theme === s.theme));
+}
+
+// ── Reader Prefetch ──
+// แปลตอนถัดไปล่วงหน้า "ทีละตอนเรียงลำดับ" เสมอ — auto-glossary + context summary
+// ของตอน N ต้องเสร็จก่อนเริ่มตอน N+1 (awaitGlossary:true) ไม่งั้นความต่อเนื่องพัง
+// กติการ่วม: ระบบแปลทำงานพร้อมกันได้ทีละราย (manual/batch/marathon/prefetch) — prefetch ยอมถอยเสมอ
+
+function readerSetChip(text) {
+  const chip = document.getElementById('readerPrefetchChip');
+  if (!chip) return;
+  chip.textContent = text;
+  chip.style.display = text ? '' : 'none';
+}
+
+function readerPickPrefetchTarget() {
+  const count = readerGetSettings().prefetchCount;
+  if (!count) return null;
+  const sorted = _getSortedChapters();
+  const idx = sorted.findIndex(c => c.id === rState.chapterId);
+  if (idx < 0) return null;
+  const queued = new Set(S.currentWs?.marathonQueue || []);
+  for (let i = idx + 1; i <= idx + count && i < sorted.length; i++) {
+    const ch = sorted[i];
+    if (ch.status === 'translated') continue;
+    if (!ch.sourceText?.trim()) continue;
+    if (queued.has(ch.id) || mState.slots[ch.id]) continue; // อยู่ในมือ Marathon — ไม่แปลซ้ำ
+    return ch;
+  }
+  return null;
+}
+
+function readerKickPrefetch() {
+  if (!rState.active) return;
+  if (rState.prefetch.state !== 'IDLE') return; // worker เดียวเสมอ
+  readerPrefetchWorker();
+}
+
+async function readerPrefetchWorker() {
+  const pf = rState.prefetch;
+  pf.state = 'SCANNING';
+  pf.retries = 0;
+  try {
+    while (rState.active) {
+      if (S.translating || mState.running) break;       // งานอื่นมาก่อน — prefetch ถอย
+      if (!getApiKey()) break;
+      const ch = readerPickPrefetchTarget();
+      if (!ch) break;
+      if (marathonIsDailyLimitReached()) {
+        readerSetChip('⏸ ถึงขีดจำกัดรายวัน — งดแปลล่วงหน้า');
+        break;
+      }
+      pf.chapterId = ch.id;
+      pf.ctrl = new AbortController();
+      pf.state = 'TRANSLATING';
+      let chars = 0;
+      readerSetChip(`⚡ กำลังแปลตอนถัดไป #${ch.chapterNum || '?'}…`);
+      try {
+        await translateChapterCore(ch, {
+          signal: pf.ctrl.signal,
+          awaitGlossary: true,
+          onDelta: d => {
+            chars += d.length;
+            readerSetChip(`⚡ กำลังแปลตอนถัดไป #${ch.chapterNum || '?'}… ${chars.toLocaleString()} ตัว`);
+          },
+        });
+        pf.retries = 0;
+        readerSetChip(`✓ #${ch.chapterNum || '?'} พร้อมอ่าน · รวม ${fmtUSD(S.costs.costUSD)}`);
+        // นับรวมสถิติรายวันเดียวกับ Marathon (เพดานเดียวกัน)
+        marathonSyncStats();
+        mState.completedToday++;
+        if (S.currentWs?.marathonStats) {
+          S.currentWs.marathonStats.completedToday = mState.completedToday;
+          lsSaveWorkspace(S.currentWs).catch(() => {});
+        }
+        readerUpdateNav();
+        if (S.currentTab === 'chapters') renderChapters();
+      } catch (err) {
+        if (err.name === 'AbortError' || !rState.active) { readerSetChip(''); break; }
+        pf.retries++;
+        if (pf.retries > 2) {
+          readerSetChip(`✗ แปลล่วงหน้าไม่สำเร็จ: ${err.message}`);
+          break;
+        }
+        readerSetChip(`↻ แปล #${ch.chapterNum || '?'} ไม่สำเร็จ — ลองใหม่ (${pf.retries}/2)…`);
+        await new Promise(r => setTimeout(r, 2500 * pf.retries));
+      } finally {
+        pf.ctrl = null;
+        pf.chapterId = null;
+      }
+      pf.state = 'SCANNING';
+    }
+  } finally {
+    pf.state = 'IDLE';
+    pf.ctrl = null;
+    pf.chapterId = null;
+  }
+}
+
+// ยกเลิก: แค่ abort — worker จะจัดการ state ของตัวเองใน finally (กัน worker ซ้อน)
+function readerCancelPrefetch() {
+  if (rState.prefetch.ctrl) { try { rState.prefetch.ctrl.abort(); } catch {} }
+  readerSetChip('');
+}
+
+// แปลตอนที่กำลังเปิดอ่าน — stream สดให้อ่านไประหว่างแปล
+async function readerTranslateCurrent() {
+  const ch = S.currentWs?.chapters?.find(c => c.id === rState.chapterId);
+  if (!ch || !ch.sourceText?.trim()) return;
+  if (!getApiKey()) { showToast('ยังไม่ได้ตั้ง API Key — ไปที่ ⚙ ตั้งค่า', 'error'); return; }
+  if (S.translating || mState.running) { showToast('มีงานแปลอื่นทำงานอยู่ — รอสักครู่แล้วลองใหม่', 'error'); return; }
+  if (rState.prefetch.state === 'TRANSLATING') readerCancelPrefetch();
+
+  const el = document.getElementById('readerContent');
+  el.innerHTML = `<h2 class="reader-h2">${esc(ch.title || '')}</h2>
+    <div style="text-align:center;margin-bottom:1.2em">
+      <button class="reader-nav-btn" onclick="readerCancelCurrentTranslate()">⬛ หยุดแปล</button>
+    </div>
+    <div id="readerLiveText" style="white-space:pre-wrap"></div>`;
+  const live = document.getElementById('readerLiveText');
+  const scroller = document.getElementById('readerScroll');
+
+  rState.prefetch.state = 'TRANSLATING';
+  rState.prefetch.chapterId = ch.id;
+  rState.prefetch.ctrl = new AbortController();
+  try {
+    await translateChapterCore(ch, {
+      signal: rState.prefetch.ctrl.signal,
+      awaitGlossary: true,
+      onDelta: d => {
+        if (!live.isConnected) return;
+        // ตามท้ายข้อความเฉพาะตอนผู้อ่านอยู่ใกล้ก้นจอ (ไม่แย่ง scroll)
+        const nearBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 160;
+        live.textContent += d;
+        if (nearBottom) scroller.scrollTop = scroller.scrollHeight;
+      },
+    });
+    readerRenderChapter(ch);
+    if (S.currentTab === 'chapters') renderChapters();
+  } catch (err) {
+    if (err.name !== 'AbortError') showToast(`แปลไม่สำเร็จ: ${err.message}`, 'error');
+    readerRenderChapter(ch);
+  } finally {
+    rState.prefetch.state = 'IDLE';
+    rState.prefetch.ctrl = null;
+    rState.prefetch.chapterId = null;
+  }
+  readerKickPrefetch();
+}
+
+function readerCancelCurrentTranslate() {
+  if (rState.prefetch.ctrl) { try { rState.prefetch.ctrl.abort(); } catch {} }
+}
+
+// ── init listeners ──
+(function readerInit() {
+  const scroller = document.getElementById('readerScroll');
+  if (scroller) scroller.addEventListener('scroll', () => {
+    if (rState.active) { readerSavePosition(); readerUpdateProgress(); }
+  });
+  document.addEventListener('keydown', e => {
+    if (!rState.active) return;
+    const tag = e.target?.tagName;
+    if (e.key === 'Escape') closeReader();
+    else if (tag !== 'SELECT' && tag !== 'INPUT' && tag !== 'TEXTAREA') {
+      if (e.key === 'ArrowRight') readerNav(1);
+      else if (e.key === 'ArrowLeft') readerNav(-1);
+    }
+  });
+  window.addEventListener('popstate', () => { if (rState.active) closeReader(true); });
+})();
+
+// ═══════════════════════════════════════════════
+// ─── Pronoun / Gender Consistency Check ─────────
+// ═══════════════════════════════════════════════
+// สแกน local ล้วนๆ (ไม่เรียก AI ไม่มีค่าใช้จ่าย): นับสรรพนามบุรุษที่ 3
+// ในหน้าต่าง ±120 ตัวอักษรรอบชื่อตัวละคร แล้วเทียบกับเพศใน Glossary
+
+const _PRONOUN_MALE   = ['เขา'];
+const _PRONOUN_FEMALE = ['เธอ', 'นาง', 'หล่อน'];
+
+function pronounScanChapter(ch, characters) {
+  const text = ch.translation || '';
+  if (!text.trim()) return [];
+  const issues = [];
+  for (const g of characters) {
+    const name = g.thai;
+    // หาตำแหน่งชื่อทั้งหมด (จำกัด 200 จุดกันตอนยาวผิดปกติ)
+    const pos = [];
+    let idx = text.indexOf(name);
+    while (idx !== -1 && pos.length < 200) { pos.push(idx); idx = text.indexOf(name, idx + name.length); }
+    if (!pos.length) continue;
+
+    let male = 0, female = 0;
+    for (const p of pos) {
+      const win = text.slice(Math.max(0, p - 120), p + name.length + 120);
+      for (const w of _PRONOUN_MALE)   male   += win.split(w).length - 1;
+      for (const w of _PRONOUN_FEMALE) female += win.split(w).length - 1;
+    }
+    const expectMale = g.gender === 'male';
+    const wrong = expectMale ? female : male;
+    const right = expectMale ? male : female;
+    const total = wrong + right;
+    // threshold: มีสรรพนามรวม ≥3 และฝั่งผิดเกิน 40% — กัน false positive จากบทสนทนา
+    if (total >= 3 && wrong / total > 0.4) {
+      const samples = [];
+      const wrongWords = expectMale ? _PRONOUN_FEMALE : _PRONOUN_MALE;
+      for (const p of pos) {
+        if (samples.length >= 2) break;
+        const win = text.slice(Math.max(0, p - 120), p + name.length + 120);
+        if (wrongWords.some(w => win.includes(w))) samples.push('…' + win.trim().slice(0, 160) + '…');
+      }
+      issues.push({ name, gender: g.gender, wrong, right, samples });
+    }
+  }
+  return issues;
+}
+
+function openPronounCheck() {
+  if (!S.currentWs) { showToast('เลือก Workspace ก่อน', 'error'); return; }
+  const characters = (S.currentWs.glossary || []).filter(g =>
+    g.type === 'character' && (g.gender === 'male' || g.gender === 'female') && g.thai);
+  const box = document.getElementById('pronounCheckResults');
+
+  if (!characters.length) {
+    box.innerHTML = '<div style="color:var(--text-muted);font-size:0.8rem;padding:14px;text-align:center">ไม่มีตัวละครที่ระบุเพศใน Glossary — เพิ่มคำศัพท์ประเภท "ตัวละคร" พร้อมเพศก่อน</div>';
+    openModal('modal-pronoun-check');
+    return;
+  }
+
+  const rows = [];
+  for (const ch of _getSortedChapters()) {
+    for (const it of pronounScanChapter(ch, characters)) rows.push({ ch, ...it });
+  }
+
+  const GENDER_TH = { male: 'ชาย', female: 'หญิง' };
+  box.innerHTML = rows.length ? rows.map(r => `
+    <div style="border:1px solid var(--border);border-radius:var(--radius);padding:10px;background:var(--bg-deep)">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <b>${esc(r.name)}</b>
+        <span class="tag tag-term" style="font-size:0.66rem">เพศ${GENDER_TH[r.gender]}</span>
+        <span style="font-size:0.76rem;color:var(--crimson-light)">สรรพนามเพศตรงข้าม ${r.wrong} ครั้งใกล้ชื่อ (ตรงเพศ ${r.right})</span>
+        <span style="font-size:0.74rem;color:var(--text-muted)">ตอน #${r.ch.chapterNum || '?'} ${esc((r.ch.title || '').slice(0, 24))}</span>
+        <button class="btn-xs" style="margin-left:auto" data-name="${esc(r.name)}"
+          onclick="closeModal('modal-pronoun-check');openReviewSearch(this.dataset.name)">🔎 ตรวจใน Review</button>
+      </div>
+      ${r.samples.map(s => `<div style="font-size:0.74rem;color:var(--text-secondary);margin-top:6px;padding:6px;background:var(--surface-2);border-radius:4px;line-height:1.6">${esc(s)}</div>`).join('')}
+    </div>`).join('')
+    : '<div style="color:#4caf50;font-size:0.84rem;padding:14px;text-align:center">✓ ไม่พบสรรพนามขัดแย้งกับเพศของตัวละคร</div>';
+  openModal('modal-pronoun-check');
 }
