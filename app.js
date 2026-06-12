@@ -557,6 +557,13 @@ const PROVIDERS = {
   },
 };
 
+// timeout ของการเรียก AI (วินาที) — ตั้งได้ใน ⚙ ตั้งค่า API Key, default 120
+// kind: 'chunk' = ต่อ chunk/segment, 'full' = ทั้งตอน (ให้เวลา 1.5 เท่า)
+function getTimeoutMs(kind = 'chunk') {
+  const base = Math.max(20, Math.min(900, parseInt(localStorage.getItem('nt8_timeout_s')) || 120));
+  return Math.round(base * (kind === 'full' ? 1.5 : 1) * 1000);
+}
+
 // provider ปัจจุบันของ workspace — default openrouter เพื่อให้ workspace เก่าทำงานเหมือนเดิม
 function getProvider() {
   const p = S.currentWs?.settings?.aiProvider || 'openrouter';
@@ -965,6 +972,7 @@ async function selectWorkspace(id) {
   S.currentWs = ws;
   S.glossaryData = ws.glossary || [];
   await setLastWs(id);
+  populateGlossaryTypeSelects(); // custom types ของ workspace นี้ (รวม filter)
 
   document.getElementById('noWsMsg').style.display = 'none';
   document.getElementById('wsContent').className = 'ws-content-visible';
@@ -1829,6 +1837,7 @@ function openAddGlossary() {
   S.editingGlossaryKorean = null;
   document.getElementById('glossaryModalTitle').textContent = '＋ เพิ่มคำศัพท์';
   ['gKorean','gThai','gNote'].forEach(id => document.getElementById(id).value = '');
+  populateGlossaryTypeSelects();
   document.getElementById('gType').value = 'term';
   document.getElementById('gGenderGroup').style.display = 'none';
   document.getElementById('gGender').value = '';
@@ -1844,7 +1853,8 @@ function editGlossaryEntry(korean) {
   document.getElementById('gKorean').value = entry.korean;
   document.getElementById('gKorean').readOnly = true;
   document.getElementById('gThai').value = entry.thai;
-  // Auto-add type if not in preset dropdown
+  populateGlossaryTypeSelects();
+  // Auto-add type if not in preset dropdown (legacy types ที่ยังไม่อยู่ใน customGlossaryTypes)
   ensureTypeInDropdown(entry.type);
   document.getElementById('gType').value = entry.type || 'term';
   document.getElementById('gNote').value = entry.note || '';
@@ -1860,6 +1870,11 @@ async function saveGlossaryEntry() {
   const thai = document.getElementById('gThai').value.trim();
   if (!korean || !thai) { showToast('กรอก Korean และ Thai ก่อน', 'error'); return; }
   const type = document.getElementById('gType').value;
+  if (type === '__newtype__') { showToast('เลือกประเภทก่อน', 'error'); return; }
+  // type ที่ไม่ใช่ preset → persist ลง workspace (เดิมหายตอน reload)
+  if (!PRESET_TYPES[type] && S.currentWs && !(S.currentWs.customGlossaryTypes || []).includes(type)) {
+    S.currentWs.customGlossaryTypes = [...(S.currentWs.customGlossaryTypes || []), type];
+  }
   const gender = type === 'character' ? document.getElementById('gGender').value : '';
   const entry = { korean, thai, type, note: document.getElementById('gNote').value.trim(), ...(gender ? { gender } : {}) };
   if (S.editingGlossaryKorean) {
@@ -2282,7 +2297,7 @@ async function streamSegment(text, contextSegs, options, onChunk, onDone) {
 
   // AbortController with 120s timeout
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 120000);
+  const timer = setTimeout(() => ctrl.abort(), getTimeoutMs('chunk'));
 
   let inTok = 0, outTok = 0;
   let fullText = '';
@@ -2481,7 +2496,7 @@ async function translateAllStream(text) {
   try {
     let charCount = 0;
     S.abortCtrl = new AbortController();
-    const timer = setTimeout(() => S.abortCtrl.abort(), 180000);
+    const timer = setTimeout(() => S.abortCtrl.abort(), getTimeoutMs('full'));
 
     let inTok = 0, outTok = 0;
     let fullText = '';
@@ -2718,7 +2733,7 @@ async function translateChunked(text, options) {
       try {
         // ใช้ global abort + timeout 120s
         S.abortCtrl = new AbortController();
-        const timer = setTimeout(() => S.abortCtrl.abort(), 120000);
+        const timer = setTimeout(() => S.abortCtrl.abort(), getTimeoutMs('chunk'));
         try {
           chunkFull = await aiStream(
             { model: options.model, temperature: chunkPreset.temperature ?? options.temperature, max_tokens: Math.max(2000, Math.ceil(chunk.length * 2)), messages: [{ role: 'user', content: prompt }] },
@@ -2885,11 +2900,20 @@ function openApiSettings() {
         <span id="apiTestResult-${id}" style="font-size:0.72rem;color:var(--text-muted)">${p.keyHint}</span>
       </div>
     </div>`).join('');
+  c.innerHTML += `
+    <div class="sf-group" style="margin-top:4px">
+      <div class="sf-label">⏱ Timeout การเรียก AI (วินาที)</div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <input id="apiTimeoutSec" type="number" class="text-input" style="width:90px" min="20" max="900" step="10"/>
+        <span style="font-size:0.72rem;color:var(--text-muted)">default 120 — โมเดลช้า/ตอนยาวให้เพิ่ม (ทั้งตอนได้เวลา 1.5 เท่า)</span>
+      </div>
+    </div>`;
   // เติมค่า key เดิมผ่าน .value (เลี่ยงปัญหา escape ใน attribute)
   for (const [id, p] of Object.entries(PROVIDERS)) {
     const el = document.getElementById('apiKey-' + id);
     if (el) el.value = localStorage.getItem(p.lsKey) || '';
   }
+  document.getElementById('apiTimeoutSec').value = parseInt(localStorage.getItem('nt8_timeout_s')) || 120;
   openModal('modal-settings');
 }
 
@@ -2902,6 +2926,8 @@ function saveApiKey() {
     if (v) { localStorage.setItem(p.lsKey, v); saved++; }
     else localStorage.removeItem(p.lsKey);
   }
+  const tSec = Math.max(20, Math.min(900, parseInt(document.getElementById('apiTimeoutSec')?.value) || 120));
+  localStorage.setItem('nt8_timeout_s', String(tSec));
   closeModal('modal-settings');
   checkHealth();
   renderProviderUI();
@@ -4356,7 +4382,7 @@ async function startBatchChapters() {
         ws: S.currentWs,
       });
       S.abortCtrl = new AbortController();
-      const timer = setTimeout(() => S.abortCtrl.abort(), 180000);
+      const timer = setTimeout(() => S.abortCtrl.abort(), getTimeoutMs('full'));
       let fullText = '', inTok = 0, outTok = 0;
       try {
         fullText = await aiStream(
@@ -4658,6 +4684,10 @@ async function parseEpub(file) {
 
 // Minimal ZIP reader for EPUB (no external lib)
 async function loadZip(arrayBuffer) {
+  // WebView เก่า (Termux/Android รุ่นเก่า) ไม่มี DecompressionStream — บอกตรงๆ ดีกว่าพังเงียบ
+  if (typeof DecompressionStream === 'undefined') {
+    throw new Error('เบราว์เซอร์นี้ไม่รองรับการแตกไฟล์ ZIP (ต้องใช้ Chrome/WebView เวอร์ชัน 80+)');
+  }
   // Use JSZip-like approach via DataView
   const bytes = new Uint8Array(arrayBuffer);
   const decoder = new TextDecoder('utf-8', { fatal: false });
@@ -4665,14 +4695,23 @@ async function loadZip(arrayBuffer) {
   function readUint16(offset) { return bytes[offset] | (bytes[offset+1] << 8); }
   function readUint32(offset) { return bytes[offset] | (bytes[offset+1]<<8) | (bytes[offset+2]<<16) | (bytes[offset+3]<<24); }
 
-  // Find End of Central Directory
+  // Find End of Central Directory — สแกนเฉพาะท้ายไฟล์ตามสเปก (EOCD + comment สูงสุด 65,557 bytes)
   let eocdOffset = -1;
-  for (let i = bytes.length - 22; i >= 0; i--) {
+  const scanFloor = Math.max(0, bytes.length - 65557);
+  for (let i = bytes.length - 22; i >= scanFloor; i--) {
     if (bytes[i]===0x50 && bytes[i+1]===0x4B && bytes[i+2]===0x05 && bytes[i+3]===0x06) {
       eocdOffset = i; break;
     }
   }
-  if (eocdOffset < 0) return null;
+  if (eocdOffset < 0) {
+    // แยกเคส ZIP64 ให้ข้อความชัด
+    for (let i = bytes.length - 56; i >= scanFloor; i--) {
+      if (bytes[i]===0x50 && bytes[i+1]===0x4B && bytes[i+2]===0x06 && bytes[i+3]===0x06) {
+        throw new Error('ไฟล์ EPUB ใช้รูปแบบ ZIP64 ซึ่งยังไม่รองรับ (ไฟล์ใหญ่เกิน 4GB?)');
+      }
+    }
+    throw new Error('ไม่ใช่ไฟล์ ZIP/EPUB ที่ถูกต้อง หรือไฟล์เสียหาย/ถูกตัดท้าย');
+  }
 
   const cdOffset = readUint32(eocdOffset + 16);
   const cdEntries = readUint16(eocdOffset + 8);
@@ -4702,6 +4741,7 @@ async function loadZip(arrayBuffer) {
     const fnLen2 = readUint16(lPos + 26);
     const extraLen2 = readUint16(lPos + 28);
     lPos += 30 + fnLen2 + extraLen2;
+    if (lPos + entry.compSize > bytes.length) return null; // entry ชี้เกินไฟล์ — ไฟล์ถูกตัดท้าย
     const compData = bytes.slice(lPos, lPos + entry.compSize);
     let result;
     if (entry.compression === 0) {
@@ -5168,22 +5208,51 @@ function ensureTypeInDropdown(type) {
   }
 }
 
-// Also refresh the glossaryTypeFilter with any custom types from current glossary
+// Rebuild glossaryTypeFilter จาก preset + custom types ของ workspace + types ใน glossary
+// (rebuild ทุกครั้ง — กัน option ค้างข้าม workspace)
 function refreshTypeFilter() {
   const sel = document.getElementById('glossaryTypeFilter');
-  if (!sel || !S.glossaryData) return;
-  const existing = new Set([...sel.options].map(o => o.value));
-  S.glossaryData.forEach(g => {
-    const t = g.type?.trim();
-    if (t && !existing.has(t)) {
-      const opt = document.createElement('option');
-      opt.value = t;
-      opt.textContent = t;
-      sel.appendChild(opt);
-      existing.add(t);
-    }
-  });
+  if (!sel) return;
+  const cur = sel.value;
+  const types = new Set([...Object.keys(PRESET_TYPES), ...(S.currentWs?.customGlossaryTypes || [])]);
+  (S.glossaryData || []).forEach(g => { const t = g.type?.trim(); if (t) types.add(t); });
+  sel.innerHTML = '<option value="">ทุกประเภท</option>' +
+    [...types].map(t => `<option value="${esc(t)}">${PRESET_TYPES[t] || t}</option>`).join('');
+  if (cur && [...sel.options].some(o => o.value === cur)) sel.value = cur;
 }
+
+// Rebuild gType select: preset + custom types (persist ใน ws.customGlossaryTypes) + ตัวเลือกเพิ่มประเภทใหม่
+function populateGlossaryTypeSelects() {
+  const sel = document.getElementById('gType');
+  if (sel) {
+    const cur = sel.value;
+    const customs = S.currentWs?.customGlossaryTypes || [];
+    sel.innerHTML =
+      Object.entries(PRESET_TYPES).map(([v, label]) => `<option value="${v}">${label}</option>`).join('') +
+      customs.map(t => `<option value="${esc(t)}">${esc(t)} (custom)</option>`).join('') +
+      `<option value="__newtype__">＋ ประเภทใหม่…</option>`;
+    sel.value = (cur && [...sel.options].some(o => o.value === cur)) ? cur : 'term';
+  }
+  refreshTypeFilter();
+}
+
+// "＋ ประเภทใหม่…" — ถามชื่อ บันทึกเข้า workspace แล้วเลือกให้เลย
+(function initCustomTypeOption() {
+  const sel = document.getElementById('gType');
+  if (!sel) return;
+  sel.addEventListener('change', function () {
+    if (this.value !== '__newtype__') return;
+    const v = (prompt('ชื่อประเภทใหม่ (สั้นๆ เช่น ยานพาหนะ):') || '').trim();
+    if (!v) { this.value = 'term'; return; }
+    if (S.currentWs) {
+      S.currentWs.customGlossaryTypes = [...new Set([...(S.currentWs.customGlossaryTypes || []), v])];
+      lsSaveWorkspace(S.currentWs).catch(() => {});
+    }
+    populateGlossaryTypeSelects();
+    this.value = v;
+    document.getElementById('gGenderGroup').style.display = 'none';
+  });
+})();
 
 // Get CSS class for any type (preset or custom)
 function getTagClass(type) {
@@ -6660,6 +6729,15 @@ async function translateChapterCore(ch, {
     .replace('{text}',       prepareSourceForTranslation(ch.sourceText))
     .replace('{mtl_draft}',  mtlDraft || '(ไม่มี MTL draft)');
 
+  // timeout ภายใน + เคารพ signal จาก caller (เดิม path Marathon ไม่มี timeout เลย — slot ค้างได้)
+  const _ctrl = new AbortController();
+  const _onAbort = () => _ctrl.abort();
+  if (signal) {
+    if (signal.aborted) _ctrl.abort();
+    else signal.addEventListener('abort', _onAbort, { once: true });
+  }
+  const _timer = setTimeout(() => _ctrl.abort(), getTimeoutMs('full'));
+
   let inTok = 0, outTok = 0;
   let fullText = '';
   try {
@@ -6667,9 +6745,11 @@ async function translateChapterCore(ch, {
       { model: useModel, temperature: temperature, max_tokens: Math.max(16000, Math.ceil(ch.sourceText.length * 4)), messages: [{ role: 'user', content: prompt }] },
       onDelta || function() {},
       function(i, o) { inTok = i; outTok = o; },
-      signal
+      _ctrl.signal
     );
   } finally {
+    clearTimeout(_timer);
+    if (signal) signal.removeEventListener('abort', _onAbort);
     if (inTok || outTok) addCosts(inTok, outTok, useModel);
   }
 
