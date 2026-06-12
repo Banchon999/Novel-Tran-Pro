@@ -1251,6 +1251,7 @@ function renderChapters() {
           <span class="status-badge ${ch.status === 'translated' ? 'translated' : 'pending'}">
             ${ch.status === 'translated' ? '✓ แปลแล้ว' : '○ รอแปล'}
           </span>
+          ${!_bulkMode && ch.translation ? `<button class="ch-read-btn" onclick="event.stopPropagation();openReader('${ch.id}')" title="เปิดโหมดอ่าน">📖</button>` : ''}
         </div>
       </div>
     `).join('');
@@ -6657,3 +6658,205 @@ async function resetPresetToDefault() {
   loadPresetForEdit();
   showToast('คืนค่าเดิมแล้ว', '');
 }
+
+// ═══════════════════════════════════════════════
+// ─── Reader Mode ────────────────────────────────
+// ═══════════════════════════════════════════════
+// อ่านเต็มจอ + จำตำแหน่ง/ตั้งค่าต่อ workspace — ธีม reader แยกจากธีมแอพ
+
+const READER_DEFAULTS = { fontSize: 19, lineHeight: 1.9, theme: 'sepia', prefetchCount: 1 };
+
+const rState = {
+  active: false,
+  chapterId: null,
+  _scrollTimer: null,
+  _pushedHistory: false,
+  _navIdx: 0,
+  _navTotal: 0,
+  prefetch: { state: 'IDLE', ctrl: null, chapterId: null, retries: 0 },
+};
+
+function readerGetSettings() {
+  return { ...READER_DEFAULTS, ...(S.currentWs?.readerSettings || {}) };
+}
+
+function openReader(chId) {
+  const ch = S.currentWs?.chapters?.find(c => c.id === chId);
+  if (!ch) { showToast('ไม่พบตอน', 'error'); return; }
+  rState.active = true;
+  rState.chapterId = chId;
+  document.getElementById('readerOverlay').style.display = 'flex';
+  readerApplySettings();
+  readerRenderChapter(ch);
+  // คืนตำแหน่ง scroll เฉพาะตอนที่บันทึกไว้ล่าสุด
+  const pos = S.currentWs.readerPosition;
+  const scroller = document.getElementById('readerScroll');
+  requestAnimationFrame(() => {
+    const denom = scroller.scrollHeight - scroller.clientHeight;
+    scroller.scrollTop = (pos && pos.chapterId === chId && pos.scrollPct && denom > 0)
+      ? pos.scrollPct * denom : 0;
+    readerUpdateProgress();
+  });
+  if (!rState._pushedHistory) {
+    try { history.pushState({ ntReader: true }, ''); rState._pushedHistory = true; } catch {}
+  }
+  readerSavePosition(true);
+  readerKickPrefetch();
+}
+
+function openReaderResume() {
+  const ws = S.currentWs;
+  if (!ws) { showToast('เลือก Workspace ก่อน', 'error'); return; }
+  const pos = ws.readerPosition;
+  let ch = pos ? ws.chapters?.find(c => c.id === pos.chapterId) : null;
+  if (!ch) ch = _getSortedChapters()[0];
+  if (!ch) { showToast('ยังไม่มีตอนใน Workspace นี้', 'error'); return; }
+  openReader(ch.id);
+}
+
+function openReaderFromModal() {
+  const id = S.editingChapterId;
+  closeModal('modal-view-chapter');
+  if (id) openReader(id);
+}
+
+function closeReader(fromPopstate = false) {
+  if (!rState.active) return;
+  readerSavePosition(true);
+  readerCancelPrefetch();
+  rState.active = false;
+  document.getElementById('readerOverlay').style.display = 'none';
+  if (rState._pushedHistory && !fromPopstate) { try { history.back(); } catch {} }
+  rState._pushedHistory = false;
+  if (S.currentTab === 'chapters') renderChapters();
+}
+
+function readerRenderChapter(ch) {
+  rState.chapterId = ch.id;
+  document.getElementById('readerChTitle').textContent = `#${ch.chapterNum || '?'} ${ch.title || ''}`;
+  const el = document.getElementById('readerContent');
+  if (ch.translation?.trim()) {
+    el.innerHTML = `<h2 class="reader-h2">${esc(ch.title || '')}</h2>` +
+      ch.translation.split(/\n+/).map(p => p.trim()).filter(Boolean)
+        .map(p => `<p>${esc(p)}</p>`).join('');
+  } else {
+    el.innerHTML = `<div class="reader-empty">
+      <div style="font-size:2rem">📖</div>
+      <div>ตอนนี้ยังไม่ได้แปล</div>
+      ${ch.sourceText?.trim()
+        ? `<button class="reader-nav-btn" style="font-size:0.9rem" onclick="readerTranslateCurrent()">⚡ แปลตอนนี้</button>`
+        : `<div style="font-size:0.8rem">ไม่มีต้นฉบับ — เพิ่มต้นฉบับในแท็บ "ตอน" ก่อน</div>`}
+    </div>`;
+  }
+  readerUpdateNav();
+}
+
+function readerUpdateNav() {
+  const sorted = _getSortedChapters();
+  const idx = sorted.findIndex(c => c.id === rState.chapterId);
+  rState._navIdx = idx;
+  rState._navTotal = sorted.length;
+  const prev = document.getElementById('readerPrevBtn');
+  const next = document.getElementById('readerNextBtn');
+  if (prev) prev.disabled = idx <= 0;
+  if (next) next.disabled = idx >= sorted.length - 1;
+  readerUpdateProgress();
+}
+
+function readerUpdateProgress() {
+  const scroller = document.getElementById('readerScroll');
+  const label = document.getElementById('readerProgressLabel');
+  if (!scroller || !label) return;
+  const denom = scroller.scrollHeight - scroller.clientHeight;
+  const pct = denom > 0 ? Math.min(100, Math.round(scroller.scrollTop / denom * 100)) : 100;
+  label.textContent = rState._navTotal
+    ? `ตอน ${rState._navIdx + 1}/${rState._navTotal} · ${pct}%` : '';
+}
+
+function readerNav(dir) {
+  const sorted = _getSortedChapters();
+  const idx = sorted.findIndex(c => c.id === rState.chapterId);
+  const next = sorted[idx + dir];
+  if (!next) return;
+  readerRenderChapter(next);
+  document.getElementById('readerScroll').scrollTop = 0;
+  readerSavePosition(true);
+  readerKickPrefetch();
+}
+
+// debounce 2s ระหว่าง scroll / ทันทีเมื่อ immediate (ปิด reader, เปลี่ยนตอน)
+function readerSavePosition(immediate = false) {
+  if (!S.currentWs || !rState.chapterId) return;
+  const scroller = document.getElementById('readerScroll');
+  const denom = scroller.scrollHeight - scroller.clientHeight;
+  S.currentWs.readerPosition = {
+    chapterId: rState.chapterId,
+    scrollPct: denom > 0 ? Math.min(1, scroller.scrollTop / denom) : 0,
+    updatedAt: Date.now(),
+  };
+  clearTimeout(rState._scrollTimer);
+  if (immediate) lsSaveWorkspace(S.currentWs).catch(() => {});
+  else rState._scrollTimer = setTimeout(() => lsSaveWorkspace(S.currentWs).catch(() => {}), 2000);
+}
+
+// ── Reader settings ──
+function readerToggleSettings() {
+  const bar = document.getElementById('readerSettingsBar');
+  bar.style.display = bar.style.display === 'none' ? 'flex' : 'none';
+}
+
+function readerSaveSettings(patch) {
+  if (!S.currentWs) return;
+  S.currentWs.readerSettings = { ...readerGetSettings(), ...patch };
+  readerApplySettings();
+  lsSaveWorkspace(S.currentWs).catch(() => {});
+}
+
+function readerSetFontSize(delta) {
+  const cur = readerGetSettings().fontSize;
+  readerSaveSettings({ fontSize: Math.min(28, Math.max(16, cur + delta)) });
+}
+function readerSetLineHeight(v) { readerSaveSettings({ lineHeight: parseFloat(v) || READER_DEFAULTS.lineHeight }); }
+function readerSetTheme(t) { readerSaveSettings({ theme: ['light','sepia','dark'].includes(t) ? t : 'sepia' }); }
+function readerSetPrefetchCount(v) {
+  readerSaveSettings({ prefetchCount: Math.min(2, Math.max(0, parseInt(v) || 0)) });
+  readerKickPrefetch();
+}
+
+function readerApplySettings() {
+  const s = readerGetSettings();
+  const ov = document.getElementById('readerOverlay');
+  ov.classList.remove('reader-theme-light', 'reader-theme-sepia', 'reader-theme-dark');
+  ov.classList.add('reader-theme-' + s.theme);
+  const content = document.getElementById('readerContent');
+  content.style.fontSize = s.fontSize + 'px';
+  content.style.lineHeight = s.lineHeight;
+  document.getElementById('readerFontSizeVal').textContent = s.fontSize;
+  document.getElementById('readerLineHeight').value = String(s.lineHeight);
+  document.getElementById('readerPrefetchCount').value = String(s.prefetchCount);
+  document.querySelectorAll('.reader-theme-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.theme === s.theme));
+}
+
+// ── Prefetch (stub — เติม logic ใน milestone ถัดไป) ──
+function readerKickPrefetch() {}
+function readerCancelPrefetch() {}
+function readerTranslateCurrent() {}
+
+// ── init listeners ──
+(function readerInit() {
+  const scroller = document.getElementById('readerScroll');
+  if (scroller) scroller.addEventListener('scroll', () => {
+    if (rState.active) { readerSavePosition(); readerUpdateProgress(); }
+  });
+  document.addEventListener('keydown', e => {
+    if (!rState.active) return;
+    const tag = e.target?.tagName;
+    if (e.key === 'Escape') closeReader();
+    else if (tag !== 'SELECT' && tag !== 'INPUT' && tag !== 'TEXTAREA') {
+      if (e.key === 'ArrowRight') readerNav(1);
+      else if (e.key === 'ArrowLeft') readerNav(-1);
+    }
+  });
+  window.addEventListener('popstate', () => { if (rState.active) closeReader(true); });
+})();

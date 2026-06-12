@@ -206,6 +206,7 @@
     <div class="tab-content" id="tab-chapters" style="display:none">
       <div class="tab-toolbar">
         <button class="btn btn-primary btn-sm" onclick="openModal('modal-new-chapter')">＋ เพิ่มตอน</button>
+        <button class="btn btn-secondary btn-sm" onclick="openReaderResume()" title="เปิดโหมดอ่าน ต่อจากตำแหน่งล่าสุด">📖 อ่านต่อ</button>
         <button class="btn btn-secondary btn-sm" onclick="openEpubImport()">📗 Import EPUB</button>
         <input type="file" id="epubFileInput" accept=".epub" style="display:none" onchange="handleEpubImport(event)"/>
         <button class="btn btn-secondary btn-sm" onclick="openBatchChapters()">⚡ แปล Batch</button>
@@ -533,6 +534,7 @@
     </div>
     <div class="modal-footer">
       <button class="btn btn-danger btn-sm" onclick="deleteCurrentChapter()" style="margin-right:auto">🗑 ลบ</button>
+      <button class="btn btn-ghost btn-sm" onclick="openReaderFromModal()">📖 อ่าน</button>
       <button class="btn btn-ghost btn-sm" onclick="openSplitChapter()">✂ Split</button>
       <button class="btn btn-ghost btn-sm" onclick="openMergeChapter()">🔗 Merge</button>
       <button class="btn btn-secondary" onclick="loadChapterToTranslate()">⚡ โหลดแปล</button>
@@ -1532,6 +1534,53 @@
       <button class="btn btn-primary" id="pe-validate-btn" onclick="validateAndSaveCustomPreset()">🤖 Validate &amp; บันทึก</button>
     </div>
   </div>
+</div>
+
+<!-- ═══ READER MODE OVERLAY ═══ -->
+<div id="readerOverlay" class="reader-overlay reader-theme-sepia" style="display:none">
+  <header class="reader-topbar" id="readerTopBar">
+    <button class="reader-icon-btn" onclick="closeReader()" title="ปิดโหมดอ่าน (Esc)">✕</button>
+    <span id="readerChTitle" class="reader-ch-title"></span>
+    <button class="reader-icon-btn" onclick="readerToggleSettings()" title="ตั้งค่าการอ่าน">⚙</button>
+  </header>
+  <div class="reader-settings" id="readerSettingsBar" style="display:none">
+    <div class="reader-set-group">
+      <span class="reader-set-label">ขนาด</span>
+      <button class="reader-set-btn" onclick="readerSetFontSize(-1)">A−</button>
+      <span id="readerFontSizeVal" style="min-width:20px;text-align:center">19</span>
+      <button class="reader-set-btn" onclick="readerSetFontSize(1)">A＋</button>
+    </div>
+    <div class="reader-set-group">
+      <span class="reader-set-label">บรรทัด</span>
+      <select id="readerLineHeight" class="reader-set-select" onchange="readerSetLineHeight(this.value)">
+        <option value="1.6">1.6</option><option value="1.8">1.8</option><option value="1.9">1.9</option>
+        <option value="2">2.0</option><option value="2.2">2.2</option>
+      </select>
+    </div>
+    <div class="reader-set-group">
+      <span class="reader-set-label">ธีม</span>
+      <button class="reader-theme-btn" data-theme="light" onclick="readerSetTheme('light')">สว่าง</button>
+      <button class="reader-theme-btn" data-theme="sepia" onclick="readerSetTheme('sepia')">ซีเปีย</button>
+      <button class="reader-theme-btn" data-theme="dark" onclick="readerSetTheme('dark')">มืด</button>
+    </div>
+    <div class="reader-set-group">
+      <span class="reader-set-label">แปลล่วงหน้า</span>
+      <select id="readerPrefetchCount" class="reader-set-select" onchange="readerSetPrefetchCount(this.value)">
+        <option value="0">ปิด</option><option value="1">1 ตอน</option><option value="2">2 ตอน</option>
+      </select>
+    </div>
+  </div>
+  <div class="reader-scroll" id="readerScroll">
+    <article id="readerContent" class="reader-content"></article>
+  </div>
+  <footer class="reader-bottombar" id="readerBottomBar">
+    <button class="reader-nav-btn" id="readerPrevBtn" onclick="readerNav(-1)">← ตอนก่อน</button>
+    <div class="reader-progress">
+      <span id="readerProgressLabel"></span>
+      <span id="readerPrefetchChip" class="reader-prefetch-chip" style="display:none"></span>
+    </div>
+    <button class="reader-nav-btn" id="readerNextBtn" onclick="readerNav(1)">ตอนถัดไป →</button>
+  </footer>
 </div>
 
 <script src="app.js"></script>
