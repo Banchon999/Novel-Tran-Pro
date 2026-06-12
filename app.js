@@ -662,6 +662,8 @@ async function loadWorkspaceList() {
 }
 
 async function selectWorkspace(id) {
+  // ปิด reader + ยกเลิก prefetch ก่อนสลับ workspace (กันแปลข้ามเรื่อง)
+  if (typeof rState !== 'undefined' && rState.active) closeReader();
   const ws = await lsGetWorkspace(id);
   if (!ws) { showToast('ไม่พบ Workspace', 'error'); return; }
   S.currentWsId = id;
@@ -2128,6 +2130,7 @@ async function startTranslation() {
   const rawText = document.getElementById('sourceText').value.trim();
   if (!rawText) { showToast('ใส่ข้อความก่อน', 'error'); return; }
   if (S.translating) return;
+  if (typeof rState !== 'undefined') readerCancelPrefetch(); // งาน manual มาก่อน prefetch
   // normalize Korean slang/jamo ก่อนส่ง AI (ไม่แก้ textarea)
   const text = prepareSourceForTranslation(rawText);
   const opts = getOptions();
@@ -6495,6 +6498,8 @@ async function marathonStart() {
   if (!getApiKey())                        { showToast('ยังไม่ได้ตั้ง API Key', 'error'); return; }
   if (!S.currentWs.marathonQueue?.length) { showToast('Queue ว่าง — กด "+ ทุกตอนที่ยังไม่แปล" ก่อน', 'error'); return; }
 
+  if (typeof rState !== 'undefined') readerCancelPrefetch(); // Marathon มาก่อน prefetch
+
   if (!Array.isArray(S.currentWs.marathonQueue)) S.currentWs.marathonQueue = [];
   marathonSyncStats();
   mState.running             = true;
@@ -6838,10 +6843,156 @@ function readerApplySettings() {
     b.classList.toggle('active', b.dataset.theme === s.theme));
 }
 
-// ── Prefetch (stub — เติม logic ใน milestone ถัดไป) ──
-function readerKickPrefetch() {}
-function readerCancelPrefetch() {}
-function readerTranslateCurrent() {}
+// ── Reader Prefetch ──
+// แปลตอนถัดไปล่วงหน้า "ทีละตอนเรียงลำดับ" เสมอ — auto-glossary + context summary
+// ของตอน N ต้องเสร็จก่อนเริ่มตอน N+1 (awaitGlossary:true) ไม่งั้นความต่อเนื่องพัง
+// กติการ่วม: ระบบแปลทำงานพร้อมกันได้ทีละราย (manual/batch/marathon/prefetch) — prefetch ยอมถอยเสมอ
+
+function readerSetChip(text) {
+  const chip = document.getElementById('readerPrefetchChip');
+  if (!chip) return;
+  chip.textContent = text;
+  chip.style.display = text ? '' : 'none';
+}
+
+function readerPickPrefetchTarget() {
+  const count = readerGetSettings().prefetchCount;
+  if (!count) return null;
+  const sorted = _getSortedChapters();
+  const idx = sorted.findIndex(c => c.id === rState.chapterId);
+  if (idx < 0) return null;
+  const queued = new Set(S.currentWs?.marathonQueue || []);
+  for (let i = idx + 1; i <= idx + count && i < sorted.length; i++) {
+    const ch = sorted[i];
+    if (ch.status === 'translated') continue;
+    if (!ch.sourceText?.trim()) continue;
+    if (queued.has(ch.id) || mState.slots[ch.id]) continue; // อยู่ในมือ Marathon — ไม่แปลซ้ำ
+    return ch;
+  }
+  return null;
+}
+
+function readerKickPrefetch() {
+  if (!rState.active) return;
+  if (rState.prefetch.state !== 'IDLE') return; // worker เดียวเสมอ
+  readerPrefetchWorker();
+}
+
+async function readerPrefetchWorker() {
+  const pf = rState.prefetch;
+  pf.state = 'SCANNING';
+  pf.retries = 0;
+  try {
+    while (rState.active) {
+      if (S.translating || mState.running) break;       // งานอื่นมาก่อน — prefetch ถอย
+      if (!getApiKey()) break;
+      const ch = readerPickPrefetchTarget();
+      if (!ch) break;
+      if (marathonIsDailyLimitReached()) {
+        readerSetChip('⏸ ถึงขีดจำกัดรายวัน — งดแปลล่วงหน้า');
+        break;
+      }
+      pf.chapterId = ch.id;
+      pf.ctrl = new AbortController();
+      pf.state = 'TRANSLATING';
+      let chars = 0;
+      readerSetChip(`⚡ กำลังแปลตอนถัดไป #${ch.chapterNum || '?'}…`);
+      try {
+        await translateChapterCore(ch, {
+          signal: pf.ctrl.signal,
+          awaitGlossary: true,
+          onDelta: d => {
+            chars += d.length;
+            readerSetChip(`⚡ กำลังแปลตอนถัดไป #${ch.chapterNum || '?'}… ${chars.toLocaleString()} ตัว`);
+          },
+        });
+        pf.retries = 0;
+        readerSetChip(`✓ #${ch.chapterNum || '?'} พร้อมอ่าน · รวม ${fmtUSD(S.costs.costUSD)}`);
+        // นับรวมสถิติรายวันเดียวกับ Marathon (เพดานเดียวกัน)
+        marathonSyncStats();
+        mState.completedToday++;
+        if (S.currentWs?.marathonStats) {
+          S.currentWs.marathonStats.completedToday = mState.completedToday;
+          lsSaveWorkspace(S.currentWs).catch(() => {});
+        }
+        readerUpdateNav();
+        if (S.currentTab === 'chapters') renderChapters();
+      } catch (err) {
+        if (err.name === 'AbortError' || !rState.active) { readerSetChip(''); break; }
+        pf.retries++;
+        if (pf.retries > 2) {
+          readerSetChip(`✗ แปลล่วงหน้าไม่สำเร็จ: ${err.message}`);
+          break;
+        }
+        readerSetChip(`↻ แปล #${ch.chapterNum || '?'} ไม่สำเร็จ — ลองใหม่ (${pf.retries}/2)…`);
+        await new Promise(r => setTimeout(r, 2500 * pf.retries));
+      } finally {
+        pf.ctrl = null;
+        pf.chapterId = null;
+      }
+      pf.state = 'SCANNING';
+    }
+  } finally {
+    pf.state = 'IDLE';
+    pf.ctrl = null;
+    pf.chapterId = null;
+  }
+}
+
+// ยกเลิก: แค่ abort — worker จะจัดการ state ของตัวเองใน finally (กัน worker ซ้อน)
+function readerCancelPrefetch() {
+  if (rState.prefetch.ctrl) { try { rState.prefetch.ctrl.abort(); } catch {} }
+  readerSetChip('');
+}
+
+// แปลตอนที่กำลังเปิดอ่าน — stream สดให้อ่านไประหว่างแปล
+async function readerTranslateCurrent() {
+  const ch = S.currentWs?.chapters?.find(c => c.id === rState.chapterId);
+  if (!ch || !ch.sourceText?.trim()) return;
+  if (!getApiKey()) { showToast('ยังไม่ได้ตั้ง API Key — ไปที่ ⚙ ตั้งค่า', 'error'); return; }
+  if (S.translating || mState.running) { showToast('มีงานแปลอื่นทำงานอยู่ — รอสักครู่แล้วลองใหม่', 'error'); return; }
+  if (rState.prefetch.state === 'TRANSLATING') readerCancelPrefetch();
+
+  const el = document.getElementById('readerContent');
+  el.innerHTML = `<h2 class="reader-h2">${esc(ch.title || '')}</h2>
+    <div style="text-align:center;margin-bottom:1.2em">
+      <button class="reader-nav-btn" onclick="readerCancelCurrentTranslate()">⬛ หยุดแปล</button>
+    </div>
+    <div id="readerLiveText" style="white-space:pre-wrap"></div>`;
+  const live = document.getElementById('readerLiveText');
+  const scroller = document.getElementById('readerScroll');
+
+  rState.prefetch.state = 'TRANSLATING';
+  rState.prefetch.chapterId = ch.id;
+  rState.prefetch.ctrl = new AbortController();
+  try {
+    await translateChapterCore(ch, {
+      signal: rState.prefetch.ctrl.signal,
+      awaitGlossary: true,
+      onDelta: d => {
+        if (!live.isConnected) return;
+        // ตามท้ายข้อความเฉพาะตอนผู้อ่านอยู่ใกล้ก้นจอ (ไม่แย่ง scroll)
+        const nearBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 160;
+        live.textContent += d;
+        if (nearBottom) scroller.scrollTop = scroller.scrollHeight;
+      },
+    });
+    readerRenderChapter(ch);
+    if (S.currentTab === 'chapters') renderChapters();
+  } catch (err) {
+    if (err.name !== 'AbortError') showToast(`แปลไม่สำเร็จ: ${err.message}`, 'error');
+    readerRenderChapter(ch);
+  } finally {
+    rState.prefetch.state = 'IDLE';
+    rState.prefetch.ctrl = null;
+    rState.prefetch.chapterId = null;
+  }
+  readerKickPrefetch();
+}
+
+function readerCancelCurrentTranslate() {
+  if (rState.prefetch.ctrl) { try { rState.prefetch.ctrl.abort(); } catch {} }
+}
 
 // ── init listeners ──
 (function readerInit() {
