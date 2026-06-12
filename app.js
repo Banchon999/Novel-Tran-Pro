@@ -1066,6 +1066,8 @@ function renderWsSettings() {
   document.getElementById('wsTempVal').textContent = temp;
   const autoGlossary = w.settings?.autoGlossary !== false;
   document.getElementById('wsAutoGlossary').checked = autoGlossary;
+  const pcc = document.getElementById('wsPrevCtxChars');
+  if (pcc) pcc.value = w.settings?.prevCtxChars || 400;
   const presetSel = document.getElementById('wsPresetSelect');
   if (presetSel) presetSel.value = w.presetId || 'literary';
   // Context Memory settings
@@ -1092,6 +1094,7 @@ async function saveWsSettings() {
     ...(wsModelVal && wsModelVal !== '__custom__' ? { translateModel: wsModelVal } : {}),
     temperature: parseFloat(document.getElementById('wsTemp').value),
     autoGlossary: document.getElementById('wsAutoGlossary').checked,
+    prevCtxChars: Math.max(100, Math.min(4000, parseInt(document.getElementById('wsPrevCtxChars')?.value) || 400)),
   };
   const presetSel = document.getElementById('wsPresetSelect');
   if (presetSel) S.currentWs.presetId = presetSel.value || 'literary';
@@ -1548,8 +1551,10 @@ function renderChapters() {
           <div class="ch-meta">${ch.updatedAt ? new Date(ch.updatedAt).toLocaleDateString('th-TH') : ''} ${ch.wordCount ? `· ${ch.wordCount.toLocaleString()} ตัวอักษร` : ''}</div>
         </div>
         <div class="ch-status">
-          <span class="status-badge ${ch.status === 'translated' ? 'translated' : 'pending'}">
-            ${ch.status === 'translated' ? '✓ แปลแล้ว' : '○ รอแปล'}
+          <span class="status-badge ${ch.status === 'translated' ? 'translated' : ch.status === 'partial' ? 'partial' : 'pending'}">
+            ${ch.status === 'translated' ? '✓ แปลแล้ว'
+              : ch.status === 'partial' ? `◐ แปลค้าง${ch.chunkProgress?.chunks?.length ? ` (${ch.chunkProgress.chunks.length} chunk)` : ''}`
+              : '○ รอแปล'}
           </span>
           ${!_bulkMode && ch.translation ? `<button class="ch-read-btn" onclick="event.stopPropagation();openReader('${ch.id}')" title="เปิดโหมดอ่าน">📖</button>` : ''}
         </div>
@@ -1734,6 +1739,12 @@ function loadChapterToTranslate() {
   if (!ch) return;
   document.getElementById('sourceText').value = ch.sourceText || '';
   updateSourceStats();
+  // มีงานแปลค้าง → ตั้ง chunk size เดิมให้เลย จะได้ resume ได้ทันทีตอนกดแปล
+  if (ch.chunkProgress?.chunkSize) {
+    const cs = document.getElementById('chunkSize');
+    if (cs) cs.value = ch.chunkProgress.chunkSize;
+    showToast(`มีงานแปลค้าง ${ch.chunkProgress.chunks?.length || 0} chunk — กดแปลเพื่อทำต่อ`, '');
+  }
   closeModal('modal-view-chapter');
   switchTab('translate');
   showToast(`โหลด "${ch.title}" แล้ว`, 'success');
@@ -2133,6 +2144,12 @@ async function previewStyle() {
 
 // ─── Translation Core (v10 — True Stream, Sequential) ───
 
+// ความยาว context จากตอน/chunk ก่อนหน้า (ตัวอักษร) — ตั้งได้ต่อ workspace, default 400
+function getPrevCtxChars() {
+  const v = parseInt(S.currentWs?.settings?.prevCtxChars);
+  return Math.max(100, Math.min(4000, v || 400));
+}
+
 function getOptions() {
   const styleId = document.getElementById('activeStyleSelect')?.value || S.activeStyleId;
   let customStylePrompt = null;
@@ -2164,7 +2181,7 @@ function getOptions() {
       const ctxText = srcType === 'source' ? prevCh.sourceText : prevCh.translation;
       if (ctxText?.trim()) {
         const label = srcType === 'source' ? 'PREVIOUS CHAPTER (Original)' : 'PREVIOUS CHAPTER (Thai Translation)';
-        const snippet = ctxText.trim().slice(-800);
+        const snippet = ctxText.trim().slice(-(getPrevCtxChars() * 2)); // ระดับตอนให้ context ยาวกว่า chunk 2 เท่า
         prevChapterContext = `${label} — last part:\n${snippet}\n`;
       }
     }
@@ -2571,6 +2588,11 @@ function splitByChunkSize(text, size) {
   return chunks.filter(c => c.trim());
 }
 
+// hash เบาๆ ไว้เช็คว่า source เดิมไหม (length + หัว/ท้าย 64 ตัวอักษร)
+function _chunkSrcHash(text) {
+  return text.length + ':' + text.slice(0, 64) + ':' + text.slice(-64);
+}
+
 async function translateChunked(text, options) {
   setTranslating(true);
   clearTranslation();
@@ -2585,16 +2607,47 @@ async function translateChunked(text, options) {
 
   const chunks = splitByChunkSize(text, options.chunkSize);
   const n = chunks.length;
-  showToast(`แบ่งเป็น ${n} chunk (${options.chunkSize} ตัวอักษร/chunk)`, '');
 
   const styleNote = options.customStylePrompt ? `STYLE GUIDE:\n${options.customStylePrompt}\n` : '';
   const key = getApiKey();
   if (!key) { showToast('ยังไม่ได้ตั้ง API Key', 'error'); setTranslating(false); showProgress(false); return; }
 
   let completedTranslations = [];
+  let startIdx = 0;
+
+  // ── Resume งานแปลค้าง: chapter เดิม + source/chunkSize ตรงกัน → แปลต่อจาก chunk ล่าสุด ──
+  const _srcHash = _chunkSrcHash(text);
+  if (S.editingChapterId && S.currentWs) {
+    const _rCh = S.currentWs.chapters?.find(ch => ch.id === S.editingChapterId);
+    const cp = _rCh?.chunkProgress;
+    if (cp && cp.srcHash === _srcHash && cp.chunkSize === options.chunkSize
+        && Array.isArray(cp.chunks) && cp.chunks.length > 0 && cp.chunks.length < n) {
+      if (confirm(`พบงานแปลค้างไว้ ${cp.chunks.length}/${n} chunk — แปลต่อจากเดิมเลยไหม?\n(ยกเลิก = เริ่มแปลใหม่ทั้งหมด)`)) {
+        completedTranslations = [...cp.chunks];
+        startIdx = cp.chunks.length;
+      }
+    }
+  }
+
+  showToast(startIdx > 0
+    ? `แปลต่อจาก chunk ${startIdx + 1}/${n} (${options.chunkSize} ตัวอักษร/chunk)`
+    : `แบ่งเป็น ${n} chunk (${options.chunkSize} ตัวอักษร/chunk)`, '');
+
+  // แสดง chunk ที่เสร็จค้างไว้แล้ว
+  for (let i = 0; i < startIdx; i++) {
+    const wrapEl = document.createElement('div');
+    wrapEl.className = 'translation-segment';
+    wrapEl.innerHTML = `<div class="segment-index"><span>chunk ${i + 1}/${n}</span><span class="seg-status cached">📦 ค้างไว้</span></div>`;
+    const txtEl = document.createElement('div');
+    txtEl.className = 'segment-text';
+    txtEl.style.whiteSpace = 'pre-wrap';
+    txtEl.textContent = completedTranslations[i];
+    wrapEl.appendChild(txtEl);
+    output.appendChild(wrapEl);
+  }
 
   try {
-    for (let i = 0; i < n; i++) {
+    for (let i = startIdx; i < n; i++) {
       const chunk = chunks[i];
       updateProgress(Math.round(i / n * 100), `chunk ${i+1}/${n} (${chunk.length} ตัวอักษร)`);
 
@@ -2640,7 +2693,7 @@ async function translateChunked(text, options) {
 
       // Build context from tail of previous translation only (ลด token)
       const prevTail = completedTranslations.length
-        ? completedTranslations[completedTranslations.length - 1].slice(-400)
+        ? completedTranslations[completedTranslations.length - 1].slice(-getPrevCtxChars())
         : '';
       const chunkCtx = prevTail ? `CONTEXT (ท้ายของ chunk ก่อนหน้า):\n${prevTail}\n` : '';
       const _baseCtx = (options.prevChapterContext && !completedTranslations.length)
@@ -2703,11 +2756,17 @@ async function translateChunked(text, options) {
         updateProgress(Math.round((i+1)/n*100), `chunk ${i+1}/${n} เสร็จ`);
 
         // Partial save: บันทึก chunk ที่เสร็จแล้วเข้า chapter ทันที (กัน data loss ถ้าหยุดกลางคัน)
+        // + chunkProgress สำหรับ resume — ลบทิ้งเมื่อแปลครบ
         if (S.editingChapterId && S.currentWs) {
           const _pCh = S.currentWs.chapters?.find(ch => ch.id === S.editingChapterId);
           if (_pCh) {
             _pCh.translation = completedTranslations.join('\n\n');
             _pCh.status = i + 1 < n ? 'partial' : 'translated';
+            if (i + 1 < n) {
+              _pCh.chunkProgress = { chunkSize: options.chunkSize, srcHash: _srcHash, chunks: [...completedTranslations], updatedAt: Date.now() };
+            } else {
+              delete _pCh.chunkProgress;
+            }
             _pCh.updatedAt = Date.now();
             lsSaveWorkspace(S.currentWs).catch(() => {});
           }
@@ -4239,7 +4298,7 @@ async function startBatchChapters() {
           _summaryCache[prevCh.id] = res.choices?.[0]?.message?.content?.trim() || '';
         } catch {
           // fallback: ท้าย 600 ตัวอักษร — mark ด้วย key พิเศษ
-          _summaryCache[prevCh.id] = '__fallback__' + prevCh.translation.trim().slice(-600);
+          _summaryCache[prevCh.id] = '__fallback__' + prevCh.translation.trim().slice(-Math.round(getPrevCtxChars() * 1.5));
         }
         doneSum++;
         document.getElementById('bchProgressLabel').textContent = `[เฟส 1/2] สรุปบริบท ${doneSum}/${toSummarize.length} ตอน...`;
@@ -7226,3 +7285,83 @@ function readerCancelCurrentTranslate() {
   });
   window.addEventListener('popstate', () => { if (rState.active) closeReader(true); });
 })();
+
+// ═══════════════════════════════════════════════
+// ─── Pronoun / Gender Consistency Check ─────────
+// ═══════════════════════════════════════════════
+// สแกน local ล้วนๆ (ไม่เรียก AI ไม่มีค่าใช้จ่าย): นับสรรพนามบุรุษที่ 3
+// ในหน้าต่าง ±120 ตัวอักษรรอบชื่อตัวละคร แล้วเทียบกับเพศใน Glossary
+
+const _PRONOUN_MALE   = ['เขา'];
+const _PRONOUN_FEMALE = ['เธอ', 'นาง', 'หล่อน'];
+
+function pronounScanChapter(ch, characters) {
+  const text = ch.translation || '';
+  if (!text.trim()) return [];
+  const issues = [];
+  for (const g of characters) {
+    const name = g.thai;
+    // หาตำแหน่งชื่อทั้งหมด (จำกัด 200 จุดกันตอนยาวผิดปกติ)
+    const pos = [];
+    let idx = text.indexOf(name);
+    while (idx !== -1 && pos.length < 200) { pos.push(idx); idx = text.indexOf(name, idx + name.length); }
+    if (!pos.length) continue;
+
+    let male = 0, female = 0;
+    for (const p of pos) {
+      const win = text.slice(Math.max(0, p - 120), p + name.length + 120);
+      for (const w of _PRONOUN_MALE)   male   += win.split(w).length - 1;
+      for (const w of _PRONOUN_FEMALE) female += win.split(w).length - 1;
+    }
+    const expectMale = g.gender === 'male';
+    const wrong = expectMale ? female : male;
+    const right = expectMale ? male : female;
+    const total = wrong + right;
+    // threshold: มีสรรพนามรวม ≥3 และฝั่งผิดเกิน 40% — กัน false positive จากบทสนทนา
+    if (total >= 3 && wrong / total > 0.4) {
+      const samples = [];
+      const wrongWords = expectMale ? _PRONOUN_FEMALE : _PRONOUN_MALE;
+      for (const p of pos) {
+        if (samples.length >= 2) break;
+        const win = text.slice(Math.max(0, p - 120), p + name.length + 120);
+        if (wrongWords.some(w => win.includes(w))) samples.push('…' + win.trim().slice(0, 160) + '…');
+      }
+      issues.push({ name, gender: g.gender, wrong, right, samples });
+    }
+  }
+  return issues;
+}
+
+function openPronounCheck() {
+  if (!S.currentWs) { showToast('เลือก Workspace ก่อน', 'error'); return; }
+  const characters = (S.currentWs.glossary || []).filter(g =>
+    g.type === 'character' && (g.gender === 'male' || g.gender === 'female') && g.thai);
+  const box = document.getElementById('pronounCheckResults');
+
+  if (!characters.length) {
+    box.innerHTML = '<div style="color:var(--text-muted);font-size:0.8rem;padding:14px;text-align:center">ไม่มีตัวละครที่ระบุเพศใน Glossary — เพิ่มคำศัพท์ประเภท "ตัวละคร" พร้อมเพศก่อน</div>';
+    openModal('modal-pronoun-check');
+    return;
+  }
+
+  const rows = [];
+  for (const ch of _getSortedChapters()) {
+    for (const it of pronounScanChapter(ch, characters)) rows.push({ ch, ...it });
+  }
+
+  const GENDER_TH = { male: 'ชาย', female: 'หญิง' };
+  box.innerHTML = rows.length ? rows.map(r => `
+    <div style="border:1px solid var(--border);border-radius:var(--radius);padding:10px;background:var(--bg-deep)">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <b>${esc(r.name)}</b>
+        <span class="tag tag-term" style="font-size:0.66rem">เพศ${GENDER_TH[r.gender]}</span>
+        <span style="font-size:0.76rem;color:var(--crimson-light)">สรรพนามเพศตรงข้าม ${r.wrong} ครั้งใกล้ชื่อ (ตรงเพศ ${r.right})</span>
+        <span style="font-size:0.74rem;color:var(--text-muted)">ตอน #${r.ch.chapterNum || '?'} ${esc((r.ch.title || '').slice(0, 24))}</span>
+        <button class="btn-xs" style="margin-left:auto" data-name="${esc(r.name)}"
+          onclick="closeModal('modal-pronoun-check');openReviewSearch(this.dataset.name)">🔎 ตรวจใน Review</button>
+      </div>
+      ${r.samples.map(s => `<div style="font-size:0.74rem;color:var(--text-secondary);margin-top:6px;padding:6px;background:var(--surface-2);border-radius:4px;line-height:1.6">${esc(s)}</div>`).join('')}
+    </div>`).join('')
+    : '<div style="color:#4caf50;font-size:0.84rem;padding:14px;text-align:center">✓ ไม่พบสรรพนามขัดแย้งกับเพศของตัวละคร</div>';
+  openModal('modal-pronoun-check');
+}

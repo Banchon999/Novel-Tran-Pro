@@ -355,6 +355,7 @@ body {
 }
 .status-badge.translated { background: rgba(76,175,80,0.1); color: #4caf50; border: 1px solid rgba(76,175,80,0.3); }
 .status-badge.pending { background: rgba(201,168,76,0.08); color: var(--gold-dim); border: 1px solid rgba(201,168,76,0.2); }
+.status-badge.partial { background: rgba(66,165,245,0.10); color: #64b5f6; border: 1px solid rgba(66,165,245,0.3); }
 
 /* ─── Glossary Table ─── */
 .glossary-table-wrap { flex: 1; overflow: auto; padding: 0 10px 10px; }
