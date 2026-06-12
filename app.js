@@ -439,37 +439,313 @@ async function migrateFromLocalStorage() {
 
 function genId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
 
-// API key: stays in localStorage (< 100 bytes, never causes quota issues)
-function getApiKey() { return localStorage.getItem(LS_KEY_API) || ''; }
+// ═══════════════════════════════════════════════
+// ─── AI Providers ───────────────────────────────
+// ═══════════════════════════════════════════════
+// dispatch table: ทุก provider บอกวิธีสร้าง request + วิธีอ่านผล/usage + รูปแบบ SSE
+// เรียกใช้ผ่าน 2 ฟังก์ชันกลาง: aiCall (ไม่ stream) / aiStream (stream)
 
-// ─── OpenRouter API ───
-async function callOpenRouter({ model, messages, temperature = 0.7, max_tokens = 2000, stream = false }) {
-  const key = getApiKey();
-  if (!key) throw new Error('ยังไม่ได้ตั้ง API Key — ไปที่ ⚙ ตั้งค่า');
-
-  const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${key}`,
-      'HTTP-Referer': location.origin,
-      'X-Title': 'NovelTrans v10 Pro',
+const PROVIDERS = {
+  openrouter: {
+    label: 'OpenRouter',
+    lsKey: LS_KEY_API, // key เดิม — ผู้ใช้เก่าไม่ต้องตั้งใหม่
+    keyPlaceholder: 'sk-or-v1-...',
+    keyHint: 'สมัครฟรีที่ openrouter.ai/keys — key เดียวใช้ได้หลายโมเดล',
+    sse: 'openai',
+    models: [
+      ['── Google ──', [['google/gemini-2.5-flash','Gemini 2.5 Flash 🔥'],['google/gemini-2.5-flash-lite','Gemini 2.5 Flash Lite'],['google/gemini-2.5-pro','Gemini 2.5 Pro'],['google/gemini-2.0-flash-001','Gemini 2.0 Flash'],['google/gemini-1.5-flash','Gemini 1.5 Flash']]],
+      ['── OpenAI ──', [['openai/gpt-5-nano','GPT-5 Nano ✨'],['openai/gpt-5','GPT-5'],['openai/gpt-4.1-nano','GPT-4.1 Nano'],['openai/gpt-4o-mini','GPT-4o Mini'],['openai/gpt-4o','GPT-4o'],['openai/gpt-oss-120b','GPT-OSS 120B']]],
+      ['── DeepSeek ──', [['deepseek/deepseek-v3.2','DeepSeek V3.2 🆕'],['deepseek/deepseek-chat-v3-0324','DeepSeek V3 (Mar)'],['deepseek/deepseek-chat','DeepSeek V3'],['deepseek/deepseek-r1','DeepSeek R1']]],
+      ['── xAI ──', [['x-ai/grok-4','Grok 4'],['x-ai/grok-4-fast','Grok 4 Fast']]],
+      ['── อื่นๆ ──', [['anthropic/claude-haiku-4.5','Claude Haiku 4.5'],['anthropic/claude-3-haiku','Claude Haiku 3'],['meta-llama/llama-3.3-70b-instruct:free','Llama 3.3 70B (ฟรี)'],['meta-llama/llama-4-scout:free','Llama 4 Scout (ฟรี)']]],
+    ],
+    buildRequest({ model, messages, temperature, max_tokens, stream, key }) {
+      return {
+        url: 'https://openrouter.ai/api/v1/chat/completions',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}`, 'HTTP-Referer': location.origin, 'X-Title': 'NovelTrans v10 Pro' },
+        body: { model, messages, temperature, max_tokens, stream },
+      };
     },
-    body: JSON.stringify({ model, messages, temperature, max_tokens, stream }),
-  });
+    testEndpoint: key => ({ url: 'https://openrouter.ai/api/v1/models', headers: { 'Authorization': `Bearer ${key}` } }),
+    extractText: d => d.choices?.[0]?.message?.content ?? '',
+    extractUsage: d => ({ inTok: d.usage?.prompt_tokens || 0, outTok: d.usage?.completion_tokens || 0 }),
+  },
 
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error?.message || `HTTP ${res.status}`);
+  gemini: {
+    label: 'Google Gemini',
+    lsKey: 'nt8_apikey_gemini',
+    keyPlaceholder: 'AIza...',
+    keyHint: 'สร้าง key ฟรีที่ aistudio.google.com/apikey',
+    sse: 'gemini',
+    models: [[null, [['gemini-2.5-flash','Gemini 2.5 Flash 🔥'],['gemini-2.5-flash-lite','Gemini 2.5 Flash Lite'],['gemini-2.5-pro','Gemini 2.5 Pro'],['gemini-2.0-flash','Gemini 2.0 Flash']]]],
+    buildRequest({ model, messages, temperature, max_tokens, stream, key }) {
+      // แอพนี้ส่ง user message เดียวเสมอ — รวม content เป็น turn เดียว
+      const text = messages.map(m => m.content).join('\n\n');
+      return {
+        url: `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:${stream ? 'streamGenerateContent?alt=sse' : 'generateContent'}`,
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+        body: { contents: [{ role: 'user', parts: [{ text }] }], generationConfig: { temperature, maxOutputTokens: max_tokens } },
+      };
+    },
+    testEndpoint: key => ({ url: 'https://generativelanguage.googleapis.com/v1beta/models', headers: { 'x-goog-api-key': key } }),
+    extractText: d => (d.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join(''),
+    extractUsage: d => ({ inTok: d.usageMetadata?.promptTokenCount || 0, outTok: d.usageMetadata?.candidatesTokenCount || 0 }),
+  },
+
+  openai: {
+    label: 'OpenAI',
+    lsKey: 'nt8_apikey_openai',
+    keyPlaceholder: 'sk-...',
+    keyHint: 'สร้าง key ที่ platform.openai.com/api-keys',
+    sse: 'openai',
+    models: [[null, [['gpt-5-nano','GPT-5 Nano ✨'],['gpt-5-mini','GPT-5 Mini'],['gpt-5','GPT-5'],['gpt-4.1-nano','GPT-4.1 Nano'],['gpt-4o-mini','GPT-4o Mini'],['gpt-4o','GPT-4o']]]],
+    buildRequest({ model, messages, temperature, max_tokens, stream, key }) {
+      return {
+        url: 'https://api.openai.com/v1/chat/completions',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
+        // stream_options จำเป็นเพื่อให้ OpenAI ส่ง usage ใน chunk สุดท้าย
+        body: { model, messages, temperature, max_tokens: max_tokens, ...(stream ? { stream: true, stream_options: { include_usage: true } } : {}) },
+      };
+    },
+    testEndpoint: key => ({ url: 'https://api.openai.com/v1/models', headers: { 'Authorization': `Bearer ${key}` } }),
+    extractText: d => d.choices?.[0]?.message?.content ?? '',
+    extractUsage: d => ({ inTok: d.usage?.prompt_tokens || 0, outTok: d.usage?.completion_tokens || 0 }),
+  },
+
+  anthropic: {
+    label: 'Anthropic Claude',
+    lsKey: 'nt8_apikey_anthropic',
+    keyPlaceholder: 'sk-ant-...',
+    keyHint: 'สร้าง key ที่ console.anthropic.com',
+    sse: 'anthropic',
+    models: [[null, [['claude-haiku-4-5','Claude Haiku 4.5'],['claude-sonnet-4-6','Claude Sonnet 4.6'],['claude-opus-4-8','Claude Opus 4.8']]]],
+    buildRequest({ model, messages, temperature, max_tokens, stream, key }) {
+      return {
+        url: 'https://api.anthropic.com/v1/messages',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': key,
+          'anthropic-version': '2023-06-01',
+          // จำเป็น: Anthropic บล็อก browser CORS เว้นแต่ใส่ header นี้ (key อยู่ในเครื่องผู้ใช้เอง)
+          'anthropic-dangerous-direct-browser-access': 'true',
+        },
+        body: { model, max_tokens: max_tokens || 4000, temperature: Math.min(1, temperature), messages, ...(stream ? { stream: true } : {}) },
+      };
+    },
+    testEndpoint: key => ({ url: 'https://api.anthropic.com/v1/models', headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' } }),
+    extractText: d => (d.content || []).map(b => b.text || '').join(''),
+    extractUsage: d => ({ inTok: d.usage?.input_tokens || 0, outTok: d.usage?.output_tokens || 0 }),
+  },
+
+  deepseek: {
+    label: 'DeepSeek',
+    lsKey: 'nt8_apikey_deepseek',
+    keyPlaceholder: 'sk-...',
+    keyHint: 'สร้าง key ที่ platform.deepseek.com',
+    sse: 'openai',
+    models: [[null, [['deepseek-chat','DeepSeek Chat (V3)'],['deepseek-reasoner','DeepSeek Reasoner (R1)']]]],
+    buildRequest({ model, messages, temperature, max_tokens, stream, key }) {
+      return {
+        url: 'https://api.deepseek.com/chat/completions',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
+        body: { model, messages, temperature, max_tokens, stream },
+      };
+    },
+    testEndpoint: key => ({ url: 'https://api.deepseek.com/models', headers: { 'Authorization': `Bearer ${key}` } }),
+    extractText: d => d.choices?.[0]?.message?.content ?? '',
+    extractUsage: d => ({ inTok: d.usage?.prompt_tokens || 0, outTok: d.usage?.completion_tokens || 0 }),
+  },
+};
+
+// provider ปัจจุบันของ workspace — default openrouter เพื่อให้ workspace เก่าทำงานเหมือนเดิม
+function getProvider() {
+  const p = S.currentWs?.settings?.aiProvider || 'openrouter';
+  return PROVIDERS[p] ? p : 'openrouter';
+}
+
+// ไม่ส่ง argument = key ของ provider ปัจจุบัน (call-site เดิมทั้งหมดใช้ได้ต่อ)
+function getApiKey(provider) {
+  const prov = PROVIDERS[provider || getProvider()] || PROVIDERS.openrouter;
+  return localStorage.getItem(prov.lsKey) || '';
+}
+
+// แปลง HTTP error เป็นข้อความไทยที่บอกสาเหตุ + วิธีแก้
+async function aiHttpError(prov, res) {
+  let msg = '';
+  try {
+    const err = await res.json();
+    msg = err.error?.message || err.message || '';
+  } catch {}
+  const s = res.status;
+  if (s === 401 || s === 403) return new Error(`🔑 ${prov.label}: API Key ไม่ถูกต้องหรือหมดสิทธิ์${msg ? ` — ${msg}` : ''}`);
+  if (s === 429) {
+    const retry = res.headers.get('retry-after');
+    return new Error(`⏳ ${prov.label}: ติด Rate Limit${retry ? ` — รอ ${retry} วินาที` : ''} แล้วลองใหม่`);
   }
+  if (s === 402) return new Error(`💳 ${prov.label}: เครดิตหมด — เติมเงินก่อนใช้งาน`);
+  if (s >= 500) return new Error(`⚠ ${prov.label}: เซิร์ฟเวอร์มีปัญหา (HTTP ${s}) — ลองใหม่อีกครั้ง`);
+  return new Error(`${prov.label}: HTTP ${s}${msg ? ` — ${msg}` : ''}`);
+}
 
-  if (stream) return res;
+function aiNetworkError(prov, provName) {
+  return new Error(`🌐 ${prov.label}: เชื่อมต่อไม่ได้ — อาจติด CORS หรืออินเทอร์เน็ตขัดข้อง${provName !== 'openrouter' ? ' (แนะนำลองใช้ OpenRouter แทน)' : ''}`);
+}
+
+// ── เรียก AI แบบไม่ stream — คืนรูป choices แบบ OpenAI เสมอ (call-site เดิมอ่าน choices[0].message.content) ──
+async function aiCall({ model, messages, temperature = 0.7, max_tokens = 2000 }) {
+  const provName = getProvider();
+  const prov = PROVIDERS[provName];
+  const key = getApiKey(provName);
+  if (!key) throw new Error(`ยังไม่ได้ตั้ง API Key ของ ${prov.label} — ไปที่ ⚙ ตั้งค่า`);
+
+  const req = prov.buildRequest({ model, messages, temperature, max_tokens, stream: false, key });
+  let res;
+  try {
+    res = await fetch(req.url, { method: 'POST', headers: req.headers, body: JSON.stringify(req.body) });
+  } catch (e) {
+    if (e.name === 'AbortError') throw e;
+    throw aiNetworkError(prov, provName);
+  }
+  if (!res.ok) throw await aiHttpError(prov, res);
 
   const data = await res.json();
-  // Track costs
-  const usage = data.usage || {};
-  addCosts(usage.prompt_tokens || 0, usage.completion_tokens || 0, model);
-  return data;
+  const usage = prov.extractUsage(data);
+  addCosts(usage.inTok, usage.outTok, model, provName);
+  return { choices: [{ message: { content: prov.extractText(data) } }], usage: data.usage || usage, _raw: data };
+}
+
+// alias เดิม — call-site ไม่ stream ทั้งหมดใช้ต่อได้โดยไม่แก้
+const callOpenRouter = aiCall;
+
+// ── เรียก AI แบบ stream — parser ตามรูปแบบ SSE ของแต่ละ provider ──
+async function aiStream({ model, messages, temperature = 0.7, max_tokens = 2000 }, onChunk, onUsage, signal) {
+  const provName = getProvider();
+  const prov = PROVIDERS[provName];
+  const key = getApiKey(provName);
+  if (!key) throw new Error(`ยังไม่ได้ตั้ง API Key ของ ${prov.label} — ไปที่ ⚙ ตั้งค่า`);
+
+  const req = prov.buildRequest({ model, messages, temperature, max_tokens, stream: true, key });
+  let res;
+  try {
+    res = await fetch(req.url, { method: 'POST', headers: req.headers, body: JSON.stringify(req.body), signal });
+  } catch (e) {
+    if (e.name === 'AbortError') throw e;
+    throw aiNetworkError(prov, provName);
+  }
+  if (!res.ok) throw await aiHttpError(prov, res);
+
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  let buf = '', fullText = '', done = false;
+  let inTok = 0, outTok = 0;
+
+  const handleData = (raw) => {
+    if (raw === '[DONE]') { done = true; return; }
+    let evt;
+    try { evt = JSON.parse(raw); } catch { return; }
+    if (prov.sse === 'openai') {
+      const delta = evt.choices?.[0]?.delta?.content;
+      if (delta) { fullText += delta; onChunk(delta); }
+      if (evt.usage) { inTok = evt.usage.prompt_tokens || 0; outTok = evt.usage.completion_tokens || 0; onUsage(inTok, outTok); }
+      if (evt.choices?.[0]?.finish_reason === 'stop') done = true;
+    } else if (prov.sse === 'gemini') {
+      const delta = (evt.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join('');
+      if (delta) { fullText += delta; onChunk(delta); }
+      if (evt.usageMetadata) { inTok = evt.usageMetadata.promptTokenCount || 0; outTok = evt.usageMetadata.candidatesTokenCount || 0; onUsage(inTok, outTok); }
+    } else if (prov.sse === 'anthropic') {
+      if (evt.type === 'content_block_delta' && evt.delta?.type === 'text_delta' && evt.delta.text) { fullText += evt.delta.text; onChunk(evt.delta.text); }
+      else if (evt.type === 'message_start') { inTok = evt.message?.usage?.input_tokens || 0; onUsage(inTok, outTok); }
+      else if (evt.type === 'message_delta') { outTok = evt.usage?.output_tokens || outTok; onUsage(inTok, outTok); }
+      else if (evt.type === 'message_stop') done = true;
+      else if (evt.type === 'error') throw new Error(`${prov.label}: ${evt.error?.message || 'stream error'}`);
+    }
+  };
+
+  while (!done) {
+    const { done: d, value } = await reader.read();
+    if (d) break;
+    buf += dec.decode(value, { stream: true });
+    const lines = buf.split('\n');
+    buf = lines.pop() ?? '';
+    for (const line of lines) {
+      if (!line.startsWith('data:')) continue; // ข้าม event:/comment/keep-alive
+      handleData(line.slice(5).trim());
+      if (done) break;
+    }
+  }
+  reader.cancel().catch(() => {});
+  return fullText;
+}
+
+// ── Provider / Model selection UI ──
+function defaultModelFor(provName) {
+  return provName === 'openrouter' ? 'deepseek/deepseek-chat' : PROVIDERS[provName].models[0][1][0][0];
+}
+
+function renderProviderSelect(sel, current) {
+  if (!sel) return;
+  sel.innerHTML = Object.entries(PROVIDERS).map(([id, p]) =>
+    `<option value="${id}">${p.label}${getApiKey(id) ? '' : ' ⚠'}</option>`).join('');
+  sel.value = current;
+}
+
+function renderModelSelect(sel, provName, selected, includeCustomOption = true) {
+  if (!sel) return;
+  const prov = PROVIDERS[provName];
+  let found = false;
+  let html = '';
+  for (const [group, items] of prov.models) {
+    const opts = items.map(([id, label]) => {
+      if (id === selected) found = true;
+      return `<option value="${id}">${label}</option>`;
+    }).join('');
+    html += group ? `<optgroup label="${group}">${opts}</optgroup>` : opts;
+  }
+  // custom model id ที่ผู้ใช้เคยเพิ่มของ provider นี้
+  for (const id of (S.currentWs?.settings?.customModels?.[provName] || [])) {
+    if (id === selected) found = true;
+    html += `<option value="${id}">⭐ ${id}</option>`;
+  }
+  if (selected && !found) html += `<option value="${selected}">⭐ ${selected}</option>`;
+  if (includeCustomOption) html += `<option value="__custom__">✏ กำหนดเอง…</option>`;
+  sel.innerHTML = html;
+  sel.value = selected || defaultModelFor(provName);
+}
+
+// sync provider+model selects ทั้ง quick bar และหน้า settings จากค่าใน workspace
+// (ไม่มี workspace → แสดง default openrouter เพื่อให้แท็บแปลใช้งานได้)
+function renderProviderUI() {
+  const provName = getProvider();
+  const model = S.currentWs?.settings?.translateModel || defaultModelFor(provName);
+  renderProviderSelect(document.getElementById('translateProvider'), provName);
+  renderProviderSelect(document.getElementById('wsProviderSelect'), provName);
+  renderModelSelect(document.getElementById('translateModel'), provName, model);
+  renderModelSelect(document.getElementById('wsTranslateModel'), provName, model);
+}
+
+async function onProviderChange(p) {
+  if (!S.currentWs || !PROVIDERS[p]) return;
+  S.currentWs.settings = { ...(S.currentWs.settings || {}), aiProvider: p, translateModel: defaultModelFor(p) };
+  await lsSaveWorkspace(S.currentWs);
+  renderProviderUI();
+  checkHealth();
+  if (!getApiKey(p)) showToast(`ยังไม่มี API Key ของ ${PROVIDERS[p].label} — ตั้งได้ที่ ⚙ ตั้งค่า API Key`, '');
+}
+
+async function onModelChange(v) {
+  if (!S.currentWs) return;
+  const provName = getProvider();
+  if (v === '__custom__') {
+    const id = prompt(`ใส่ model id ของ ${PROVIDERS[provName].label} (เช่น ${defaultModelFor(provName)}):`);
+    if (!id || !id.trim()) { renderProviderUI(); return; }
+    v = id.trim();
+    const cm = S.currentWs.settings?.customModels || {};
+    cm[provName] = [...new Set([...(cm[provName] || []), v])];
+    S.currentWs.settings = { ...(S.currentWs.settings || {}), customModels: cm };
+  }
+  S.currentWs.settings = { ...(S.currentWs.settings || {}), translateModel: v };
+  await lsSaveWorkspace(S.currentWs);
+  renderProviderUI();
 }
 
 const MODEL_COSTS = {
@@ -499,10 +775,27 @@ const MODEL_COSTS = {
   'anthropic/claude-3-haiku':          { in: 0.25,  out: 1.25 },
   'meta-llama/llama-3.3-70b-instruct:free': { in: 0, out: 0 },
   'meta-llama/llama-4-scout:free':     { in: 0,     out: 0 },
+  // ── Direct providers (namespaced 'provider:model') ──
+  'gemini:gemini-2.5-flash':           { in: 0.30,  out: 2.50 },
+  'gemini:gemini-2.5-flash-lite':      { in: 0.10,  out: 0.40 },
+  'gemini:gemini-2.5-pro':             { in: 1.25,  out: 10.0 },
+  'gemini:gemini-2.0-flash':           { in: 0.10,  out: 0.40 },
+  'openai:gpt-5-nano':                 { in: 0.05,  out: 0.40 },
+  'openai:gpt-5-mini':                 { in: 0.25,  out: 2.00 },
+  'openai:gpt-5':                      { in: 1.25,  out: 10.0 },
+  'openai:gpt-4.1-nano':               { in: 0.10,  out: 0.40 },
+  'openai:gpt-4o-mini':                { in: 0.15,  out: 0.60 },
+  'openai:gpt-4o':                     { in: 2.50,  out: 10.0 },
+  'anthropic:claude-haiku-4-5':        { in: 1.00,  out: 5.00 },
+  'anthropic:claude-sonnet-4-6':       { in: 3.00,  out: 15.0 },
+  'anthropic:claude-opus-4-8':         { in: 5.00,  out: 25.0 },
+  'deepseek:deepseek-chat':            { in: 0.27,  out: 1.10 },
+  'deepseek:deepseek-reasoner':        { in: 0.55,  out: 2.19 },
 };
 
-function addCosts(inputTok, outputTok, model) {
-  const rates = MODEL_COSTS[model] || { in: 0.1, out: 0.3 };  // fallback ใช้ค่ากลาง ไม่เกินจริง
+function addCosts(inputTok, outputTok, model, provider) {
+  const prov = provider || getProvider();
+  const rates = MODEL_COSTS[prov + ':' + model] || MODEL_COSTS[model] || { in: 0.1, out: 0.3 };  // fallback ใช้ค่ากลาง ไม่เกินจริง
   const usd = (inputTok / 1e6 * rates.in) + (outputTok / 1e6 * rates.out);
   // ─ Global cost ─
   S.costs.tokens.input += inputTok;
@@ -613,6 +906,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const lastWs = await getLastWs();
   if (lastWs) await selectWorkspace(lastWs);
+  else renderProviderUI(); // ไม่มี workspace ก็ยังต้องมีรายการ provider/model ใน quick bar
 
   checkBackupReminderOnLoad();
 });
@@ -621,13 +915,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 function checkHealth() {
   const dot = document.getElementById('statusDot');
   const txt = document.getElementById('statusText');
-  const key = getApiKey();
-  if (key) {
+  const provName = getProvider();
+  const label = PROVIDERS[provName].label;
+  if (getApiKey(provName)) {
     dot.className = 'status-dot ok';
-    txt.textContent = 'API Key พร้อมใช้';
+    txt.textContent = `${label}: Key พร้อมใช้`;
   } else {
     dot.className = 'status-dot error';
-    txt.textContent = 'ยังไม่ได้ตั้ง API Key';
+    txt.textContent = `${label}: ยังไม่ได้ตั้ง Key`;
   }
 }
 
@@ -675,8 +970,8 @@ async function selectWorkspace(id) {
   document.getElementById('wsContent').className = 'ws-content-visible';
   document.getElementById('wsNameHeader').textContent = `${ws.emoji || '📖'} ${ws.name}`;
 
-  const model = ws.settings?.translateModel || 'deepseek/deepseek-chat';
-  document.getElementById('translateModel').value = model;
+  renderProviderUI();
+  checkHealth();
 
   // Restore custom activeStyleId from workspace settings
   const savedStyle = ws.settings?.activeStyleId;
@@ -765,7 +1060,7 @@ function renderWsSettings() {
   document.getElementById('wsEditName').value = w.name || '';
   document.getElementById('wsEditDesc').value = w.description || '';
   document.getElementById('wsEditEmoji').value = w.emoji || '📖';
-  document.getElementById('wsTranslateModel').value = w.settings?.translateModel || 'deepseek/deepseek-chat';
+  renderProviderUI();
   const temp = w.settings?.temperature ?? 0.7;
   document.getElementById('wsTemp').value = temp;
   document.getElementById('wsTempVal').textContent = temp;
@@ -789,9 +1084,12 @@ async function saveWsSettings() {
   S.currentWs.name = document.getElementById('wsEditName').value.trim();
   S.currentWs.description = document.getElementById('wsEditDesc').value.trim();
   S.currentWs.emoji = document.getElementById('wsEditEmoji').value.trim() || '📖';
+  const wsModelVal = document.getElementById('wsTranslateModel').value;
   S.currentWs.settings = {
     ...(S.currentWs.settings || {}),
-    translateModel: document.getElementById('wsTranslateModel').value,
+    aiProvider: document.getElementById('wsProviderSelect')?.value || 'openrouter',
+    // '__custom__' ถูก resolve แล้วใน onModelChange — กันค่าหลุดมาที่นี่
+    ...(wsModelVal && wsModelVal !== '__custom__' ? { translateModel: wsModelVal } : {}),
     temperature: parseFloat(document.getElementById('wsTemp').value),
     autoGlossary: document.getElementById('wsAutoGlossary').checked,
   };
@@ -1884,67 +2182,6 @@ function getOptions() {
   };
 }
 
-async function translateChapter() {
-  const rawContent = document.getElementById('rawInput').value.trim();
-  if (!rawContent) return showToast('กรุณาใส่เนื้อหาที่ต้องการแปล', 'error');
-
-  const activeStyle = BUILTIN_STYLES[S.activeStyleId];
-  const apiKey = localStorage.getItem('nt8_apikey');
-  if (!apiKey) return showToast('ไม่พบ API Key ในระบบ', 'error');
-
-  S.translating = true;
-  updateUI();
-  
-  const outBox = document.getElementById('translatedOutput');
-  outBox.innerHTML = ''; 
-  S.abortCtrl = new AbortController();
-
-  try {
-    // [V11 UPDATE] Smart Filtering: เลือกเฉพาะคำศัพท์ที่ปรากฏในเนื้อหาบทนี้
-    const relevantGlossary = getSmartGlossary(rawContent, S.glossaryData);
-    
-    let glossaryBlock = "";
-    if (relevantGlossary.length > 0) {
-      const PRONOUN_3RD = { male: '3rd→เขา/ของเขา', female: '3rd→เธอ/นาง/ของเธอ' };
-      const PRONOUN_1ST = { male: '1st→ผม/กู/ข้า', female: '1st→ฉัน/หนู/อิฉัน' };
-      glossaryBlock = "\n### REQUIRED GLOSSARY (ใช้คำแปลและสรรพนามตามนี้อย่างเคร่งครัด):\n" +
-        relevantGlossary.map(g => {
-          let line = `- ${g.korean} = ${g.thai}`;
-          if (g.type === 'character' && g.gender && g.gender !== 'neutral') {
-            line += ` | gender:${g.gender === 'male' ? 'male/ชาย' : 'female/หญิง'}`;
-            line += ` | ${PRONOUN_3RD[g.gender]} | ${PRONOUN_1ST[g.gender]}`;
-          }
-          if (g.note) line += ` [${g.note}]`;
-          return line;
-        }).join('\n') + "\n";
-    }
-
-    const systemPrompt = `${activeStyle.prompt}
-
-THAI PRONOUN RULES — CRITICAL: Male characters → 3rd: เขา/ของเขา, 1st: ผม/กู/ข้า. Female characters → 3rd: เธอ/นาง/ของเธอ, 1st: ฉัน/หนู. NEVER mix genders.
-${glossaryBlock}
-แปลจากเกาหลีเป็นไทยโดยรักษาสำนวนนิยายและความต่อเนื่องของสรรพนามตามเพศที่ระบุในคำศัพท์`;
-
-    // เรียกใช้ SSE Stream (ต้องมีฟังก์ชัน sseStream เดิมของคุณอยู่ในไฟล์)
-    await sseStream(apiKey, systemPrompt, rawContent, (chunk) => {
-      outBox.innerHTML += chunk; 
-    }, S.abortCtrl.signal);
-
-    showToast('แปลเสร็จสิ้น ✓', 'success');
-  } catch (err) {
-    if (err.name === 'AbortError') {
-      showToast('หยุดการแปลแล้ว', 'info');
-    } else {
-      console.error(err);
-      showToast('เกิดข้อผิดพลาดในการแปล', 'error');
-    }
-  } finally {
-    S.translating = false;
-    S.abortCtrl = null;
-    updateUI();
-  }
-}
-
 function splitText(text) {
   const paragraphs = text.split(/\n\n+/).map(p => p.trim()).filter(Boolean);
   if (paragraphs.length === 0) return [{ index: 0, text }];
@@ -2002,55 +2239,7 @@ function _mcGet(key) {
   return _memoryCache[key];
 }
 
-// ── True SSE streaming per segment ──
-// ── core SSE streaming helper ──
-async function sseStream(url, body, onChunk, onUsage, signal) {
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${getApiKey()}`,
-      'HTTP-Referer': location.origin,
-      'X-Title': 'NovelTrans v10 Pro',
-    },
-    body: JSON.stringify({ ...body, stream: true }),
-    signal,
-  });
-
-  if (!res.ok) {
-    const errData = await res.json().catch(() => ({}));
-    throw new Error(errData.error?.message || `HTTP ${res.status}`);
-  }
-
-  const reader = res.body.getReader();
-  const dec = new TextDecoder();
-  let buf = '', fullText = '', done = false;
-
-  while (!done) {
-    const { done: d, value } = await reader.read();
-    if (d) break;
-    buf += dec.decode(value, { stream: true });
-    const lines = buf.split('\n');
-    buf = lines.pop() ?? '';
-
-    for (const line of lines) {
-      if (!line.startsWith('data: ')) continue;
-      const raw = line.slice(6).trim();
-      if (raw === '[DONE]') { done = true; break; }
-      try {
-        const evt = JSON.parse(raw);
-        const delta = evt.choices?.[0]?.delta?.content;
-        if (delta) { fullText += delta; onChunk(delta); }
-        if (evt.usage) onUsage(evt.usage.prompt_tokens||0, evt.usage.completion_tokens||0);
-        // finish_reason = stop also means done
-        if (evt.choices?.[0]?.finish_reason === 'stop') { done = true; break; }
-      } catch {}
-    }
-  }
-  reader.cancel().catch(() => {});
-  return fullText;
-}
-
+// ── True SSE streaming per segment — ใช้ aiStream (provider-aware) ──
 async function streamSegment(text, contextSegs, options, onChunk, onDone) {
   const { model, temperature = 0.7, customStylePrompt, wsGlossary = {}, useMemory = true } = options;
   const cacheKey = text.slice(0, 120);
@@ -2081,8 +2270,7 @@ async function streamSegment(text, contextSegs, options, onChunk, onDone) {
   let inTok = 0, outTok = 0;
   let fullText = '';
   try {
-    fullText = await sseStream(
-      'https://openrouter.ai/api/v1/chat/completions',
+    fullText = await aiStream(
       { model, temperature, max_tokens: Math.max(2000, Math.ceil(text.length * 2)), messages: [{ role: 'user', content: prompt }] },
       onChunk,
       (i, o) => { inTok = i; outTok = o; },
@@ -2282,8 +2470,7 @@ async function translateAllStream(text) {
     let fullText = '';
 
     try {
-      fullText = await sseStream(
-        'https://openrouter.ai/api/v1/chat/completions',
+      fullText = await aiStream(
         { model: options.model, temperature: preset.temperature ?? options.temperature, max_tokens: Math.max(4000, Math.ceil(text.length * 2)), messages: [{ role: 'user', content: prompt }] },
         (delta) => {
           charCount += delta.length;
@@ -2480,8 +2667,7 @@ async function translateChunked(text, options) {
         S.abortCtrl = new AbortController();
         const timer = setTimeout(() => S.abortCtrl.abort(), 120000);
         try {
-          chunkFull = await sseStream(
-            'https://openrouter.ai/api/v1/chat/completions',
+          chunkFull = await aiStream(
             { model: options.model, temperature: chunkPreset.temperature ?? options.temperature, max_tokens: Math.max(2000, Math.ceil(chunk.length * 2)), messages: [{ role: 'user', content: prompt }] },
             (delta) => {
               chunkFull += delta;
@@ -2627,26 +2813,55 @@ function hideHighlight() {
   document.getElementById('sourceText').style.display = 'block';
 }
 
-// ─── API Key Settings ───
-function saveApiKey() {
-  const key = document.getElementById('settingsApiKey').value.trim();
-  if (!key) return;
-  localStorage.setItem(LS_KEY_API, key);
-  closeModal('modal-settings');
-  checkHealth();
-  showToast('บันทึก API Key แล้ว ✓', 'success');
+// ─── API Key Settings (ต่อ provider) ───
+function openApiSettings() {
+  const c = document.getElementById('apiKeysContainer');
+  const active = getProvider();
+  c.innerHTML = Object.entries(PROVIDERS).map(([id, p]) => `
+    <div class="sf-group" style="border-bottom:1px solid var(--border);padding-bottom:10px;margin-bottom:10px">
+      <div class="sf-label">${p.label}${id === active ? ' <span style="color:var(--gold);font-size:0.68rem">← ใช้อยู่</span>' : ''}</div>
+      <input id="apiKey-${id}" type="password" class="text-input" placeholder="${p.keyPlaceholder}"/>
+      <div style="display:flex;align-items:center;gap:10px;margin-top:4px;flex-wrap:wrap">
+        <button class="btn-xs" onclick="testApiKey('${id}')">▶ ทดสอบ</button>
+        <span id="apiTestResult-${id}" style="font-size:0.72rem;color:var(--text-muted)">${p.keyHint}</span>
+      </div>
+    </div>`).join('');
+  // เติมค่า key เดิมผ่าน .value (เลี่ยงปัญหา escape ใน attribute)
+  for (const [id, p] of Object.entries(PROVIDERS)) {
+    const el = document.getElementById('apiKey-' + id);
+    if (el) el.value = localStorage.getItem(p.lsKey) || '';
+  }
+  openModal('modal-settings');
 }
 
-async function testApiKey() {
-  const key = document.getElementById('settingsApiKey').value.trim();
-  const result = document.getElementById('apiTestResult');
+function saveApiKey() {
+  let saved = 0;
+  for (const [id, p] of Object.entries(PROVIDERS)) {
+    const el = document.getElementById('apiKey-' + id);
+    if (!el) continue;
+    const v = el.value.trim();
+    if (v) { localStorage.setItem(p.lsKey, v); saved++; }
+    else localStorage.removeItem(p.lsKey);
+  }
+  closeModal('modal-settings');
+  checkHealth();
+  renderProviderUI();
+  showToast(`บันทึก API Key แล้ว ✓ (${saved} provider)`, 'success');
+}
+
+async function testApiKey(provId) {
+  const p = PROVIDERS[provId];
+  if (!p) return;
+  const key = document.getElementById('apiKey-' + provId)?.value.trim();
+  const result = document.getElementById('apiTestResult-' + provId);
   if (!key) { result.textContent = '⚠ ใส่ key ก่อน'; result.style.color = 'var(--gold)'; return; }
   result.textContent = 'กำลังทดสอบ...'; result.style.color = 'var(--text-muted)';
   try {
-    const res = await fetch('https://openrouter.ai/api/v1/models', { headers: { 'Authorization': `Bearer ${key}` } });
+    const t = p.testEndpoint(key);
+    const res = await fetch(t.url, { headers: t.headers });
     if (res.ok) { result.textContent = '✓ Key ใช้งานได้'; result.style.color = '#4caf50'; }
-    else { result.textContent = '✗ Key ไม่ถูกต้อง'; result.style.color = 'var(--crimson-light)'; }
-  } catch { result.textContent = '✗ ทดสอบไม่สำเร็จ'; result.style.color = 'var(--crimson-light)'; }
+    else { result.textContent = `✗ Key ไม่ถูกต้อง (HTTP ${res.status})`; result.style.color = 'var(--crimson-light)'; }
+  } catch { result.textContent = '✗ ทดสอบไม่สำเร็จ (เครือข่าย/CORS)'; result.style.color = 'var(--crimson-light)'; }
 }
 
 // ─── Cost Tracker ───
@@ -2731,6 +2946,7 @@ function openAutoGlossary() {
   _agTab = 'manual';
   agSwitchTab('manual');
   agRenderChapterList();
+  renderModelSelect(document.getElementById('agModel'), getProvider(), document.getElementById('translateModel')?.value, false);
   openModal('modal-autoglossary');
 }
 
@@ -3910,7 +4126,8 @@ function openBatchChapters() {
       <span style="font-size:0.68rem;color:var(--text-muted)">${ch.sourceText?ch.sourceText.length.toLocaleString()+' ตัวอักษร':'&#8212;'}</span>
     </label>
   `).join('');
-  document.getElementById('bchModel').value = document.getElementById('translateModel').value;
+  // populate รายการโมเดลตาม provider ปัจจุบัน (ไม่มีตัวเลือกกำหนดเอง — เลือกจาก quick bar แทน)
+  renderModelSelect(document.getElementById('bchModel'), getProvider(), document.getElementById('translateModel').value, false);
   document.getElementById('bchProgressBox').style.display = 'none';
   document.getElementById('bchLog').innerHTML = '';
   document.getElementById('bchStartBtn').disabled = false;
@@ -4083,8 +4300,7 @@ async function startBatchChapters() {
       const timer = setTimeout(() => S.abortCtrl.abort(), 180000);
       let fullText = '', inTok = 0, outTok = 0;
       try {
-        fullText = await sseStream(
-          'https://openrouter.ai/api/v1/chat/completions',
+        fullText = await aiStream(
           { model, temperature: batchPreset.temperature ?? 0.65, max_tokens: Math.max(4000, Math.ceil(ch.sourceText.length * 2)), messages: [{role:'user',content:prompt}] },
           d => { fullText += d; }, (inp,out) => { inTok=inp; outTok=out; }, S.abortCtrl.signal
         );
@@ -6388,8 +6604,7 @@ async function translateChapterCore(ch, {
   let inTok = 0, outTok = 0;
   let fullText = '';
   try {
-    fullText = await sseStream(
-      'https://openrouter.ai/api/v1/chat/completions',
+    fullText = await aiStream(
       { model: useModel, temperature: temperature, max_tokens: Math.max(16000, Math.ceil(ch.sourceText.length * 4)), messages: [{ role: 'user', content: prompt }] },
       onDelta || function() {},
       function(i, o) { inTok = i; outTok = o; },
