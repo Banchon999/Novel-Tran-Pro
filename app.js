@@ -5084,8 +5084,24 @@ function getTagClass(type) {
   return known.includes(type) ? `tag-${type}` : 'tag-custom';
 }
 
-// ─── Duplicate Check ───
+// ─── Duplicate Check (รองรับทุกภาษา) ───
 let _lastSubstrPairs = [];
+
+// ตรวจว่า `full` เป็น "คำซ้อน" ของ `sub` หรือไม่ — แบบเป็นกลางต่อทุกภาษา
+// • ภาษาที่มีเว้นวรรค (อังกฤษ/ไทยที่เว้นวรรค ฯลฯ): นับเฉพาะเมื่อ sub เป็น token ต้น/ท้ายที่ขอบคำ
+// • ภาษาที่ไม่เว้นวรรค (เกาหลี/ญี่ปุ่น/จีน ฯลฯ): นับเมื่อส่วนที่เกินสั้น (≤3 อักษร — มักเป็นคำชี้/คำต่อท้าย)
+function isSubstringDup(sub, full) {
+  if (!sub || !full || sub === full || !full.includes(sub)) return false;
+  const hasSpaces = /\s/.test(sub) || /\s/.test(full);
+  if (hasSpaces) {
+    return full.startsWith(sub + ' ') || full.endsWith(' ' + sub) || full.includes(' ' + sub + ' ');
+  }
+  const idx   = full.indexOf(sub);
+  const extra = full.length - sub.length; // จำนวนอักษรส่วนเกินรวม
+  // ต้องเป็น prefix หรือ suffix (ขอบใดขอบหนึ่งตรงกัน) และส่วนเกินสั้น
+  const isEdge = (idx === 0) || (idx + sub.length === full.length);
+  return isEdge && extra <= 3;
+}
 
 function checkDuplicateGlossary() {
   const data = S.glossaryData || [];
@@ -5103,13 +5119,13 @@ function checkDuplicateGlossary() {
     else seen[key] = true;
   });
 
-  // ── 2. Korean substring overlaps เช่น 이하율 vs 이하율이 / 이하율의 ──
+  // ── 2. Substring overlaps (รองรับทุกภาษา) เช่น 이하율 vs 이하율이 / "Kim" vs "Kim ssi" ──
   _lastSubstrPairs = [];
   const keys = data.map(g => g.korean.trim()).filter(Boolean);
   for (let i = 0; i < keys.length; i++) {
     for (let j = 0; j < keys.length; j++) {
       if (i === j) continue;
-      if (keys[j].includes(keys[i]) && keys[j] !== keys[i]) {
+      if (isSubstringDup(keys[i], keys[j])) {
         const alreadyLogged = _lastSubstrPairs.some(p => p.sub === keys[i] && p.full === keys[j]);
         if (!alreadyLogged) {
           const subEntry  = data.find(g => g.korean === keys[i]);
@@ -5139,7 +5155,7 @@ function checkDuplicateGlossary() {
     const shown = _lastSubstrPairs.slice(0, 8);
     const more  = _lastSubstrPairs.length - shown.length;
     html += '<div style="margin-bottom:4px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
-      '<span>\ud83d\udd0d <strong>Korean substring \u0e0b\u0e49\u0e2d\u0e19 ' + _lastSubstrPairs.length + ' \u0e04\u0e39\u0e48</strong> \u2014 \u0e2d\u0e32\u0e08 inject \u0e1c\u0e34\u0e14</span>' +
+      '<span>\ud83d\udd0d <strong>\u0e04\u0e33\u0e0b\u0e49\u0e2d\u0e19 ' + _lastSubstrPairs.length + ' \u0e04\u0e39\u0e48</strong> \u2014 \u0e2d\u0e32\u0e08 inject \u0e1c\u0e34\u0e14</span>' +
       '<button id="dupAiResolveBtn" onclick="aiResolveSubstrDups()" style="background:linear-gradient(135deg,#7a5820,#c9a84c);color:#0c0800;border:none;padding:2px 10px;border-radius:4px;cursor:pointer;font-size:0.72rem;font-weight:600">\ud83e\udd16 \u0e43\u0e2b\u0e49 AI \u0e08\u0e31\u0e14\u0e01\u0e32\u0e23</button>' +
       '</div>';
     html += '<div id="dupAiStatus" style="font-size:0.74rem;color:var(--gold);min-height:16px"></div>';
@@ -5177,10 +5193,12 @@ async function removeDuplicateGlossary() {
   showToast(`ลบคำซ้ำ ${removed} รายการ ✓`, 'success');
 }
 
-// ─── AI Resolve Substring Duplicates ───
-// ── Known Korean honorific/title suffixes ที่มักต่อท้ายชื่อ ──
-// ถ้า full = sub + suffix เหล่านี้ → ลบ full ทันที ไม่ต้องรอ AI
+// ─── AI Resolve Substring Duplicates (รองรับทุกภาษา) ───
+// ── Fast-path: คำต่อท้าย/honorific ที่รู้จัก (Korean + บางภาษา) → ตัดสินเองทันทีไม่ต้องรอ AI ──
+// ภาษาอื่นๆ ที่ไม่อยู่ในลิสต์นี้จะถูกส่งให้ AI วิเคราะห์ (prompt รองรับทุกภาษา)
 const KOREAN_NAME_SUFFIXES = [
+  // multilingual honorifics (fast-path)
+  'さん','様','君','ちゃん','殿','先生','-san','-sama','-kun','-chan','님',
   // honorifics
   '씨','님','군','양','아','야',
   // social roles ที่ต่อท้ายชื่อ
@@ -5193,13 +5211,13 @@ const KOREAN_NAME_SUFFIXES = [
   '에서','한테','께','에게','이다','이라','부터','까지',
 ];
 
-const DUP_RESOLVE_PROMPT = `You are a Korean webnovel glossary expert. Analyze pairs of glossary entries where the shorter Korean term appears inside the longer one.
+const DUP_RESOLVE_PROMPT = `You are a multilingual glossary expert. The source language of these terms may be ANY language (Korean, Japanese, Chinese, English, Russian, etc.). Analyze pairs of glossary entries where the shorter source term appears inside the longer one.
 
-RULES:
-- If the longer term = shorter term + Korean grammatical particle (이,의,을,를,가,은,는,이다,이라,로,으로,에,와,과,도,만,부터,까지,에서,한테,께,에게), then action = "delete_full"
-- If the longer term = shorter term + Korean honorific or social title suffix (씨,님,군,양,선배,후배,형,오빠,언니,누나,왕,왕자,기사,장군,영주 etc.), then action = "delete_full" — because the base term is sufficient for glossary purposes
-- If both terms have CLEARLY different meanings as independent concepts (e.g. 검 = sword vs 검기 = sword aura), then action = "keep_both"
-- When unsure, action = "keep_both"
+RULES (apply to whatever language the terms are in):
+- If the longer term = shorter term + a grammatical particle, inflection, article, plural/possessive/case marker, or punctuation, then action = "delete_full". (e.g. Korean 이하율 vs 이하율이; English "king" vs "king's"; Japanese 田中 vs 田中は)
+- If the longer term = shorter term + an honorific or social title (e.g. Korean 씨/님/선배, Japanese さん/様/殿, Chinese 先生, English Mr/Sir/Lady), then action = "delete_full" — the base term is sufficient for glossary purposes.
+- If both terms are CLEARLY different independent concepts (e.g. Korean 검 = sword vs 검기 = sword aura; English "sword" vs "swordsman"), then action = "keep_both".
+- When unsure, action = "keep_both".
 
 PAIRS (JSON):
 {pairs}
