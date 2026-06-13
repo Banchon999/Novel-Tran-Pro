@@ -531,10 +531,19 @@ function checkDuplicateGlossary() {
     }
   }
 
-  const hasIssues = exactDups.size > 0 || _lastSubstrPairs.length > 0;
+  // \u2500\u2500 3. \u0e04\u0e33\u0e41\u0e1b\u0e25\u0e44\u0e17\u0e22\u0e0b\u0e49\u0e33 (Korean \u0e15\u0e48\u0e32\u0e07\u0e01\u0e31\u0e19 \u0e41\u0e15\u0e48\u0e41\u0e1b\u0e25\u0e44\u0e17\u0e22\u0e40\u0e2b\u0e21\u0e37\u0e2d\u0e19\u0e01\u0e31\u0e19) \u2500\u2500
+  const thaiMap = {};
+  data.forEach(g => {
+    const t = (g.thai || '').trim();
+    if (!t) return;
+    (thaiMap[t] = thaiMap[t] || []).push(g.korean);
+  });
+  const thaiDups = Object.entries(thaiMap).filter(([, ks]) => ks.length > 1);
+
+  const hasIssues = exactDups.size > 0 || _lastSubstrPairs.length > 0 || thaiDups.length > 0;
   if (!hasIssues) {
     dupAlert.style.display = 'none';
-    showToast('\u2713 \u0e44\u0e21\u0e48\u0e1e\u0e1a\u0e04\u0e33\u0e0b\u0e49\u0e33\u0e2b\u0e23\u0e37\u0e2d substring \u0e0b\u0e49\u0e2d\u0e19\u0e43\u0e19\u0e04\u0e25\u0e31\u0e07\u0e28\u0e31\u0e1e\u0e17\u0e4c', 'success');
+    showToast('\u2713 \u0e44\u0e21\u0e48\u0e1e\u0e1a\u0e04\u0e33\u0e0b\u0e49\u0e33 (\u0e15\u0e23\u0e27\u0e08: \u0e04\u0e33\u0e40\u0e01\u0e32\u0e2b\u0e25\u0e35\u0e0b\u0e49\u0e33 \u00b7 \u0e04\u0e33\u0e0b\u0e49\u0e2d\u0e19 \u00b7 \u0e04\u0e33\u0e41\u0e1b\u0e25\u0e44\u0e17\u0e22\u0e0b\u0e49\u0e33)', 'success');
     return;
   }
 
@@ -563,6 +572,20 @@ function checkDuplicateGlossary() {
       '</div>'
     ).join('');
     if (more > 0) html += '<div style="font-size:0.72rem;color:var(--text-muted)">...\u0e41\u0e25\u0e30\u0e2d\u0e35\u0e01 ' + more + ' \u0e04\u0e39\u0e48</div>';
+  }
+
+  if (thaiDups.length > 0) {
+    const shown = thaiDups.slice(0, 8);
+    const more  = thaiDups.length - shown.length;
+    html += '<div style="margin-top:6px;margin-bottom:4px">\ud83d\udd24 <strong>\u0e04\u0e33\u0e41\u0e1b\u0e25\u0e44\u0e17\u0e22\u0e0b\u0e49\u0e33 ' + thaiDups.length + ' \u0e04\u0e33</strong> (\u0e40\u0e01\u0e32\u0e2b\u0e25\u0e35\u0e15\u0e48\u0e32\u0e07\u0e01\u0e31\u0e19 \u2192 \u0e41\u0e1b\u0e25\u0e44\u0e17\u0e22\u0e40\u0e2b\u0e21\u0e37\u0e2d\u0e19\u0e01\u0e31\u0e19)</div>';
+    html += shown.map(([thai, ks]) =>
+      '<div style="font-size:0.78rem;padding:2px 0;color:var(--text-secondary)">' +
+        '<span style="color:var(--gold)">"' + esc(thai) + '"</span>' +
+        '<span style="color:var(--text-muted)"> \u2190 </span>' +
+        '<span style="color:var(--text-primary)">' + ks.map(k => esc(k)).join(', ') + '</span>' +
+      '</div>'
+    ).join('');
+    if (more > 0) html += '<div style="font-size:0.72rem;color:var(--text-muted)">...\u0e41\u0e25\u0e30\u0e2d\u0e35\u0e01 ' + more + ' \u0e04\u0e33</div>';
   }
 
   html += '<button onclick="document.getElementById(\'glossaryDupAlert\').style.display=\'none\'" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:0.8rem;float:right;margin-top:4px">\u2715</button>';
