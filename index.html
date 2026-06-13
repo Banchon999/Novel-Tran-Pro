@@ -83,7 +83,6 @@
       <button class="sub-tab" data-tab="chapters" onclick="switchTab('chapters')">📚 ตอน</button>
       <button class="sub-tab" data-tab="glossary" onclick="switchTab('glossary')">📖 คลังศัพท์</button>
       <button class="sub-tab" data-tab="styles" onclick="switchTab('styles')">🖊 Styles</button>
-      <button class="sub-tab" data-tab="marathon" onclick="switchTab('marathon')">🏃 Marathon</button>
       <button class="sub-tab" data-tab="settings-ws" onclick="switchTab('settings-ws')">⚙ ตั้งค่า</button>
     </div>
 
@@ -261,62 +260,6 @@
     </div>
 
     <!-- WORKSPACE SETTINGS TAB -->
-    <!-- MARATHON TAB -->
-    <div class="tab-content" id="tab-marathon" style="display:none">
-      <div class="marathon-layout">
-        <!-- Config bar -->
-        <div class="marathon-config-bar">
-          <div class="mc-badge-row">
-            <div class="mc-badge-item">
-              <span class="mc-badge-label">Preset</span>
-              <span id="mp-preset-badge" class="preset-badge">📖 นิยาย</span>
-            </div>
-            <div class="mc-badge-item">
-              <span class="mc-badge-label">พร้อมกัน</span>
-              <span id="mp-concurrency-badge" class="mc-badge-val">⚡x3</span>
-            </div>
-            <div class="mc-badge-item">
-              <span class="mc-badge-label">วันละ</span>
-              <span id="mp-limit-badge" class="mc-badge-val">100 ตอน/วัน</span>
-            </div>
-            <button class="btn btn-ghost btn-sm" onclick="openMarathonConfig()">🔧 ตั้งค่า</button>
-          </div>
-        </div>
-
-        <!-- Today progress -->
-        <div class="mp-progress-section">
-          <div class="mp-today-row">
-            <span class="mp-today-label">วันนี้</span>
-            <span class="mp-today-nums"><span id="mp-today-count">0</span> / <span id="mp-daily-limit-disp">100</span> ตอน</span>
-            <span class="mp-cost-badge" id="mp-cost-today">$0.0000</span>
-          </div>
-          <div class="mp-bar-wrap"><div id="mp-bar" class="mp-bar" style="width:0%"></div></div>
-          <div class="mp-eta" id="mp-eta">Queue: 0 ตอน  |  ETA: —</div>
-        </div>
-
-        <!-- Controls -->
-        <div class="mp-controls">
-          <button class="btn btn-primary" id="mp-start-btn" onclick="marathonStart()">▶ Start</button>
-          <button class="btn btn-secondary" id="mp-pause-btn" onclick="marathonPause()" disabled>⏸ Pause</button>
-          <button class="btn btn-danger" id="mp-stop-btn" onclick="marathonStop()" disabled>⬛ Stop</button>
-        </div>
-
-        <!-- Queue management -->
-        <div class="mp-queue-mgmt">
-          <button class="btn btn-ghost btn-sm" onclick="marathonAddAllPending()">＋ ทุกตอนที่ยังไม่แปล</button>
-          <button class="btn btn-ghost btn-sm" onclick="marathonClearDone()">✓ นำตอนแปลแล้วออก</button>
-          <button class="btn btn-ghost btn-sm" onclick="marathonClearQueue()">🗑 ล้าง Queue</button>
-          <span id="mp-queue-count" class="mp-count-badge">0 ตอนในคิว</span>
-        </div>
-
-        <!-- Active slots -->
-        <div id="mp-slots" class="mp-slots"></div>
-
-        <!-- Log -->
-        <div id="mp-log" class="mp-log"></div>
-      </div>
-    </div>
-
     <div class="tab-content" id="tab-settings-ws" style="display:none">
       <div class="settings-scroll">
         <div class="settings-form">
@@ -1322,52 +1265,6 @@
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('modal-multi-export')">ยกเลิก</button>
       <button class="btn btn-primary" onclick="doMultiExport()">📥 Export JSON Bundle</button>
-    </div>
-  </div>
-</div>
-
-<!-- Marathon Config Modal -->
-<div class="modal-overlay" id="modal-marathon-config" style="display:none">
-  <div class="modal-box">
-    <div class="modal-header">
-      <span>🏃 Marathon — ตั้งค่า</span>
-      <button class="icon-btn" onclick="closeModal('modal-marathon-config')">✕</button>
-    </div>
-    <div class="modal-body">
-      <div class="sf-group">
-        <div class="sf-label">Preset การแปล</div>
-        <select id="mc-preset-select" class="select-input">
-          <option value="literary">📖 นิยาย — Literary</option>
-          <option value="draft">⚡ ฉบับร่าง — Draft</option>
-          <option value="dialogue">🎭 บทสนทนา — Dialogue</option>
-          <option value="faithful">🔤 แปลตรง — Faithful</option>
-          <option value="webtoon">📱 เว็บตูน — Webtoon</option>
-          <option value="mtlFix">🔧 ตรวจ MTL — MTL Fix</option>
-        </select>
-      </div>
-      <div class="sf-group">
-        <div class="sf-label">แปลพร้อมกัน (Concurrency) <span id="mc-concurrency-val">3</span> ตอน</div>
-        <input type="range" id="mc-concurrency" min="1" max="5" step="1" value="3" class="range-input" oninput="document.getElementById('mc-concurrency-val').textContent=this.value"/>
-        <div style="font-size:0.72rem;color:var(--text-muted);margin-top:2px">แนะนำ 2-3 เพื่อหลีกเลี่ยง API rate limit</div>
-      </div>
-      <div class="sf-group">
-        <div class="sf-label">จำกัดตอน/วัน (0 = ไม่จำกัด)</div>
-        <input type="number" id="mc-daily-limit" class="text-input" value="100" min="0" max="9999" style="max-width:120px"/>
-      </div>
-      <div class="sf-group">
-        <div class="sf-label">จำกัดค่าใช้จ่าย/วัน USD (0 = ไม่จำกัด)</div>
-        <input type="number" id="mc-cost-limit" class="text-input" value="0" min="0" max="999" step="0.5" style="max-width:120px"/>
-      </div>
-      <div class="sf-group">
-        <label class="toggle-mini" style="gap:8px;cursor:pointer">
-          <input type="checkbox" id="mc-retry" checked/>
-          <span style="font-size:0.82rem;color:var(--text-secondary)">Retry อัตโนมัติเมื่อล้มเหลว (1 ครั้ง)</span>
-        </label>
-      </div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="closeModal('modal-marathon-config')">ยกเลิก</button>
-      <button class="btn btn-primary" onclick="saveMarathonConfig()">💾 บันทึก</button>
     </div>
   </div>
 </div>

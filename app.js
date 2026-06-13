@@ -6419,190 +6419,6 @@ ${sheetRows}
     return;
   }
 }
-// ═══════════════════════════════════════════════
-// ─── Marathon Mode ──────────────────────────────
-// ═══════════════════════════════════════════════
-
-const mState = {
-  running: false,
-  paused: false,
-  stopReq: false,
-  slots: {},
-  log: [],
-  date: '',
-  completedToday: 0,
-  costToday: 0,
-  startTime: null,
-  completedSinceStart: 0,
-  uiInterval: null,
-};
-
-function marathonGetConfig() {
-  return {
-    presetId:       S.currentWs?.marathonConfig?.presetId       ?? S.currentWs?.presetId ?? 'literary',
-    concurrency:    S.currentWs?.marathonConfig?.concurrency    ?? 3,
-    dailyLimit:     S.currentWs?.marathonConfig?.dailyLimit     ?? 100,
-    dailyCostLimit: S.currentWs?.marathonConfig?.dailyCostLimit ?? 0,
-    retryOnFail:    S.currentWs?.marathonConfig?.retryOnFail    ?? true,
-  };
-}
-
-function marathonGetTodayKey() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-}
-
-function marathonSyncStats() {
-  const ws = S.currentWs;
-  if (!ws) return;
-  const today = marathonGetTodayKey();
-  if (ws.marathonStats?.date !== today) {
-    ws.marathonStats = { date: today, completedToday: 0, costToday: 0 };
-  }
-  mState.date           = today;
-  mState.completedToday = ws.marathonStats.completedToday || 0;
-  mState.costToday      = ws.marathonStats.costToday      || 0;
-}
-
-function marathonIsDailyLimitReached() {
-  const cfg = marathonGetConfig();
-  marathonSyncStats();
-  if (cfg.dailyLimit     > 0 && mState.completedToday >= cfg.dailyLimit)     return true;
-  if (cfg.dailyCostLimit > 0 && mState.costToday      >= cfg.dailyCostLimit) return true;
-  return false;
-}
-
-function marathonDequeue() {
-  if (!S.currentWs?.marathonQueue?.length) return null;
-  return S.currentWs.marathonQueue.shift();
-}
-
-function marathonAddAllPending() {
-  if (!S.currentWs) return;
-  if (!Array.isArray(S.currentWs.marathonQueue)) S.currentWs.marathonQueue = [];
-  const qSet = new Set(S.currentWs.marathonQueue);
-  const sorted = [...(S.currentWs.chapters || [])].sort((a,b) => (a.chapterNum||0)-(b.chapterNum||0));
-  let added = 0;
-  for (const ch of sorted) {
-    if (ch.status !== 'translated' && ch.sourceText?.trim() && !qSet.has(ch.id)) {
-      S.currentWs.marathonQueue.push(ch.id);
-      qSet.add(ch.id);
-      added++;
-    }
-  }
-  lsSaveWorkspace(S.currentWs).catch(() => {});
-  marathonUpdateUI();
-  showToast(`เพิ่ม ${added} ตอนในคิว`, 'success');
-}
-
-function marathonClearDone() {
-  if (!S.currentWs?.marathonQueue) return;
-  const before = S.currentWs.marathonQueue.length;
-  S.currentWs.marathonQueue = S.currentWs.marathonQueue.filter(id => {
-    const ch = S.currentWs.chapters?.find(c => c.id === id);
-    return ch && ch.status !== 'translated';
-  });
-  const removed = before - S.currentWs.marathonQueue.length;
-  lsSaveWorkspace(S.currentWs).catch(() => {});
-  marathonUpdateUI();
-  if (removed) showToast(`นำออก ${removed} ตอนที่แปลแล้ว`, '');
-}
-
-function marathonClearQueue() {
-  if (!S.currentWs) return;
-  S.currentWs.marathonQueue = [];
-  lsSaveWorkspace(S.currentWs).catch(() => {});
-  marathonUpdateUI();
-  showToast('ล้าง Queue แล้ว', '');
-}
-
-function marathonAddLog(msg, type) {
-  type = type || '';
-  mState.log.unshift({ msg, type, time: Date.now() });
-  if (mState.log.length > 200) mState.log.pop();
-  marathonRenderLog();
-}
-
-function marathonRenderLog() {
-  const el = document.getElementById('mp-log');
-  if (!el) return;
-  el.innerHTML = mState.log.slice(0, 60).map(e => {
-    const color = e.type === 'success' ? 'var(--jade)' : e.type === 'error' ? 'var(--crimson-light)' : 'var(--text-secondary)';
-    return '<div style="color:' + color + ';font-size:0.76rem;padding:2px 0;border-bottom:1px solid var(--border)">' + esc(e.msg) + '</div>';
-  }).join('');
-}
-
-function marathonUpdateUI() {
-  if (!S.currentWs) return;
-  const cfg = marathonGetConfig();
-  marathonSyncStats();
-  const qLen = S.currentWs.marathonQueue?.length ?? 0;
-
-  const preset = PRESETS[cfg.presetId] || PRESETS.literary;
-  const pb = document.getElementById('mp-preset-badge');
-  if (pb) pb.textContent = preset.emoji + ' ' + preset.name;
-  const cb = document.getElementById('mp-concurrency-badge');
-  if (cb) cb.textContent = String.fromCodePoint(0x26A1) + 'x' + cfg.concurrency;
-  const lb = document.getElementById('mp-limit-badge');
-  if (lb) lb.textContent = cfg.dailyLimit > 0 ? cfg.dailyLimit + ' ตอน/วัน' : 'ไม่จำกัด';
-
-  const pct = cfg.dailyLimit > 0 ? Math.min(100, Math.round(mState.completedToday / cfg.dailyLimit * 100)) : 0;
-  const todayEl = document.getElementById('mp-today-count');
-  if (todayEl) todayEl.textContent = mState.completedToday;
-  const limitEl = document.getElementById('mp-daily-limit-disp');
-  if (limitEl) limitEl.textContent = cfg.dailyLimit > 0 ? cfg.dailyLimit : String.fromCodePoint(0x221E);
-  const barEl = document.getElementById('mp-bar');
-  if (barEl) barEl.style.width = pct + '%';
-  const costEl = document.getElementById('mp-cost-today');
-  if (costEl) costEl.textContent = fmtUSD(mState.costToday);
-
-  const qEl = document.getElementById('mp-queue-count');
-  if (qEl) qEl.textContent = qLen + ' ตอนในคิว';
-
-  const etaEl = document.getElementById('mp-eta');
-  if (etaEl) {
-    let etaStr = String.fromCharCode(8212);
-    if (mState.running && mState.completedSinceStart > 0 && mState.startTime) {
-      const elapsed = (Date.now() - mState.startTime) / 1000;
-      const rate = mState.completedSinceStart / elapsed;
-      const remaining = qLen + Object.keys(mState.slots).length;
-      if (rate > 0 && remaining > 0) {
-        const etaSec = Math.round(remaining / rate);
-        if (etaSec < 60) etaStr = etaSec + ' วินาที';
-        else if (etaSec < 3600) etaStr = Math.round(etaSec / 60) + ' นาที';
-        else etaStr = (etaSec / 3600).toFixed(1) + ' ชั่วโมง';
-      } else {
-        etaStr = 'กำลังคำนวณ...';
-      }
-    }
-    etaEl.textContent = 'Queue: ' + qLen + ' ตอน  |  ETA: ' + etaStr;
-  }
-
-  const slotsEl = document.getElementById('mp-slots');
-  if (slotsEl) {
-    const slots = Object.values(mState.slots);
-    if (slots.length === 0) {
-      slotsEl.innerHTML = mState.running ? '<div class="mp-slot-empty">รอตอนถัดไป...</div>' : '';
-    } else {
-      slotsEl.innerHTML = slots.map(function(s) {
-        const elapsed = Math.round((Date.now() - s.startTime) / 1000);
-        return '<div class="mp-slot">' +
-          '<span class="mp-slot-spin">&#9889;</span>' +
-          '<span class="mp-slot-title">#' + (s.ch.chapterNum || '?') + ' ' + esc((s.ch.title || '').slice(0, 28)) + '</span>' +
-          '<span class="mp-slot-elapsed">' + elapsed + 's</span>' +
-          '</div>';
-      }).join('');
-    }
-  }
-
-  const startBtn = document.getElementById('mp-start-btn');
-  const pauseBtn = document.getElementById('mp-pause-btn');
-  const stopBtn  = document.getElementById('mp-stop-btn');
-  if (startBtn) startBtn.disabled = mState.running;
-  if (pauseBtn) { pauseBtn.disabled = !mState.running; pauseBtn.textContent = mState.paused ? '&#9654; Resume' : '&#9208; Pause'; }
-  if (stopBtn)  stopBtn.disabled = !mState.running;
-}
-
 // ─── Shared Translation Core ───
 // แปล 1 ตอนแบบ headless (glossary → prompt → stream → polish → save → auto-glossary → ctx summary)
 // ใช้ร่วมกันระหว่าง Marathon และ Reader prefetch
@@ -6687,150 +6503,6 @@ async function translateChapterCore(ch, {
     ctxP.catch(e => console.warn('[CTX]', e));
   }
   return fullText;
-}
-
-async function marathonTranslateChapter(ch) {
-  const cfg  = marathonGetConfig();
-  const ctrl = new AbortController();
-  if (mState.slots[ch.id]) mState.slots[ch.id].ctrl = ctrl;
-  const fullText = await translateChapterCore(ch, { presetId: cfg.presetId, signal: ctrl.signal });
-  return fullText.length;
-}
-
-async function marathonWorkerLoop(workerId) {
-  while (mState.running && !mState.stopReq) {
-    if (mState.paused) { await new Promise(function(r) { setTimeout(r, 400); }); continue; }
-    if (marathonIsDailyLimitReached()) {
-      marathonAddLog('Worker ' + workerId + ': ถึงขีดจำกัดวันนี้ หยุด', 'error');
-      break;
-    }
-    const chId = marathonDequeue();
-    if (!chId) break;
-
-    const ch = S.currentWs?.chapters?.find(function(c) { return c.id === chId; });
-    if (!ch || !ch.sourceText?.trim()) {
-      marathonAddLog('ข้าม: ไม่พบตอนหรือไม่มีเนื้อหา (' + chId + ')', 'error');
-      continue;
-    }
-
-    mState.slots[ch.id] = { ch: ch, startTime: Date.now(), ctrl: null };
-    marathonUpdateUI();
-
-    let success = false;
-    const maxAttempts = marathonGetConfig().retryOnFail ? 2 : 1;
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
-      try {
-        const charCount = await marathonTranslateChapter(ch);
-        success = true;
-        const elapsed = Math.round((Date.now() - mState.slots[ch.id].startTime) / 1000);
-        marathonAddLog('✓ #' + (ch.chapterNum || '?') + ' "' + (ch.title || '').slice(0, 24) + '" — ' + charCount.toLocaleString() + ' ตัว (' + elapsed + 's)', 'success');
-        break;
-      } catch (err) {
-        if (err.name === 'AbortError' || mState.stopReq) { mState.stopReq = true; break; }
-        if (attempt < maxAttempts - 1) {
-          marathonAddLog('retry #' + (ch.chapterNum || '?') + '... (' + err.message + ')', '');
-          await new Promise(function(r) { setTimeout(r, 2500); });
-        } else {
-          marathonAddLog('✗ #' + (ch.chapterNum || '?') + ' "' + (ch.title || '').slice(0, 20) + '" — ' + err.message, 'error');
-        }
-      }
-    }
-
-    delete mState.slots[ch.id];
-    if (success) {
-      mState.completedSinceStart++;
-      mState.completedToday++;
-      if (S.currentWs?.marathonStats) {
-        S.currentWs.marathonStats.completedToday = mState.completedToday;
-        lsSaveWorkspace(S.currentWs).catch(function() {});
-      }
-      renderChapters();
-    }
-    marathonUpdateUI();
-  }
-}
-
-async function marathonStart() {
-  if (!S.currentWs)                        { showToast('เลือก Workspace ก่อน', 'error'); return; }
-  if (mState.running)                      return;
-  if (!getApiKey())                        { showToast('ยังไม่ได้ตั้ง API Key', 'error'); return; }
-  if (!S.currentWs.marathonQueue?.length) { showToast('Queue ว่าง — กด "+ ทุกตอนที่ยังไม่แปล" ก่อน', 'error'); return; }
-
-  if (typeof rState !== 'undefined') readerCancelPrefetch(); // Marathon มาก่อน prefetch
-
-  if (!Array.isArray(S.currentWs.marathonQueue)) S.currentWs.marathonQueue = [];
-  marathonSyncStats();
-  mState.running             = true;
-  mState.paused              = false;
-  mState.stopReq             = false;
-  mState.startTime           = Date.now();
-  mState.completedSinceStart = 0;
-  mState.slots               = {};
-  marathonUpdateUI();
-
-  const concurrency = marathonGetConfig().concurrency || 3;
-  mState.uiInterval = setInterval(marathonUpdateUI, 1000);
-
-  const workers = Array.from({ length: concurrency }, function(_, i) { return marathonWorkerLoop(i + 1); });
-  await Promise.all(workers);
-
-  clearInterval(mState.uiInterval);
-  mState.running = false;
-  mState.paused  = false;
-  mState.slots   = {};
-  marathonUpdateUI();
-
-  const msg = mState.stopReq
-    ? 'Marathon หยุด — แปลไปแล้ว ' + mState.completedSinceStart + ' ตอน'
-    : 'Marathon เสร็จ — แปล ' + mState.completedSinceStart + ' ตอน | วันนี้รวม ' + mState.completedToday + ' ตอน';
-  showToast(msg, mState.stopReq ? '' : 'success');
-  marathonAddLog(msg, mState.stopReq ? '' : 'success');
-}
-
-function marathonPause() {
-  if (!mState.running) return;
-  mState.paused = !mState.paused;
-  marathonUpdateUI();
-  showToast(mState.paused ? 'Marathon หยุดชั่วคราว' : 'Marathon ดำเนินต่อ', '');
-}
-
-function marathonStop() {
-  mState.stopReq = true;
-  mState.paused  = false;
-  Object.values(mState.slots).forEach(function(s) { if (s.ctrl) s.ctrl.abort(); });
-  marathonUpdateUI();
-  showToast('กำลังหยุด Marathon...', '');
-}
-
-function openMarathonConfig() {
-  if (!S.currentWs) return;
-  const cfg = marathonGetConfig();
-  const ps = document.getElementById('mc-preset-select');
-  if (ps) ps.value = cfg.presetId;
-  const cs = document.getElementById('mc-concurrency');
-  if (cs) { cs.value = cfg.concurrency; document.getElementById('mc-concurrency-val').textContent = cfg.concurrency; }
-  const dl = document.getElementById('mc-daily-limit');
-  if (dl) dl.value = cfg.dailyLimit;
-  const cl = document.getElementById('mc-cost-limit');
-  if (cl) cl.value = cfg.dailyCostLimit;
-  const rt = document.getElementById('mc-retry');
-  if (rt) rt.checked = cfg.retryOnFail;
-  openModal('modal-marathon-config');
-}
-
-async function saveMarathonConfig() {
-  if (!S.currentWs) return;
-  S.currentWs.marathonConfig = {
-    presetId:       document.getElementById('mc-preset-select').value,
-    concurrency:    parseInt(document.getElementById('mc-concurrency').value)   || 3,
-    dailyLimit:     parseInt(document.getElementById('mc-daily-limit').value)   || 0,
-    dailyCostLimit: parseFloat(document.getElementById('mc-cost-limit').value)  || 0,
-    retryOnFail:    document.getElementById('mc-retry').checked,
-  };
-  await lsSaveWorkspace(S.currentWs);
-  closeModal('modal-marathon-config');
-  marathonUpdateUI();
-  showToast('บันทึกการตั้งค่า Marathon แล้ว', 'success');
 }
 
 // ─── Translation Presets (ของผู้ใช้ทั้งหมด — CRUD) ───
@@ -7142,12 +6814,10 @@ function readerPickPrefetchTarget() {
   const sorted = _getSortedChapters();
   const idx = sorted.findIndex(c => c.id === rState.chapterId);
   if (idx < 0) return null;
-  const queued = new Set(S.currentWs?.marathonQueue || []);
   for (let i = idx + 1; i <= idx + count && i < sorted.length; i++) {
     const ch = sorted[i];
     if (ch.status === 'translated') continue;
     if (!ch.sourceText?.trim()) continue;
-    if (queued.has(ch.id) || mState.slots[ch.id]) continue; // อยู่ในมือ Marathon — ไม่แปลซ้ำ
     return ch;
   }
   return null;
@@ -7165,14 +6835,10 @@ async function readerPrefetchWorker() {
   pf.retries = 0;
   try {
     while (rState.active) {
-      if (S.translating || mState.running) break;       // งานอื่นมาก่อน — prefetch ถอย
+      if (S.translating) break;       // งานแปลอื่นมาก่อน — prefetch ถอย
       if (!getApiKey()) break;
       const ch = readerPickPrefetchTarget();
       if (!ch) break;
-      if (marathonIsDailyLimitReached()) {
-        readerSetChip('⏸ ถึงขีดจำกัดรายวัน — งดแปลล่วงหน้า');
-        break;
-      }
       pf.chapterId = ch.id;
       pf.ctrl = new AbortController();
       pf.state = 'TRANSLATING';
@@ -7189,13 +6855,6 @@ async function readerPrefetchWorker() {
         });
         pf.retries = 0;
         readerSetChip(`✓ #${ch.chapterNum || '?'} พร้อมอ่าน · รวม ${fmtUSD(S.costs.costUSD)}`);
-        // นับรวมสถิติรายวันเดียวกับ Marathon (เพดานเดียวกัน)
-        marathonSyncStats();
-        mState.completedToday++;
-        if (S.currentWs?.marathonStats) {
-          S.currentWs.marathonStats.completedToday = mState.completedToday;
-          lsSaveWorkspace(S.currentWs).catch(() => {});
-        }
         readerUpdateNav();
         if (S.currentTab === 'chapters') renderChapters();
       } catch (err) {
@@ -7231,7 +6890,7 @@ async function readerTranslateCurrent() {
   const ch = S.currentWs?.chapters?.find(c => c.id === rState.chapterId);
   if (!ch || !ch.sourceText?.trim()) return;
   if (!getApiKey()) { showToast('ยังไม่ได้ตั้ง API Key — ไปที่ ⚙ ตั้งค่า', 'error'); return; }
-  if (S.translating || mState.running) { showToast('มีงานแปลอื่นทำงานอยู่ — รอสักครู่แล้วลองใหม่', 'error'); return; }
+  if (S.translating) { showToast('มีงานแปลอื่นทำงานอยู่ — รอสักครู่แล้วลองใหม่', 'error'); return; }
   if (rState.prefetch.state === 'TRANSLATING') readerCancelPrefetch();
 
   const el = document.getElementById('readerContent');
