@@ -371,6 +371,8 @@ body {
 .td-del button { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 0.8rem; opacity: 0; transition: opacity 0.15s; padding: 3px 6px; }
 .glossary-table tr:hover .td-del button { opacity: 1; }
 .td-del button:hover { color: var(--crimson-light); }
+.td-check { width: 34px; text-align: center; padding: 6px 4px; }
+.td-check input { accent-color: var(--gold); cursor: pointer; }
 
 /* ─── Styles Grid ─── */
 .styles-section-label { font-size: 0.72rem; font-weight: 700; color: var(--text-muted); letter-spacing: 1px; padding: 12px 10px 6px; }

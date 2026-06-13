@@ -274,9 +274,16 @@
         <span id="glossaryCount" class="count-label"></span>
       </div>
       <div id="glossaryDupAlert" style="display:none;padding:8px 12px;background:rgba(194,48,72,0.1);border-bottom:1px solid rgba(194,48,72,0.3);font-size:0.78rem;color:var(--crimson-light)"></div>
+      <div id="glossaryBulkBar" style="display:none;align-items:center;gap:8px;padding:6px 12px;background:rgba(139,26,42,0.1);border-bottom:1px solid rgba(194,48,72,0.25);flex-wrap:wrap">
+        <span id="glossaryBulkCount" style="font-size:0.78rem;color:var(--text-secondary)">0 รายการที่เลือก</span>
+        <div style="margin-left:auto;display:flex;gap:6px">
+          <button class="btn btn-danger btn-sm" onclick="glDeleteSelected()" style="padding:3px 10px;font-size:0.74rem">🗑 ลบที่เลือก</button>
+          <button class="btn-xs" onclick="glClearSelection()">✕ ยกเลิกการเลือก</button>
+        </div>
+      </div>
       <div class="glossary-table-wrap">
         <table class="glossary-table">
-          <thead><tr><th>เกาหลี</th><th>ไทย</th><th>ประเภท</th><th>เพศ</th><th>หมายเหตุ</th><th>ตอนที่พบ</th><th></th></tr></thead>
+          <thead><tr><th class="td-check"><input type="checkbox" title="เลือกทั้งหมด (ตาม filter)" onchange="glToggleSelectAll(this.checked)"/></th><th>เกาหลี</th><th>ไทย</th><th>ประเภท</th><th>เพศ</th><th>หมายเหตุ</th><th>ตอนที่พบ</th><th></th></tr></thead>
           <tbody id="glossaryTableBody"></tbody>
         </table>
       </div>
@@ -1309,6 +1316,7 @@
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" id="pe-delete-btn" style="display:none;color:var(--crimson-light)" onclick="deletePreset()">🗑 ลบ</button>
+      <button class="btn btn-ghost btn-sm" onclick="addMissingSeedPresets()" title="เพิ่มชุด Preset ตัวอย่าง 6 แบบ (เฉพาะที่ยังไม่มี)">✨ เพิ่มชุดตัวอย่าง</button>
       <button class="btn btn-ghost" onclick="closeModal('modal-preset-editor')">ปิด</button>
       <button class="btn btn-primary" onclick="savePreset()">💾 บันทึก</button>
     </div>
@@ -1378,6 +1386,14 @@
   </footer>
 </div>
 
-<script src="app.js"></script>
+<!-- โหลดตามลำดับ (classic scripts ใช้ global scope ร่วมกัน) — แยกไฟล์เพื่อจัดการง่ายขึ้น -->
+<script src="js/app.core.js"></script>
+<script src="js/app.providers.js"></script>
+<script src="js/app.workspace.js"></script>
+<script src="js/app.chapters-glossary.js"></script>
+<script src="js/app.translate.js"></script>
+<script src="js/app.review-batch.js"></script>
+<script src="js/app.tools.js"></script>
+<script src="js/app.reader-presets.js"></script>
 </body>
 </html>
