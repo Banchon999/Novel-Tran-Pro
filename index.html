@@ -229,8 +229,6 @@
         <button class="btn btn-primary btn-sm" onclick="openAddGlossary()">＋ เพิ่มคำ</button>
         <button class="btn btn-secondary btn-sm" onclick="openAutoGlossary()">🤖 Auto</button>
         <button class="btn btn-secondary btn-sm" onclick="checkDuplicateGlossary()">🔎 ซ้ำ</button>
-        <button class="btn btn-secondary btn-sm" onclick="openGlossaryQA()">🧪 QA</button>
-        <button class="btn btn-ghost btn-sm" onclick="openConsistencyCheck()">🔗 เช็ค</button>
         <button class="btn btn-ghost btn-sm" onclick="openPronounCheck()" title="หาจุดที่สรรพนามขัดกับเพศตัวละครใน Glossary">🚻 สรรพนาม</button>
         <button class="btn btn-ghost btn-sm" onclick="openGlossaryExport()">📤 Export</button>
         <button class="btn btn-ghost btn-sm" onclick="openGlossaryCSVImport()">📥 CSV Import</button>
@@ -708,33 +706,6 @@
   </div>
 </div>
 
-<div class="modal-backdrop" id="modal-consistency">
-  <div class="modal modal-wide">
-    <div class="modal-header">
-      <span>🔗 ตรวจความสอดคล้อง</span>
-      <button class="icon-btn" onclick="closeModal('modal-consistency')">✕</button>
-    </div>
-    <div class="modal-body">
-      <div class="sf-group">
-        <div class="sf-label">คำแปลที่ต้องการตรวจ</div>
-        <textarea id="ccTranslation" class="editor-ta" rows="5" placeholder="วางคำแปลภาษาไทยที่นี่..."></textarea>
-      </div>
-      <div style="display:flex;align-items:center;gap:10px">
-        <button class="btn btn-primary btn-sm" id="ccRunBtn" onclick="runConsistencyCheck()">🔗 ตรวจสอบ</button>
-        <span style="font-size:0.74rem;color:var(--text-muted)">เช็คชื่อตัวละครกับคลังศัพท์ Workspace</span>
-      </div>
-      <div id="ccResults" style="display:none;margin-top:12px">
-        <div class="cc-score-bar" id="ccScoreBar"></div>
-        <div id="ccIssueList" class="cc-issue-list"></div>
-        <div id="ccSuggestions" class="cc-suggestions"></div>
-      </div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="closeModal('modal-consistency')">ปิด</button>
-    </div>
-  </div>
-</div>
-
 <div class="modal-backdrop" id="modal-export">
   <div class="modal">
     <div class="modal-header">
@@ -813,56 +784,6 @@
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('modal-load-chapter')">ยกเลิก</button>
-    </div>
-  </div>
-</div>
-
-
-<div class="modal-backdrop" id="modal-glossary-qa">
-  <div class="modal modal-wide">
-    <div class="modal-header">
-      <span>🧪 QA Glossary — ตรวจคุณภาพคลังศัพท์</span>
-      <button class="icon-btn" onclick="closeModal('modal-glossary-qa')">✕</button>
-    </div>
-    <div class="modal-body">
-      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
-        <button class="btn btn-primary btn-sm" id="qaGlossaryRunBtn" onclick="runGlossaryQA()">🤖 ตรวจ QA ด้วย AI</button>
-        <select id="qaGlossaryModel" class="mini-select">
-          <option value="google/gemini-2.5-flash">Gemini 2.5 Flash</option>
-          <option value="google/gemini-2.5-flash-lite">Gemini 2.5 Flash Lite</option>
-          <option value="deepseek/deepseek-v3.2">DeepSeek V3.2</option>
-          <option value="openai/gpt-4.1-nano">GPT-4.1 Nano</option>
-        </select>
-        <label class="toggle-mini"><input type="checkbox" id="qaIncludeAI" checked/> ตรวจคำน่าสงสัย (AI)</label>
-        <span id="qaGlossaryStatus" style="font-size:0.78rem;color:var(--gold)"></span>
-      </div>
-      <div id="qaGlossaryProgress" style="display:none" class="qa-progress">
-        <div class="progress-label-row"><span id="qaProgressLabel">กำลังตรวจ...</span><span id="qaProgressPct">0%</span></div>
-        <div class="progress-track"><div class="progress-fill" id="qaProgressFill"></div></div>
-      </div>
-      <!-- Select toolbar (shows after results loaded) -->
-      <div id="qaSelectToolbar" style="display:none;align-items:center;gap:6px;flex-wrap:wrap;padding:6px 0;border-bottom:1px solid var(--border);margin-bottom:8px">
-        <input type="checkbox" id="qaSelectAll" style="accent-color:var(--gold)" onchange="qaToggleSelectAll(this.checked)" title="เลือก/ยกเลิกทั้งหมด"/>
-        <span style="font-size:0.74rem;color:var(--text-muted)" id="qaSelectedLabel">0 รายการที่เลือก</span>
-        <div style="margin-left:auto;display:flex;gap:6px">
-          <button class="btn-xs" onclick="qaSelectByType('review,note_missing')">เฉพาะน่าสงสัย</button>
-          <button class="btn-xs" onclick="qaSelectByType('dup_thai,conflict')">เฉพาะซ้ำ/ขัดแย้ง</button>
-          <button class="btn-xs" onclick="qaSelectAll_fn()">ทั้งหมด</button>
-          <button class="btn-xs" onclick="qaDeselectAll()">ยกเลิก</button>
-        </div>
-      </div>
-      <div id="qaGlossaryResults" style="display:none">
-        <div class="qa-summary-bar" id="qaSummaryBar"></div>
-        <div id="qaIssueContainer" style="max-height:380px;overflow-y:auto"></div>
-      </div>
-      <div id="qaGlossaryEmpty" style="text-align:center;padding:30px;color:var(--text-muted);font-size:0.85rem">
-        กด 🤖 ตรวจ QA ด้วย AI เพื่อเริ่มการตรวจสอบคลังศัพท์
-      </div>
-    </div>
-    <div class="modal-footer">
-      <span id="qaResolvedCount" style="font-size:0.74rem;color:var(--text-muted);margin-right:auto"></span>
-      <button class="btn btn-secondary btn-sm" id="qaAiFixSelectedBtn" style="display:none" onclick="qaAiFixSelected()">🤖 AI แก้ที่เลือก</button>
-      <button class="btn btn-ghost" onclick="closeModal('modal-glossary-qa')">ปิด</button>
     </div>
   </div>
 </div>
