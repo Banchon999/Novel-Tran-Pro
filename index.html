@@ -81,9 +81,9 @@
     <div class="sub-tabs">
       <button class="sub-tab active" data-tab="translate" onclick="switchTab('translate')">⚡ แปล</button>
       <button class="sub-tab" data-tab="chapters" onclick="switchTab('chapters')">📚 ตอน</button>
+      <button class="sub-tab" data-tab="read" onclick="switchTab('read')">📖 อ่าน/แก้ไข</button>
       <button class="sub-tab" data-tab="glossary" onclick="switchTab('glossary')">📖 คลังศัพท์</button>
       <button class="sub-tab" data-tab="styles" onclick="switchTab('styles')">🖊 Styles</button>
-      <button class="sub-tab" data-tab="marathon" onclick="switchTab('marathon')">🏃 Marathon</button>
       <button class="sub-tab" data-tab="settings-ws" onclick="switchTab('settings-ws')">⚙ ตั้งค่า</button>
     </div>
 
@@ -103,6 +103,7 @@
           <textarea id="sourceText" class="editor-ta" placeholder="วางข้อความภาษาเกาหลีที่นี่..."></textarea>
           <div class="pane-footer">
             <span id="sourceStats">0 ตัวอักษร</span>
+            <span id="ctxTokenMeter" class="ctx-token-meter" title="ประมาณ token ที่จะส่งให้โมเดล (system + glossary + บริบท + ต้นฉบับ) เทียบกับ context window ของโมเดล">🧮 — / —</span>
             <div class="save-row">
               <select id="chapterSaveTarget" class="mini-select"></select>
               <button class="btn-xs" onclick="saveToChapter()">💾 บันทึก</button>
@@ -151,6 +152,7 @@
         <div class="quick-settings">
           <select id="translateProvider" class="mini-select" title="AI Provider" onchange="onProviderChange(this.value)"></select>
           <select id="translateModel" class="mini-select" onchange="onModelChange(this.value)"></select>
+          <button class="btn btn-ghost btn-sm" title="ดึงรายการโมเดลจาก API ของ provider" onclick="onFetchModels(this)">🔄</button>
           <select id="activeStyleSelect" class="mini-select" title="Style"></select>
           <label class="toggle-mini"><input type="checkbox" id="usePolish"/> Polish</label>
           <label class="toggle-mini"><input type="checkbox" id="useMemory" checked/> Memory</label>
@@ -203,6 +205,40 @@
       <div id="chapterList" class="chapter-list"></div>
     </div>
 
+    <!-- READ / EDIT TAB -->
+    <div class="tab-content" id="tab-read" style="display:none">
+      <div class="tab-toolbar" style="flex-wrap:wrap;gap:6px">
+        <button class="btn btn-ghost btn-sm" onclick="reNav(-1)" title="ตอนก่อนหน้า" id="rePrevBtn">◀</button>
+        <select id="reChapterSelect" class="select-input" style="max-width:340px" onchange="reLoadChapter(this.value)"></select>
+        <button class="btn btn-ghost btn-sm" onclick="reNav(1)" title="ตอนถัดไป" id="reNextBtn">▶</button>
+        <span style="width:1px;height:20px;background:var(--border);margin:0 2px"></span>
+        <div class="re-mode-toggle">
+          <button class="btn btn-sm" id="reModeReadBtn" onclick="reSetMode('read')">📖 อ่าน</button>
+          <button class="btn btn-sm" id="reModeEditBtn" onclick="reSetMode('edit')">✏ แก้ไข</button>
+        </div>
+        <button class="btn btn-secondary btn-sm" id="reTranslateBtn" onclick="reTranslateChapter()" title="แปลตอนนี้">⚡ แปลตอนนี้</button>
+        <span id="reStatus" class="count-label"></span>
+      </div>
+      <!-- Find & Replace bar -->
+      <div class="re-find-bar">
+        <input type="text" id="reFind" class="search-input" style="max-width:200px" placeholder="ค้นหาในตอนนี้..." oninput="reHighlightCount()"/>
+        <input type="text" id="reReplace" class="search-input" style="max-width:200px" placeholder="แทนที่ด้วย..."/>
+        <label class="toggle-mini"><input type="checkbox" id="reCaseSensitive"/> Aa</label>
+        <button class="btn btn-ghost btn-sm" onclick="reReplaceAll()">แทนที่ทั้งหมด</button>
+        <span id="reFindInfo" class="count-label"></span>
+      </div>
+      <div id="reBody" class="re-body">
+        <div id="reContent" class="re-content reader-theme-sepia"></div>
+        <textarea id="reEditArea" class="editor-ta re-edit-area" style="display:none" placeholder="คำแปลของตอนนี้..."></textarea>
+      </div>
+      <div class="pane-footer">
+        <span id="reCharStats"></span>
+        <div class="save-row">
+          <button class="btn btn-primary btn-sm" id="reSaveBtn" onclick="reSaveEdit()" style="display:none">💾 บันทึกการแก้ไข</button>
+        </div>
+      </div>
+    </div>
+
     <!-- GLOSSARY TAB -->
     <div class="tab-content" id="tab-glossary" style="display:none">
       <div class="tab-toolbar">
@@ -230,8 +266,6 @@
         <button class="btn btn-primary btn-sm" onclick="openAddGlossary()">＋ เพิ่มคำ</button>
         <button class="btn btn-secondary btn-sm" onclick="openAutoGlossary()">🤖 Auto</button>
         <button class="btn btn-secondary btn-sm" onclick="checkDuplicateGlossary()">🔎 ซ้ำ</button>
-        <button class="btn btn-secondary btn-sm" onclick="openGlossaryQA()">🧪 QA</button>
-        <button class="btn btn-ghost btn-sm" onclick="openConsistencyCheck()">🔗 เช็ค</button>
         <button class="btn btn-ghost btn-sm" onclick="openPronounCheck()" title="หาจุดที่สรรพนามขัดกับเพศตัวละครใน Glossary">🚻 สรรพนาม</button>
         <button class="btn btn-ghost btn-sm" onclick="openGlossaryExport()">📤 Export</button>
         <button class="btn btn-ghost btn-sm" onclick="openGlossaryCSVImport()">📥 CSV Import</button>
@@ -254,71 +288,13 @@
         <button class="btn btn-primary btn-sm" onclick="openNewStyle()">＋ สร้าง Style</button>
         <span class="count-label">Style กำหนด tone และรูปแบบการเขียนของคำแปล</span>
       </div>
-      <div class="styles-section-label">Style พื้นฐาน</div>
-      <div class="styles-grid" id="builtinStylesGrid"></div>
-      <div class="styles-section-label" style="margin-top:16px">Custom Styles</div>
+      <div class="styles-section-label">Style ของคุณ</div>
       <div class="styles-grid" id="customStylesGrid">
         <div class="styles-empty">ยังไม่มี — กด ＋ สร้าง Style</div>
       </div>
     </div>
 
     <!-- WORKSPACE SETTINGS TAB -->
-    <!-- MARATHON TAB -->
-    <div class="tab-content" id="tab-marathon" style="display:none">
-      <div class="marathon-layout">
-        <!-- Config bar -->
-        <div class="marathon-config-bar">
-          <div class="mc-badge-row">
-            <div class="mc-badge-item">
-              <span class="mc-badge-label">Preset</span>
-              <span id="mp-preset-badge" class="preset-badge">📖 นิยาย</span>
-            </div>
-            <div class="mc-badge-item">
-              <span class="mc-badge-label">พร้อมกัน</span>
-              <span id="mp-concurrency-badge" class="mc-badge-val">⚡x3</span>
-            </div>
-            <div class="mc-badge-item">
-              <span class="mc-badge-label">วันละ</span>
-              <span id="mp-limit-badge" class="mc-badge-val">100 ตอน/วัน</span>
-            </div>
-            <button class="btn btn-ghost btn-sm" onclick="openMarathonConfig()">🔧 ตั้งค่า</button>
-          </div>
-        </div>
-
-        <!-- Today progress -->
-        <div class="mp-progress-section">
-          <div class="mp-today-row">
-            <span class="mp-today-label">วันนี้</span>
-            <span class="mp-today-nums"><span id="mp-today-count">0</span> / <span id="mp-daily-limit-disp">100</span> ตอน</span>
-            <span class="mp-cost-badge" id="mp-cost-today">$0.0000</span>
-          </div>
-          <div class="mp-bar-wrap"><div id="mp-bar" class="mp-bar" style="width:0%"></div></div>
-          <div class="mp-eta" id="mp-eta">Queue: 0 ตอน  |  ETA: —</div>
-        </div>
-
-        <!-- Controls -->
-        <div class="mp-controls">
-          <button class="btn btn-primary" id="mp-start-btn" onclick="marathonStart()">▶ Start</button>
-          <button class="btn btn-secondary" id="mp-pause-btn" onclick="marathonPause()" disabled>⏸ Pause</button>
-          <button class="btn btn-danger" id="mp-stop-btn" onclick="marathonStop()" disabled>⬛ Stop</button>
-        </div>
-
-        <!-- Queue management -->
-        <div class="mp-queue-mgmt">
-          <button class="btn btn-ghost btn-sm" onclick="marathonAddAllPending()">＋ ทุกตอนที่ยังไม่แปล</button>
-          <button class="btn btn-ghost btn-sm" onclick="marathonClearDone()">✓ นำตอนแปลแล้วออก</button>
-          <button class="btn btn-ghost btn-sm" onclick="marathonClearQueue()">🗑 ล้าง Queue</button>
-          <span id="mp-queue-count" class="mp-count-badge">0 ตอนในคิว</span>
-        </div>
-
-        <!-- Active slots -->
-        <div id="mp-slots" class="mp-slots"></div>
-
-        <!-- Log -->
-        <div id="mp-log" class="mp-log"></div>
-      </div>
-    </div>
-
     <div class="tab-content" id="tab-settings-ws" style="display:none">
       <div class="settings-scroll">
         <div class="settings-form">
@@ -326,17 +302,10 @@
           <div class="sf-group"><div class="sf-label">คำอธิบาย</div><input id="wsEditDesc" type="text" class="text-input"/></div>
           <div class="sf-group"><div class="sf-label">Emoji</div><input id="wsEditEmoji" type="text" class="text-input" style="max-width:80px"/></div>
           <div class="sf-group">
-            <div class="sf-label">Translation Preset <span style="font-size:0.72rem;color:var(--text-muted)">(ใช้กับแท็บ ⚡แปล, ⚡Batch และ 🏃Marathon)</span></div>
+            <div class="sf-label">Translation Preset <span style="font-size:0.72rem;color:var(--text-muted)">(Preset ของคุณ — ใช้กับแท็บ ⚡แปล และ ⚡Batch)</span></div>
             <div style="display:flex;gap:8px;align-items:center">
-              <select id="wsPresetSelect" class="select-input" style="flex:1">
-                <option value="literary">📖 นิยาย — Literary (ภาษาวรรณกรรม)</option>
-                <option value="draft">⚡ ฉบับร่าง — Draft (เร็ว ประหยัด)</option>
-                <option value="dialogue">🎭 บทสนทนา — Dialogue (เน้น dialog)</option>
-                <option value="faithful">🔤 แปลตรง — Faithful (ใกล้ต้นฉบับ)</option>
-                <option value="webtoon">📱 เว็บตูน — Webtoon (สั้น มือถือ)</option>
-                <option value="mtlFix">🔧 ตรวจ MTL — MTL Fix (แก้ machine translation)</option>
-              </select>
-              <button class="btn btn-ghost btn-sm" onclick="openPresetEditor()" title="แก้ไข Prompt ของ Preset">✏ Customize</button>
+              <select id="wsPresetSelect" class="select-input" style="flex:1"></select>
+              <button class="btn btn-ghost btn-sm" onclick="openPresetEditor()" title="สร้าง/แก้ไข/ลบ Preset ของคุณ">✏ จัดการ Preset</button>
             </div>
           </div>
           <div class="sf-group"><div class="sf-label">AI Provider</div>
@@ -346,7 +315,11 @@
             </div>
           </div>
           <div class="sf-group"><div class="sf-label">โมเดลแปล</div>
-            <select id="wsTranslateModel" class="select-input" onchange="onModelChange(this.value)"></select>
+            <div style="display:flex;gap:8px;align-items:center">
+              <select id="wsTranslateModel" class="select-input" style="flex:1" onchange="onModelChange(this.value)"></select>
+              <button class="btn btn-ghost btn-sm" title="ดึงรายการโมเดลจาก API" onclick="onFetchModels(this)">🔄 Fetch</button>
+            </div>
+            <div style="font-size:0.70rem;color:var(--text-muted);margin-top:4px">กด 🔄 Fetch เพื่อดึงรายชื่อโมเดลล่าสุดจาก API ของ provider (ตั้ง API Key ก่อน)</div>
           </div>
           <div class="sf-group">
             <div class="sf-label">Temperature <span id="wsTempVal">0.7</span></div>
@@ -774,33 +747,6 @@
   </div>
 </div>
 
-<div class="modal-backdrop" id="modal-consistency">
-  <div class="modal modal-wide">
-    <div class="modal-header">
-      <span>🔗 ตรวจความสอดคล้อง</span>
-      <button class="icon-btn" onclick="closeModal('modal-consistency')">✕</button>
-    </div>
-    <div class="modal-body">
-      <div class="sf-group">
-        <div class="sf-label">คำแปลที่ต้องการตรวจ</div>
-        <textarea id="ccTranslation" class="editor-ta" rows="5" placeholder="วางคำแปลภาษาไทยที่นี่..."></textarea>
-      </div>
-      <div style="display:flex;align-items:center;gap:10px">
-        <button class="btn btn-primary btn-sm" id="ccRunBtn" onclick="runConsistencyCheck()">🔗 ตรวจสอบ</button>
-        <span style="font-size:0.74rem;color:var(--text-muted)">เช็คชื่อตัวละครกับคลังศัพท์ Workspace</span>
-      </div>
-      <div id="ccResults" style="display:none;margin-top:12px">
-        <div class="cc-score-bar" id="ccScoreBar"></div>
-        <div id="ccIssueList" class="cc-issue-list"></div>
-        <div id="ccSuggestions" class="cc-suggestions"></div>
-      </div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="closeModal('modal-consistency')">ปิด</button>
-    </div>
-  </div>
-</div>
-
 <div class="modal-backdrop" id="modal-export">
   <div class="modal">
     <div class="modal-header">
@@ -879,56 +825,6 @@
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('modal-load-chapter')">ยกเลิก</button>
-    </div>
-  </div>
-</div>
-
-
-<div class="modal-backdrop" id="modal-glossary-qa">
-  <div class="modal modal-wide">
-    <div class="modal-header">
-      <span>🧪 QA Glossary — ตรวจคุณภาพคลังศัพท์</span>
-      <button class="icon-btn" onclick="closeModal('modal-glossary-qa')">✕</button>
-    </div>
-    <div class="modal-body">
-      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
-        <button class="btn btn-primary btn-sm" id="qaGlossaryRunBtn" onclick="runGlossaryQA()">🤖 ตรวจ QA ด้วย AI</button>
-        <select id="qaGlossaryModel" class="mini-select">
-          <option value="google/gemini-2.5-flash">Gemini 2.5 Flash</option>
-          <option value="google/gemini-2.5-flash-lite">Gemini 2.5 Flash Lite</option>
-          <option value="deepseek/deepseek-v3.2">DeepSeek V3.2</option>
-          <option value="openai/gpt-4.1-nano">GPT-4.1 Nano</option>
-        </select>
-        <label class="toggle-mini"><input type="checkbox" id="qaIncludeAI" checked/> ตรวจคำน่าสงสัย (AI)</label>
-        <span id="qaGlossaryStatus" style="font-size:0.78rem;color:var(--gold)"></span>
-      </div>
-      <div id="qaGlossaryProgress" style="display:none" class="qa-progress">
-        <div class="progress-label-row"><span id="qaProgressLabel">กำลังตรวจ...</span><span id="qaProgressPct">0%</span></div>
-        <div class="progress-track"><div class="progress-fill" id="qaProgressFill"></div></div>
-      </div>
-      <!-- Select toolbar (shows after results loaded) -->
-      <div id="qaSelectToolbar" style="display:none;align-items:center;gap:6px;flex-wrap:wrap;padding:6px 0;border-bottom:1px solid var(--border);margin-bottom:8px">
-        <input type="checkbox" id="qaSelectAll" style="accent-color:var(--gold)" onchange="qaToggleSelectAll(this.checked)" title="เลือก/ยกเลิกทั้งหมด"/>
-        <span style="font-size:0.74rem;color:var(--text-muted)" id="qaSelectedLabel">0 รายการที่เลือก</span>
-        <div style="margin-left:auto;display:flex;gap:6px">
-          <button class="btn-xs" onclick="qaSelectByType('review,note_missing')">เฉพาะน่าสงสัย</button>
-          <button class="btn-xs" onclick="qaSelectByType('dup_thai,conflict')">เฉพาะซ้ำ/ขัดแย้ง</button>
-          <button class="btn-xs" onclick="qaSelectAll_fn()">ทั้งหมด</button>
-          <button class="btn-xs" onclick="qaDeselectAll()">ยกเลิก</button>
-        </div>
-      </div>
-      <div id="qaGlossaryResults" style="display:none">
-        <div class="qa-summary-bar" id="qaSummaryBar"></div>
-        <div id="qaIssueContainer" style="max-height:380px;overflow-y:auto"></div>
-      </div>
-      <div id="qaGlossaryEmpty" style="text-align:center;padding:30px;color:var(--text-muted);font-size:0.85rem">
-        กด 🤖 ตรวจ QA ด้วย AI เพื่อเริ่มการตรวจสอบคลังศัพท์
-      </div>
-    </div>
-    <div class="modal-footer">
-      <span id="qaResolvedCount" style="font-size:0.74rem;color:var(--text-muted);margin-right:auto"></span>
-      <button class="btn btn-secondary btn-sm" id="qaAiFixSelectedBtn" style="display:none" onclick="qaAiFixSelected()">🤖 AI แก้ที่เลือก</button>
-      <button class="btn btn-ghost" onclick="closeModal('modal-glossary-qa')">ปิด</button>
     </div>
   </div>
 </div>
@@ -1335,52 +1231,6 @@
   </div>
 </div>
 
-<!-- Marathon Config Modal -->
-<div class="modal-overlay" id="modal-marathon-config" style="display:none">
-  <div class="modal-box">
-    <div class="modal-header">
-      <span>🏃 Marathon — ตั้งค่า</span>
-      <button class="icon-btn" onclick="closeModal('modal-marathon-config')">✕</button>
-    </div>
-    <div class="modal-body">
-      <div class="sf-group">
-        <div class="sf-label">Preset การแปล</div>
-        <select id="mc-preset-select" class="select-input">
-          <option value="literary">📖 นิยาย — Literary</option>
-          <option value="draft">⚡ ฉบับร่าง — Draft</option>
-          <option value="dialogue">🎭 บทสนทนา — Dialogue</option>
-          <option value="faithful">🔤 แปลตรง — Faithful</option>
-          <option value="webtoon">📱 เว็บตูน — Webtoon</option>
-          <option value="mtlFix">🔧 ตรวจ MTL — MTL Fix</option>
-        </select>
-      </div>
-      <div class="sf-group">
-        <div class="sf-label">แปลพร้อมกัน (Concurrency) <span id="mc-concurrency-val">3</span> ตอน</div>
-        <input type="range" id="mc-concurrency" min="1" max="5" step="1" value="3" class="range-input" oninput="document.getElementById('mc-concurrency-val').textContent=this.value"/>
-        <div style="font-size:0.72rem;color:var(--text-muted);margin-top:2px">แนะนำ 2-3 เพื่อหลีกเลี่ยง API rate limit</div>
-      </div>
-      <div class="sf-group">
-        <div class="sf-label">จำกัดตอน/วัน (0 = ไม่จำกัด)</div>
-        <input type="number" id="mc-daily-limit" class="text-input" value="100" min="0" max="9999" style="max-width:120px"/>
-      </div>
-      <div class="sf-group">
-        <div class="sf-label">จำกัดค่าใช้จ่าย/วัน USD (0 = ไม่จำกัด)</div>
-        <input type="number" id="mc-cost-limit" class="text-input" value="0" min="0" max="999" step="0.5" style="max-width:120px"/>
-      </div>
-      <div class="sf-group">
-        <label class="toggle-mini" style="gap:8px;cursor:pointer">
-          <input type="checkbox" id="mc-retry" checked/>
-          <span style="font-size:0.82rem;color:var(--text-secondary)">Retry อัตโนมัติเมื่อล้มเหลว (1 ครั้ง)</span>
-        </label>
-      </div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="closeModal('modal-marathon-config')">ยกเลิก</button>
-      <button class="btn btn-primary" onclick="saveMarathonConfig()">💾 บันทึก</button>
-    </div>
-  </div>
-</div>
-
 <!-- Context Manager Modal -->
 <div class="modal-backdrop" id="modal-ctx-manager">
   <div class="modal modal-wide">
@@ -1417,44 +1267,50 @@
 <div class="modal-backdrop" id="modal-preset-editor">
   <div class="modal modal-wide">
     <div class="modal-header">
-      <span>✏ แก้ไข Translation Preset</span>
+      <span>✏ จัดการ Translation Preset</span>
       <button class="icon-btn" onclick="closeModal('modal-preset-editor')">✕</button>
     </div>
     <div class="modal-body">
       <div class="sf-group">
-        <div class="sf-label">Preset ที่ต้องการแก้ไข</div>
-        <select id="pe-preset-select" class="select-input" onchange="loadPresetForEdit()">
-          <option value="literary">📖 นิยาย — Literary</option>
-          <option value="draft">⚡ ฉบับร่าง — Draft</option>
-          <option value="dialogue">🎭 บทสนทนา — Dialogue</option>
-          <option value="faithful">🔤 แปลตรง — Faithful</option>
-          <option value="webtoon">📱 เว็บตูน — Webtoon</option>
-          <option value="mtlFix">🔧 ตรวจ MTL — MTL Fix</option>
-        </select>
+        <div class="sf-label">Preset</div>
+        <select id="pe-preset-select" class="select-input" onchange="loadPresetForEdit()"></select>
+      </div>
+      <div style="display:flex;gap:8px">
+        <div class="sf-group" style="flex:0 0 80px">
+          <div class="sf-label">Emoji</div>
+          <input id="pe-emoji" type="text" class="text-input" maxlength="4" value="📖"/>
+        </div>
+        <div class="sf-group" style="flex:1">
+          <div class="sf-label">ชื่อ Preset *</div>
+          <input id="pe-name" type="text" class="text-input" placeholder="เช่น นิยายของฉัน"/>
+        </div>
       </div>
       <div class="sf-group">
-        <div class="sf-label" style="display:flex;justify-content:space-between;align-items:center">
-          <span>System Prompt <span id="pe-custom-badge" class="tag tag-term" style="display:none;font-size:0.68rem">Custom</span></span>
-          <button class="btn-xs" onclick="resetPresetToDefault()">↺ คืนค่าเดิม</button>
-        </div>
-        <textarea id="pe-prompt-text" class="editor-ta" style="height:260px;font-size:0.76rem;font-family:'JetBrains Mono',monospace;resize:vertical"></textarea>
+        <div class="sf-label">System Prompt *</div>
+        <textarea id="pe-prompt-text" class="editor-ta" style="height:240px;font-size:0.76rem;font-family:'JetBrains Mono',monospace;resize:vertical"></textarea>
         <div style="font-size:0.70rem;color:var(--text-muted);margin-top:4px">
           Placeholders: <code style="background:var(--surface-2);padding:1px 4px;border-radius:2px">{glossary}</code>
           <code style="background:var(--surface-2);padding:1px 4px;border-radius:2px">{context}</code>
-          <code style="background:var(--surface-2);padding:1px 4px;border-radius:2px">{text}</code>
+          <code style="background:var(--surface-2);padding:1px 4px;border-radius:2px">{text}</code> (จำเป็น)
           <code style="background:var(--surface-2);padding:1px 4px;border-radius:2px">{style_note}</code>
-          <code style="background:var(--surface-2);padding:1px 4px;border-radius:2px">{mtl_draft}</code> (mtlFix เท่านั้น)
+          <code style="background:var(--surface-2);padding:1px 4px;border-radius:2px">{mtl_draft}</code> (โหมดแก้ MTL)
         </div>
       </div>
       <div class="sf-group">
-        <div class="sf-label">Temperature <span id="pe-temp-val">0.65</span></div>
-        <input type="range" id="pe-temperature" min="0" max="1" step="0.05" value="0.65" class="range-input" oninput="document.getElementById('pe-temp-val').textContent=this.value"/>
+        <div class="sf-label">Temperature <span id="pe-temp-val">0.6</span></div>
+        <input type="range" id="pe-temperature" min="0" max="1" step="0.05" value="0.6" class="range-input" oninput="document.getElementById('pe-temp-val').textContent=this.value"/>
       </div>
-      <div id="pe-validate-result" style="display:none"></div>
+      <div class="sf-group">
+        <label class="toggle-mini" style="gap:8px;cursor:pointer">
+          <input type="checkbox" id="pe-polish"/>
+          <span>ขัดเกลาหลังแปล (Polish pass — ช้าลง/ใช้ token เพิ่ม)</span>
+        </label>
+      </div>
     </div>
     <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="closeModal('modal-preset-editor')">ยกเลิก</button>
-      <button class="btn btn-primary" id="pe-validate-btn" onclick="validateAndSaveCustomPreset()">🤖 Validate &amp; บันทึก</button>
+      <button class="btn btn-ghost" id="pe-delete-btn" style="display:none;color:var(--crimson-light)" onclick="deletePreset()">🗑 ลบ</button>
+      <button class="btn btn-ghost" onclick="closeModal('modal-preset-editor')">ปิด</button>
+      <button class="btn btn-primary" onclick="savePreset()">💾 บันทึก</button>
     </div>
   </div>
 </div>
