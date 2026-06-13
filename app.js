@@ -1055,6 +1055,7 @@ function switchTab(tab) {
 function renderCurrentTab() {
   switch (S.currentTab) {
     case 'chapters': renderChapters(); break;
+    case 'read': renderReadTab(); break;
     case 'glossary': renderGlossaryTable(); break;
     case 'styles': renderStyles(); break;
     case 'settings-ws': renderWsSettings(); break;
@@ -6385,7 +6386,204 @@ async function deletePreset() {
 }
 
 // ═══════════════════════════════════════════════
-// ─── Reader Mode ────────────────────────────────
+// ─── Read / Edit Tab (แท็บอ่าน+แก้ไขในตัว) ───────
+// ═══════════════════════════════════════════════
+// แท็บอ่านพร้อมเครื่องมือแก้ไข: แก้ข้อความ inline + ค้นหา/แทนที่ในตอน
+const reState = { chapterId: null, mode: 'read' };
+
+function renderReadTab() {
+  const ws = S.currentWs;
+  const sel = document.getElementById('reChapterSelect');
+  if (!ws || !sel) return;
+  const chs = _getSortedChapters();
+  if (!chs.length) {
+    sel.innerHTML = '<option value="">— ยังไม่มีตอน —</option>';
+    document.getElementById('reContent').innerHTML = '<div class="re-empty">ยังไม่มีตอนใน Workspace นี้ — เพิ่มตอนในแท็บ 📚 ตอน</div>';
+    document.getElementById('reEditArea').style.display = 'none';
+    document.getElementById('reContent').style.display = 'block';
+    document.getElementById('reStatus').textContent = '';
+    document.getElementById('reCharStats').textContent = '';
+    return;
+  }
+  sel.innerHTML = chs.map(c => `<option value="${c.id}">#${c.chapterNum || '?'} ${esc(c.title || '(ไม่มีชื่อ)')}${c.translation ? '' : ' · ยังไม่แปล'}</option>`).join('');
+  // ใช้ตอนที่ค้างไว้ หรือ ตอนที่จำจากตำแหน่งอ่านล่าสุด หรือตอนแรก
+  if (!reState.chapterId || !chs.some(c => c.id === reState.chapterId)) {
+    const savedId = ws.readerPosition?.chapterId;
+    reState.chapterId = (savedId && chs.some(c => c.id === savedId)) ? savedId : chs[0].id;
+  }
+  reLoadChapter(reState.chapterId);
+}
+
+function reLoadChapter(id) {
+  if (id) reState.chapterId = id;
+  const ws = S.currentWs;
+  const ch = ws?.chapters?.find(c => c.id === reState.chapterId);
+  const sel = document.getElementById('reChapterSelect');
+  if (sel && reState.chapterId) sel.value = reState.chapterId;
+  // จำตำแหน่งตอนล่าสุด (ใช้ร่วมกับ "อ่านต่อ")
+  if (ch && ws) { ws.readerPosition = { ...(ws.readerPosition || {}), chapterId: ch.id }; lsSaveWorkspace(ws).catch(() => {}); }
+
+  // ปุ่ม prev/next
+  const chs = _getSortedChapters();
+  const idx = chs.findIndex(c => c.id === reState.chapterId);
+  const prevBtn = document.getElementById('rePrevBtn');
+  const nextBtn = document.getElementById('reNextBtn');
+  if (prevBtn) prevBtn.disabled = idx <= 0;
+  if (nextBtn) nextBtn.disabled = idx < 0 || idx >= chs.length - 1;
+
+  // โหมดปุ่ม
+  const readBtn = document.getElementById('reModeReadBtn');
+  const editBtn = document.getElementById('reModeEditBtn');
+  if (readBtn) readBtn.classList.toggle('active', reState.mode === 'read');
+  if (editBtn) editBtn.classList.toggle('active', reState.mode === 'edit');
+
+  const content  = document.getElementById('reContent');
+  const editArea = document.getElementById('reEditArea');
+  const saveBtn  = document.getElementById('reSaveBtn');
+  const transBtn = document.getElementById('reTranslateBtn');
+  const status   = document.getElementById('reStatus');
+  if (!ch) { if (content) content.innerHTML = ''; return; }
+
+  if (status) status.textContent = ch.translation ? '✓ แปลแล้ว' : '◌ ยังไม่แปล';
+  if (transBtn) transBtn.style.display = '';
+
+  if (reState.mode === 'edit') {
+    content.style.display = 'none';
+    editArea.style.display = 'block';
+    editArea.value = ch.translation || '';
+    if (saveBtn) saveBtn.style.display = '';
+  } else {
+    editArea.style.display = 'none';
+    content.style.display = 'block';
+    if (saveBtn) saveBtn.style.display = 'none';
+    if (ch.translation && ch.translation.trim()) {
+      const paras = ch.translation.split(/\n/).map(p => p.trim() ? `<p>${esc(p)}</p>` : '<br>').join('');
+      content.innerHTML = `<h2 class="re-title">${esc(ch.title || '')}</h2>${paras}`;
+    } else {
+      content.innerHTML = `<h2 class="re-title">${esc(ch.title || '')}</h2><div class="re-empty">ตอนนี้ยังไม่ได้แปล — กด <strong>⚡ แปลตอนนี้</strong> ด้านบน</div>`;
+    }
+  }
+  reUpdateCharStats();
+  reHighlightCount();
+}
+
+function reNav(dir) {
+  const chs = _getSortedChapters();
+  const idx = chs.findIndex(c => c.id === reState.chapterId);
+  const ni = idx + dir;
+  if (ni < 0 || ni >= chs.length) return;
+  reLoadChapter(chs[ni].id);
+}
+
+function reSetMode(mode) {
+  // ถ้ากำลังแก้ไขแล้วมีข้อความค้าง ให้เตือนบันทึกก่อนสลับไปอ่าน
+  if (reState.mode === 'edit' && mode === 'read') {
+    const ch = S.currentWs?.chapters?.find(c => c.id === reState.chapterId);
+    const cur = document.getElementById('reEditArea')?.value ?? '';
+    if (ch && cur !== (ch.translation || '') && !confirm('มีการแก้ไขที่ยังไม่บันทึก — ทิ้งการแก้ไข?')) return;
+  }
+  reState.mode = mode;
+  reLoadChapter(reState.chapterId);
+}
+
+function reUpdateCharStats() {
+  const el = document.getElementById('reCharStats');
+  const ch = S.currentWs?.chapters?.find(c => c.id === reState.chapterId);
+  if (!el || !ch) return;
+  const len = (reState.mode === 'edit' ? (document.getElementById('reEditArea')?.value || '') : (ch.translation || '')).length;
+  el.textContent = `${len.toLocaleString()} ตัวอักษร`;
+}
+
+async function reSaveEdit() {
+  const ch = S.currentWs?.chapters?.find(c => c.id === reState.chapterId);
+  if (!ch) return;
+  const val = document.getElementById('reEditArea').value;
+  ch.translation = val;
+  ch.status = val.trim() ? 'translated' : (ch.status === 'translated' ? 'pending' : ch.status);
+  ch.wordCount = val.length;
+  ch.updatedAt = Date.now();
+  await lsSaveWorkspace(S.currentWs);
+  showToast('บันทึกการแก้ไขแล้ว ✓', 'success');
+  if (S.currentTab === 'chapters') renderChapters();
+  reUpdateCharStats();
+}
+
+// ค้นหา/แทนที่ภายในตอนปัจจุบัน
+function reHighlightCount() {
+  const info = document.getElementById('reFindInfo');
+  const find = document.getElementById('reFind')?.value || '';
+  if (!info) return;
+  if (!find) { info.textContent = ''; return; }
+  const ch = S.currentWs?.chapters?.find(c => c.id === reState.chapterId);
+  const text = (reState.mode === 'edit' ? (document.getElementById('reEditArea')?.value || '') : (ch?.translation || ''));
+  const cs = document.getElementById('reCaseSensitive')?.checked;
+  let count = 0, i = 0;
+  const hay = cs ? text : text.toLowerCase();
+  const needle = cs ? find : find.toLowerCase();
+  if (needle) { while ((i = hay.indexOf(needle, i)) !== -1) { count++; i += needle.length; } }
+  info.textContent = `พบ ${count} จุด`;
+}
+
+async function reReplaceAll() {
+  const ch = S.currentWs?.chapters?.find(c => c.id === reState.chapterId);
+  if (!ch) return;
+  const find = document.getElementById('reFind')?.value || '';
+  if (!find) { showToast('ใส่คำที่ต้องการค้นหาก่อน', 'error'); return; }
+  const repl = document.getElementById('reReplace')?.value || '';
+  const cs = document.getElementById('reCaseSensitive')?.checked;
+  const src = reState.mode === 'edit' ? (document.getElementById('reEditArea')?.value || '') : (ch.translation || '');
+  const flags = cs ? 'g' : 'gi';
+  const re = new RegExp(find.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), flags);
+  const count = (src.match(re) || []).length;
+  if (!count) { showToast('ไม่พบคำที่ค้นหา', ''); return; }
+  const out = src.replace(re, repl);
+  if (reState.mode === 'edit') {
+    document.getElementById('reEditArea').value = out;
+    reUpdateCharStats();
+  } else {
+    ch.translation = out;
+    ch.wordCount = out.length;
+    ch.updatedAt = Date.now();
+    await lsSaveWorkspace(S.currentWs);
+    reLoadChapter(reState.chapterId);
+    if (S.currentTab === 'chapters') renderChapters();
+  }
+  reHighlightCount();
+  showToast(`แทนที่ ${count} จุดแล้ว ✓`, 'success');
+}
+
+// แปลตอนปัจจุบันจากแท็บนี้
+async function reTranslateChapter() {
+  const ch = S.currentWs?.chapters?.find(c => c.id === reState.chapterId);
+  if (!ch) return;
+  if (!ch.sourceText?.trim()) { showToast('ตอนนี้ไม่มีต้นฉบับให้แปล', 'error'); return; }
+  if (!getApiKey()) { showToast('ยังไม่ได้ตั้ง API Key — ไปที่ ⚙ ตั้งค่า', 'error'); return; }
+  if (S.translating) { showToast('มีงานแปลอื่นทำงานอยู่ — รอสักครู่', 'error'); return; }
+  const btn = document.getElementById('reTranslateBtn');
+  const content = document.getElementById('reContent');
+  S.translating = true;
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ กำลังแปล...'; }
+  reState.mode = 'read';
+  if (content) { content.style.display = 'block'; document.getElementById('reEditArea').style.display = 'none'; content.innerHTML = `<h2 class="re-title">${esc(ch.title || '')}</h2><div id="reLiveText"></div>`; }
+  const live = document.getElementById('reLiveText');
+  try {
+    await translateChapterCore(ch, {
+      awaitGlossary: false,
+      onDelta: d => { if (live) { live.textContent += d; } },
+    });
+    showToast('แปลตอนนี้เสร็จ ✓', 'success');
+    if (S.currentTab === 'chapters') renderChapters();
+  } catch (e) {
+    showToast('แปลไม่สำเร็จ: ' + (e.message || e), 'error');
+  } finally {
+    S.translating = false;
+    if (btn) { btn.disabled = false; btn.textContent = '⚡ แปลตอนนี้'; }
+    reLoadChapter(reState.chapterId);
+  }
+}
+
+// ═══════════════════════════════════════════════
+// ─── Reader Mode (overlay เดิม — คงไว้สำหรับ prefetch/อ้างอิง) ──
 // ═══════════════════════════════════════════════
 // อ่านเต็มจอ + จำตำแหน่ง/ตั้งค่าต่อ workspace — ธีม reader แยกจากธีมแอพ
 
@@ -6405,28 +6603,12 @@ function readerGetSettings() {
   return { ...READER_DEFAULTS, ...(S.currentWs?.readerSettings || {}) };
 }
 
+// เปิดอ่าน/แก้ไขตอน → ไปที่แท็บ "อ่าน/แก้ไข" (เดิมเป็น overlay เต็มจอ)
 function openReader(chId) {
   const ch = S.currentWs?.chapters?.find(c => c.id === chId);
   if (!ch) { showToast('ไม่พบตอน', 'error'); return; }
-  rState.active = true;
-  rState.chapterId = chId;
-  document.getElementById('readerOverlay').style.display = 'flex';
-  readerApplySettings();
-  readerRenderChapter(ch);
-  // คืนตำแหน่ง scroll เฉพาะตอนที่บันทึกไว้ล่าสุด
-  const pos = S.currentWs.readerPosition;
-  const scroller = document.getElementById('readerScroll');
-  requestAnimationFrame(() => {
-    const denom = scroller.scrollHeight - scroller.clientHeight;
-    scroller.scrollTop = (pos && pos.chapterId === chId && pos.scrollPct && denom > 0)
-      ? pos.scrollPct * denom : 0;
-    readerUpdateProgress();
-  });
-  if (!rState._pushedHistory) {
-    try { history.pushState({ ntReader: true }, ''); rState._pushedHistory = true; } catch {}
-  }
-  readerSavePosition(true);
-  readerKickPrefetch();
+  reState.chapterId = chId;
+  switchTab('read');
 }
 
 function openReaderResume() {

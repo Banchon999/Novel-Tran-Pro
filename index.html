@@ -81,6 +81,7 @@
     <div class="sub-tabs">
       <button class="sub-tab active" data-tab="translate" onclick="switchTab('translate')">⚡ แปล</button>
       <button class="sub-tab" data-tab="chapters" onclick="switchTab('chapters')">📚 ตอน</button>
+      <button class="sub-tab" data-tab="read" onclick="switchTab('read')">📖 อ่าน/แก้ไข</button>
       <button class="sub-tab" data-tab="glossary" onclick="switchTab('glossary')">📖 คลังศัพท์</button>
       <button class="sub-tab" data-tab="styles" onclick="switchTab('styles')">🖊 Styles</button>
       <button class="sub-tab" data-tab="settings-ws" onclick="switchTab('settings-ws')">⚙ ตั้งค่า</button>
@@ -202,6 +203,40 @@
         <button class="btn-xs" onclick="enterBulkMode()" style="color:var(--crimson-light);border-color:rgba(194,48,72,0.3)">☑ เลือกหลายตอน</button>
       </div>
       <div id="chapterList" class="chapter-list"></div>
+    </div>
+
+    <!-- READ / EDIT TAB -->
+    <div class="tab-content" id="tab-read" style="display:none">
+      <div class="tab-toolbar" style="flex-wrap:wrap;gap:6px">
+        <button class="btn btn-ghost btn-sm" onclick="reNav(-1)" title="ตอนก่อนหน้า" id="rePrevBtn">◀</button>
+        <select id="reChapterSelect" class="select-input" style="max-width:340px" onchange="reLoadChapter(this.value)"></select>
+        <button class="btn btn-ghost btn-sm" onclick="reNav(1)" title="ตอนถัดไป" id="reNextBtn">▶</button>
+        <span style="width:1px;height:20px;background:var(--border);margin:0 2px"></span>
+        <div class="re-mode-toggle">
+          <button class="btn btn-sm" id="reModeReadBtn" onclick="reSetMode('read')">📖 อ่าน</button>
+          <button class="btn btn-sm" id="reModeEditBtn" onclick="reSetMode('edit')">✏ แก้ไข</button>
+        </div>
+        <button class="btn btn-secondary btn-sm" id="reTranslateBtn" onclick="reTranslateChapter()" title="แปลตอนนี้">⚡ แปลตอนนี้</button>
+        <span id="reStatus" class="count-label"></span>
+      </div>
+      <!-- Find & Replace bar -->
+      <div class="re-find-bar">
+        <input type="text" id="reFind" class="search-input" style="max-width:200px" placeholder="ค้นหาในตอนนี้..." oninput="reHighlightCount()"/>
+        <input type="text" id="reReplace" class="search-input" style="max-width:200px" placeholder="แทนที่ด้วย..."/>
+        <label class="toggle-mini"><input type="checkbox" id="reCaseSensitive"/> Aa</label>
+        <button class="btn btn-ghost btn-sm" onclick="reReplaceAll()">แทนที่ทั้งหมด</button>
+        <span id="reFindInfo" class="count-label"></span>
+      </div>
+      <div id="reBody" class="re-body">
+        <div id="reContent" class="re-content reader-theme-sepia"></div>
+        <textarea id="reEditArea" class="editor-ta re-edit-area" style="display:none" placeholder="คำแปลของตอนนี้..."></textarea>
+      </div>
+      <div class="pane-footer">
+        <span id="reCharStats"></span>
+        <div class="save-row">
+          <button class="btn btn-primary btn-sm" id="reSaveBtn" onclick="reSaveEdit()" style="display:none">💾 บันทึกการแก้ไข</button>
+        </div>
+      </div>
     </div>
 
     <!-- GLOSSARY TAB -->
