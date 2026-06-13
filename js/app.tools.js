@@ -13,13 +13,60 @@ async function renumberAllChapters() {
   showToast('เรียงเลขตอนใหม่แล้ว ✓', 'success');
 }
 
-// ─── Bulk Rename ───
+// ─── Bulk Rename / แปลชื่อตอนอัตโนมัติ ───
+const DEFAULT_TITLE_PROMPT = `You are a professional chapter-title translator. Translate each chapter title into natural, fluent Thai.
+Keep proper names consistent. Return ONLY a valid JSON array of strings — no markdown, no extra text — with EXACTLY {count} elements, in the same order.
+Example: ["ชื่อตอนที่ 1","ชื่อตอนที่ 2"]
+
+Chapter titles:
+{titles}`;
+
+function brGetPromptTemplate() {
+  return S.currentWs?.settings?.titlePromptTemplate || DEFAULT_TITLE_PROMPT;
+}
+function brLoadPrompt() {
+  const ta = document.getElementById('brPromptText');
+  if (ta) ta.value = brGetPromptTemplate();
+}
+async function brSavePrompt() {
+  if (!S.currentWs) return;
+  const v = (document.getElementById('brPromptText')?.value || '').trim();
+  S.currentWs.settings = { ...(S.currentWs.settings || {}), titlePromptTemplate: v || DEFAULT_TITLE_PROMPT };
+  await lsSaveWorkspace(S.currentWs);
+  showToast('บันทึก prompt แปลชื่อแล้ว ✓', 'success');
+}
+function brResetPrompt() {
+  const ta = document.getElementById('brPromptText');
+  if (ta) ta.value = DEFAULT_TITLE_PROMPT;
+}
+function brTogglePromptBox() {
+  const box = document.getElementById('brPromptBox');
+  if (box) box.style.display = box.style.display === 'none' ? 'block' : 'none';
+}
+
+// ── Multi-select: target = แถวที่ติ๊ก ถ้าไม่ติ๊กเลย = ทุกแถว ──
+function brTargetInputs() {
+  const all = [...document.querySelectorAll('.bulk-rename-input')];
+  const ids = new Set([...document.querySelectorAll('.bulk-rename-chk:checked')].map(c => c.dataset.id));
+  return ids.size ? all.filter(inp => ids.has(inp.dataset.id)) : all;
+}
+function brUpdateSelCount() {
+  const n = document.querySelectorAll('.bulk-rename-chk:checked').length;
+  const el = document.getElementById('brSelCount');
+  if (el) el.textContent = n ? `เลือก ${n} ตอน (จะทำเฉพาะที่เลือก)` : 'ยังไม่ได้เลือก — จะทำกับทุกตอน';
+}
+function brToggleSelectAll(checked) {
+  document.querySelectorAll('.bulk-rename-chk').forEach(c => { c.checked = checked; });
+  brUpdateSelCount();
+}
+
 function openBulkRename() {
   if (!S.currentWs?.chapters.length) { showToast('ยังไม่มีตอน', 'error'); return; }
   const sorted = [...S.currentWs.chapters].sort((a, b) => (a.chapterNum || 0) - (b.chapterNum || 0));
   const list = document.getElementById('bulkRenameList');
   list.innerHTML = sorted.map(ch => `
     <div style="display:flex;align-items:center;gap:8px;padding:5px 6px;background:var(--bg-deep);border:1px solid var(--border);border-radius:var(--radius)">
+      <input type="checkbox" class="bulk-rename-chk" data-id="${ch.id}" style="accent-color:var(--gold);flex-shrink:0" onchange="brUpdateSelCount()" title="เลือกตอนนี้"/>
       <span style="font-size:0.7rem;font-family:var(--font-mono);color:var(--text-muted);min-width:28px;flex-shrink:0">#${ch.chapterNum||'?'}</span>
       <input class="bulk-rename-input" data-id="${ch.id}" type="text" value="${esc(ch.title)}"
         style="flex:1;background:transparent;border:none;border-bottom:1px dashed var(--border);color:var(--text-primary);font-size:0.85rem;font-family:var(--font-body);outline:none;padding:2px 4px;"
@@ -27,11 +74,15 @@ function openBulkRename() {
     </div>
   `).join('');
   document.getElementById('bulkRenameStatus').textContent = '';
+  const selAll = document.getElementById('brSelectAll');
+  if (selAll) selAll.checked = false;
+  brLoadPrompt();
+  brUpdateSelCount();
   openModal('modal-bulk-rename');
 }
 
 async function bulkRenameWithAI() {
-  const inputs = [...document.querySelectorAll('.bulk-rename-input')];
+  const inputs = brTargetInputs();
   if (!inputs.length) return;
   const btn = document.getElementById('bulkRenameAiBtn');
   const status = document.getElementById('bulkRenameStatus');
@@ -39,6 +90,7 @@ async function bulkRenameWithAI() {
 
   const titles = inputs.map(inp => inp.value.trim());
   const model = document.getElementById('bulkRenameModel').value;
+  const tmpl = brGetPromptTemplate();
 
   // แบ่ง batch ละ 30 ตอน เพื่อป้องกัน JSON truncation
   const BATCH = 30;
@@ -51,14 +103,10 @@ async function bulkRenameWithAI() {
       const batch = batches[b];
       status.textContent = `🤖 กำลังแปล batch ${b+1}/${batches.length} (${batch.length} ตอน)...`;
 
-      const prompt = `You are a Korean to Thai chapter title translator.
-Translate each chapter title to natural Thai. Return ONLY a valid JSON array of strings, nothing else.
-The array must have exactly ${batch.length} elements.
-Do NOT use markdown code blocks. Output only the raw JSON array.
-Example: ["ชื่อตอนที่ 1","ชื่อตอนที่ 2"]
-
-Chapter titles to translate:
-${batch.map((t, i) => `${i+1}. ${t}`).join('\n')}`;
+      const listStr = batch.map((t, i) => `${i+1}. ${t}`).join('\n');
+      const prompt = tmpl.includes('{titles}')
+        ? tmpl.replace(/{count}/g, String(batch.length)).replace('{titles}', listStr)
+        : `${tmpl}\n\nReturn ONLY a JSON array of exactly ${batch.length} Thai strings, same order.\n${listStr}`;
 
       const res = await callOpenRouter({
         model,
@@ -88,15 +136,16 @@ ${batch.map((t, i) => `${i+1}. ${t}`).join('\n')}`;
       translated = translated.concat(batchResult);
     }
 
-    // Apply results back to inputs
+    // Apply results back to the target inputs
     let applied = 0;
     inputs.forEach((inp, i) => {
       if (translated[i] && typeof translated[i] === 'string' && translated[i].trim()) {
         inp.value = translated[i].trim();
+        inp.style.background = 'rgba(76,175,80,0.1)';
         applied++;
       }
     });
-    status.textContent = `✓ แปลชื่อ ${applied}/${titles.length} ตอนแล้ว`;
+    status.textContent = `✓ แปลชื่อ ${applied}/${titles.length} ตอนแล้ว (ยังไม่บันทึก — กด 💾)`;
   } catch (e) {
     status.textContent = '❌ ' + e.message;
   } finally {
@@ -482,10 +531,19 @@ function checkDuplicateGlossary() {
     }
   }
 
-  const hasIssues = exactDups.size > 0 || _lastSubstrPairs.length > 0;
+  // \u2500\u2500 3. \u0e04\u0e33\u0e41\u0e1b\u0e25\u0e44\u0e17\u0e22\u0e0b\u0e49\u0e33 (Korean \u0e15\u0e48\u0e32\u0e07\u0e01\u0e31\u0e19 \u0e41\u0e15\u0e48\u0e41\u0e1b\u0e25\u0e44\u0e17\u0e22\u0e40\u0e2b\u0e21\u0e37\u0e2d\u0e19\u0e01\u0e31\u0e19) \u2500\u2500
+  const thaiMap = {};
+  data.forEach(g => {
+    const t = (g.thai || '').trim();
+    if (!t) return;
+    (thaiMap[t] = thaiMap[t] || []).push(g.korean);
+  });
+  const thaiDups = Object.entries(thaiMap).filter(([, ks]) => ks.length > 1);
+
+  const hasIssues = exactDups.size > 0 || _lastSubstrPairs.length > 0 || thaiDups.length > 0;
   if (!hasIssues) {
     dupAlert.style.display = 'none';
-    showToast('\u2713 \u0e44\u0e21\u0e48\u0e1e\u0e1a\u0e04\u0e33\u0e0b\u0e49\u0e33\u0e2b\u0e23\u0e37\u0e2d substring \u0e0b\u0e49\u0e2d\u0e19\u0e43\u0e19\u0e04\u0e25\u0e31\u0e07\u0e28\u0e31\u0e1e\u0e17\u0e4c', 'success');
+    showToast('\u2713 \u0e44\u0e21\u0e48\u0e1e\u0e1a\u0e04\u0e33\u0e0b\u0e49\u0e33 (\u0e15\u0e23\u0e27\u0e08: \u0e04\u0e33\u0e40\u0e01\u0e32\u0e2b\u0e25\u0e35\u0e0b\u0e49\u0e33 \u00b7 \u0e04\u0e33\u0e0b\u0e49\u0e2d\u0e19 \u00b7 \u0e04\u0e33\u0e41\u0e1b\u0e25\u0e44\u0e17\u0e22\u0e0b\u0e49\u0e33)', 'success');
     return;
   }
 
@@ -514,6 +572,20 @@ function checkDuplicateGlossary() {
       '</div>'
     ).join('');
     if (more > 0) html += '<div style="font-size:0.72rem;color:var(--text-muted)">...\u0e41\u0e25\u0e30\u0e2d\u0e35\u0e01 ' + more + ' \u0e04\u0e39\u0e48</div>';
+  }
+
+  if (thaiDups.length > 0) {
+    const shown = thaiDups.slice(0, 8);
+    const more  = thaiDups.length - shown.length;
+    html += '<div style="margin-top:6px;margin-bottom:4px">\ud83d\udd24 <strong>\u0e04\u0e33\u0e41\u0e1b\u0e25\u0e44\u0e17\u0e22\u0e0b\u0e49\u0e33 ' + thaiDups.length + ' \u0e04\u0e33</strong> (\u0e40\u0e01\u0e32\u0e2b\u0e25\u0e35\u0e15\u0e48\u0e32\u0e07\u0e01\u0e31\u0e19 \u2192 \u0e41\u0e1b\u0e25\u0e44\u0e17\u0e22\u0e40\u0e2b\u0e21\u0e37\u0e2d\u0e19\u0e01\u0e31\u0e19)</div>';
+    html += shown.map(([thai, ks]) =>
+      '<div style="font-size:0.78rem;padding:2px 0;color:var(--text-secondary)">' +
+        '<span style="color:var(--gold)">"' + esc(thai) + '"</span>' +
+        '<span style="color:var(--text-muted)"> \u2190 </span>' +
+        '<span style="color:var(--text-primary)">' + ks.map(k => esc(k)).join(', ') + '</span>' +
+      '</div>'
+    ).join('');
+    if (more > 0) html += '<div style="font-size:0.72rem;color:var(--text-muted)">...\u0e41\u0e25\u0e30\u0e2d\u0e35\u0e01 ' + more + ' \u0e04\u0e33</div>';
   }
 
   html += '<button onclick="document.getElementById(\'glossaryDupAlert\').style.display=\'none\'" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:0.8rem;float:right;margin-top:4px">\u2715</button>';
@@ -940,27 +1012,37 @@ document.addEventListener('DOMContentLoaded', () => {
 // ─── Bulk Rename — Find & Replace in Title Names ───
 // ═══════════════════════════════════════════════
 
-function brFrBuildRegex(term, caseSensitive, flags) {
-  const p = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+// useRegex=true → ใช้ pattern ดิบ (รองรับ regex name delete เมื่อชื่อซ้ำหลายตอนจน replace ธรรมดาไม่พอ)
+function brFrBuildRegex(term, caseSensitive, useRegex, flags) {
+  const p = useRegex ? term : term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const f = (flags || '') + (caseSensitive ? '' : 'i');
   return new RegExp(p, f);
 }
 
-function brFrLive() {
+function brFrMakeRegex() {
   const find = document.getElementById('brFrFind')?.value || '';
   const info = document.getElementById('brFrInfo');
-  if (!info) return;
-  if (!find) { info.textContent = 'พิมพ์เพื่อค้นหา'; info.style.color = 'var(--text-muted)'; brFrClearHighlights(); return; }
   const cs = document.getElementById('brFrCase')?.checked;
-  const regex = brFrBuildRegex(find, cs, 'g');
-  let total = 0;
-  document.querySelectorAll('.bulk-rename-input').forEach(inp => {
+  const useRegex = document.getElementById('brFrRegex')?.checked;
+  if (!find) { if (info) { info.textContent = 'พิมพ์เพื่อค้นหา'; info.style.color = 'var(--text-muted)'; } return null; }
+  try { return brFrBuildRegex(find, cs, useRegex, 'g'); }
+  catch (e) { if (info) { info.textContent = 'Regex ผิด: ' + e.message; info.style.color = 'var(--crimson-light)'; } return false; }
+}
+
+function brFrLive() {
+  const info = document.getElementById('brFrInfo');
+  if (!info) return;
+  const regex = brFrMakeRegex();
+  if (regex === null) { brFrClearHighlights(); return; }
+  if (regex === false) { brFrClearHighlights(); return; }
+  const targets = brTargetInputs();
+  let total = 0, rows = 0;
+  document.querySelectorAll('.bulk-rename-input').forEach(inp => { inp.style.background = ''; inp.style.borderBottomColor = ''; });
+  targets.forEach(inp => {
     const hits = (inp.value.match(regex) || []).length;
-    total += hits;
-    inp.style.background = hits ? 'rgba(201,168,76,0.1)' : '';
-    inp.style.borderBottomColor = hits ? 'var(--gold)' : '';
+    if (hits) { total += hits; rows++; inp.style.background = 'rgba(201,168,76,0.1)'; inp.style.borderBottomColor = 'var(--gold)'; }
   });
-  if (total) { info.textContent = `พบ ${total} รายการใน ${document.querySelectorAll('.bulk-rename-input').length} ตอน`; info.style.color = 'var(--gold)'; }
+  if (total) { info.textContent = `พบ ${total} จุดใน ${rows} ตอน`; info.style.color = 'var(--gold)'; }
   else { info.textContent = 'ไม่พบ'; info.style.color = 'var(--crimson-light)'; }
 }
 
@@ -971,22 +1053,32 @@ function brFrClearHighlights() {
   });
 }
 
-function brFrReplaceAll() {
-  const find = document.getElementById('brFrFind')?.value || '';
-  const replace = document.getElementById('brFrReplace')?.value || '';
+// แกนกลาง replace/delete — ทำเฉพาะแถวที่เลือก (หรือทุกแถวถ้าไม่เลือก)
+function brFrApply(replaceWith, verb) {
   const info = document.getElementById('brFrInfo');
-  if (!find) { info.textContent = 'ใส่คำค้นหาก่อน'; info.style.color = 'var(--crimson-light)'; return; }
-  const cs = document.getElementById('brFrCase')?.checked;
-  const regex = brFrBuildRegex(find, cs, 'g');
-  let total = 0;
-  document.querySelectorAll('.bulk-rename-input').forEach(inp => {
+  const regex = brFrMakeRegex();
+  if (!regex) { if (info && regex === null) { info.textContent = 'ใส่คำค้นหาก่อน'; info.style.color = 'var(--crimson-light)'; } return; }
+  const targets = brTargetInputs();
+  let total = 0, rows = 0;
+  targets.forEach(inp => {
     const orig = inp.value;
-    const result = orig.replace(regex, replace);
-    if (result !== orig) { inp.value = result; total += (orig.match(regex) || []).length; inp.style.background = 'rgba(76,175,80,0.1)'; inp.style.borderBottomColor = '#4caf50'; }
-    else { inp.style.background = ''; inp.style.borderBottomColor = ''; }
+    const hits = (orig.match(regex) || []).length;
+    if (!hits) return;
+    inp.value = orig.replace(regex, replaceWith);
+    total += hits; rows++;
+    inp.style.background = 'rgba(76,175,80,0.1)'; inp.style.borderBottomColor = '#4caf50';
   });
-  if (total) { info.textContent = `แทนที่ ${total} รายการแล้ว ✓`; info.style.color = '#4caf50'; }
-  else { info.textContent = 'ไม่พบสิ่งที่ต้องแทนที่'; info.style.color = 'var(--crimson-light)'; }
+  if (total) { info.textContent = `${verb} ${total} จุดใน ${rows} ตอนแล้ว ✓ (ยังไม่บันทึก — กด 💾)`; info.style.color = '#4caf50'; }
+  else { info.textContent = `ไม่พบสิ่งที่ต้อง${verb}`; info.style.color = 'var(--crimson-light)'; }
+}
+
+function brFrReplaceAll() {
+  brFrApply(document.getElementById('brFrReplace')?.value || '', 'แทนที่');
+}
+
+// ลบส่วนที่ตรง pattern ออก (เหมาะกับลบชื่อ/คำซ้ำด้วย regex)
+function brFrDeleteMatches() {
+  brFrApply('', 'ลบ');
 }
 
 // ═══════════════════════════════════════════════
