@@ -1386,6 +1386,14 @@
   </footer>
 </div>
 
-<script src="app.js"></script>
+<!-- โหลดตามลำดับ (classic scripts ใช้ global scope ร่วมกัน) — แยกไฟล์เพื่อจัดการง่ายขึ้น -->
+<script src="js/app.core.js"></script>
+<script src="js/app.providers.js"></script>
+<script src="js/app.workspace.js"></script>
+<script src="js/app.chapters-glossary.js"></script>
+<script src="js/app.translate.js"></script>
+<script src="js/app.review-batch.js"></script>
+<script src="js/app.tools.js"></script>
+<script src="js/app.reader-presets.js"></script>
 </body>
 </html>

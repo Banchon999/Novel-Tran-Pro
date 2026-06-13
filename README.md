@@ -51,7 +51,15 @@
 NovelTrans/
 ├── index.html   ← หน้าหลัก
 ├── style.css    ← CSS ทั้งหมด
-├── app.js       ← JavaScript ทั้งหมด
+├── js/          ← JavaScript (แยกเป็นโมดูลตามหน้าที่ โหลดตามลำดับ)
+│   ├── app.core.js              ← state, styles/presets, prompts, storage/IndexedDB
+│   ├── app.providers.js         ← AI providers, fetch models, ต้นทุน
+│   ├── app.workspace.js         ← init, workspace list/settings, import/export
+│   ├── app.chapters-glossary.js ← แท็บตอน + คลังศัพท์ + styles
+│   ├── app.translate.js         ← แกนการแปล, auto-glossary, context memory
+│   ├── app.review-batch.js      ← review search, export, แปล batch, EPUB
+│   ├── app.tools.js             ← เครื่องมือ (dup-check, type system, theme ฯลฯ)
+│   └── app.reader-presets.js    ← แท็บอ่าน/แก้ไข, preset CRUD, reader
 ├── serve.sh     ← สคริปต์เปิด server
 └── README.md    ← ไฟล์นี้
 ```
