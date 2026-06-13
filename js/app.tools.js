@@ -498,97 +498,75 @@ function isSubstringDup(sub, full) {
   return isEdge && extra <= 3;
 }
 
-function checkDuplicateGlossary() {
-  const data = S.glossaryData || [];
+// normalize คำเกาหลีก่อนเทียบ: รวม Unicode เป็น NFC + ตัดอักขระล่องหน (zero-width) + trim
+// (กันกรณีคำที่ "ดูเหมือนกัน" แต่ byte ต่างกัน เลยตรวจไม่เจอ)
+function _normGlossKey(s) {
+  return (s || '').normalize('NFC').replace(/[​-‍﻿]/g, '').trim();
+}
+
+async function checkDuplicateGlossary() {
+  const dupAlert = document.getElementById('glossaryDupAlert');
+  let data = S.glossaryData || [];
   if (!data.length) { showToast('คลังศัพท์ว่างเปล่า', ''); return; }
 
-  const dupAlert = document.getElementById('glossaryDupAlert');
-
-  // ── 1. Exact duplicates ──
-  const seen = {};
-  const exactDups = new Set();
+  // ── 1. คำเกาหลีซ้ำแบบเป๊ะ → ลบอัตโนมัติทันที (เก็บตัวแรก ไม่ต้องใช้ AI) ──
+  const seen = new Set();
+  const deduped = [];
+  let removed = 0;
   data.forEach(g => {
-    const key = g.korean.trim();
-    if (!key) return;
-    if (seen[key]) exactDups.add(key);
-    else seen[key] = true;
+    const k = _normGlossKey(g.korean);
+    if (!k) { deduped.push(g); return; }
+    if (seen.has(k)) { removed++; }          // ซ้ำเป๊ะ → ทิ้ง
+    else { seen.add(k); deduped.push(g); }
   });
+  if (removed > 0) {
+    S.currentWs.glossary = deduped;
+    S.glossaryData = deduped;
+    data = deduped;
+    if (typeof _glossarySelected !== 'undefined' && _glossarySelected) _glossarySelected.clear();
+    await lsSaveWorkspace(S.currentWs);
+    renderGlossaryTable();
+    showToast(`ลบคำเกาหลีซ้ำอัตโนมัติ ${removed} รายการ ✓`, 'success');
+  }
 
-  // ── 2. Substring overlaps (รองรับทุกภาษา) เช่น 이하율 vs 이하율이 / "Kim" vs "Kim ssi" ──
+  // ── 2. คำซ้อน (substring) — ต้องใช้วิจารณญาณ จึงแสดงรายการ/ให้ AI ช่วย ──
   _lastSubstrPairs = [];
-  const keys = data.map(g => g.korean.trim()).filter(Boolean);
-  for (let i = 0; i < keys.length; i++) {
-    for (let j = 0; j < keys.length; j++) {
+  const items = data.map(g => ({ key: _normGlossKey(g.korean), thai: g.thai || '' })).filter(x => x.key);
+  for (let i = 0; i < items.length; i++) {
+    for (let j = 0; j < items.length; j++) {
       if (i === j) continue;
-      if (isSubstringDup(keys[i], keys[j])) {
-        const alreadyLogged = _lastSubstrPairs.some(p => p.sub === keys[i] && p.full === keys[j]);
-        if (!alreadyLogged) {
-          const subEntry  = data.find(g => g.korean === keys[i]);
-          const fullEntry = data.find(g => g.korean === keys[j]);
-          _lastSubstrPairs.push({ sub: keys[i], full: keys[j], subThai: subEntry?.thai||'', fullThai: fullEntry?.thai||'' });
+      if (isSubstringDup(items[i].key, items[j].key)) {
+        if (!_lastSubstrPairs.some(p => p.sub === items[i].key && p.full === items[j].key)) {
+          _lastSubstrPairs.push({ sub: items[i].key, full: items[j].key, subThai: items[i].thai, fullThai: items[j].thai });
         }
       }
     }
   }
 
-  // \u2500\u2500 3. \u0e04\u0e33\u0e41\u0e1b\u0e25\u0e44\u0e17\u0e22\u0e0b\u0e49\u0e33 (Korean \u0e15\u0e48\u0e32\u0e07\u0e01\u0e31\u0e19 \u0e41\u0e15\u0e48\u0e41\u0e1b\u0e25\u0e44\u0e17\u0e22\u0e40\u0e2b\u0e21\u0e37\u0e2d\u0e19\u0e01\u0e31\u0e19) \u2500\u2500
-  const thaiMap = {};
-  data.forEach(g => {
-    const t = (g.thai || '').trim();
-    if (!t) return;
-    (thaiMap[t] = thaiMap[t] || []).push(g.korean);
-  });
-  const thaiDups = Object.entries(thaiMap).filter(([, ks]) => ks.length > 1);
-
-  const hasIssues = exactDups.size > 0 || _lastSubstrPairs.length > 0 || thaiDups.length > 0;
-  if (!hasIssues) {
+  if (_lastSubstrPairs.length === 0) {
     dupAlert.style.display = 'none';
-    showToast('\u2713 \u0e44\u0e21\u0e48\u0e1e\u0e1a\u0e04\u0e33\u0e0b\u0e49\u0e33 (\u0e15\u0e23\u0e27\u0e08: \u0e04\u0e33\u0e40\u0e01\u0e32\u0e2b\u0e25\u0e35\u0e0b\u0e49\u0e33 \u00b7 \u0e04\u0e33\u0e0b\u0e49\u0e2d\u0e19 \u00b7 \u0e04\u0e33\u0e41\u0e1b\u0e25\u0e44\u0e17\u0e22\u0e0b\u0e49\u0e33)', 'success');
+    if (!removed) showToast('✓ ไม่พบคำซ้ำ', 'success');
     return;
   }
 
   let html = '';
-
-  if (exactDups.size > 0) {
-    const dupList = [...exactDups];
-    html += '<div style="margin-bottom:6px">\u26a0 <strong>\u0e04\u0e33\u0e0b\u0e49\u0e33 exact ' + dupList.length + ' \u0e04\u0e33:</strong> ' + dupList.map(d => '<strong>' + esc(d) + '</strong>').join(', ') +
-      ' &nbsp;<button onclick="removeDuplicateGlossary()" style="background:var(--crimson-light);color:#fff;border:none;padding:2px 8px;border-radius:4px;cursor:pointer;font-size:0.72rem">\u0e25\u0e1a\u0e0b\u0e49\u0e33\u0e2d\u0e31\u0e15\u0e42\u0e19\u0e21\u0e31\u0e15\u0e34</button></div>';
-  }
-
-  if (_lastSubstrPairs.length > 0) {
-    const shown = _lastSubstrPairs.slice(0, 8);
-    const more  = _lastSubstrPairs.length - shown.length;
-    html += '<div style="margin-bottom:4px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
-      '<span>\ud83d\udd0d <strong>\u0e04\u0e33\u0e0b\u0e49\u0e2d\u0e19 ' + _lastSubstrPairs.length + ' \u0e04\u0e39\u0e48</strong> \u2014 \u0e2d\u0e32\u0e08 inject \u0e1c\u0e34\u0e14</span>' +
-      '<button id="dupAiResolveBtn" onclick="aiResolveSubstrDups()" style="background:linear-gradient(135deg,#7a5820,#c9a84c);color:#0c0800;border:none;padding:2px 10px;border-radius:4px;cursor:pointer;font-size:0.72rem;font-weight:600">\ud83e\udd16 \u0e43\u0e2b\u0e49 AI \u0e08\u0e31\u0e14\u0e01\u0e32\u0e23</button>' +
-      '</div>';
-    html += '<div id="dupAiStatus" style="font-size:0.74rem;color:var(--gold);min-height:16px"></div>';
-    html += shown.map(p =>
-      '<div style="font-size:0.78rem;padding:2px 0;color:var(--text-secondary)">' +
-        '<span style="color:var(--gold)">' + esc(p.sub) + '</span>' +
-        '<span style="color:var(--text-muted)"> \u2282 </span>' +
-        '<span style="color:var(--text-primary)">' + esc(p.full) + '</span>' +
-        '<span style="color:var(--text-muted);font-size:0.7rem"> \u2014 "' + esc(p.subThai) + '" vs "' + esc(p.fullThai) + '"</span>' +
-      '</div>'
-    ).join('');
-    if (more > 0) html += '<div style="font-size:0.72rem;color:var(--text-muted)">...\u0e41\u0e25\u0e30\u0e2d\u0e35\u0e01 ' + more + ' \u0e04\u0e39\u0e48</div>';
-  }
-
-  if (thaiDups.length > 0) {
-    const shown = thaiDups.slice(0, 8);
-    const more  = thaiDups.length - shown.length;
-    html += '<div style="margin-top:6px;margin-bottom:4px">\ud83d\udd24 <strong>\u0e04\u0e33\u0e41\u0e1b\u0e25\u0e44\u0e17\u0e22\u0e0b\u0e49\u0e33 ' + thaiDups.length + ' \u0e04\u0e33</strong> (\u0e40\u0e01\u0e32\u0e2b\u0e25\u0e35\u0e15\u0e48\u0e32\u0e07\u0e01\u0e31\u0e19 \u2192 \u0e41\u0e1b\u0e25\u0e44\u0e17\u0e22\u0e40\u0e2b\u0e21\u0e37\u0e2d\u0e19\u0e01\u0e31\u0e19)</div>';
-    html += shown.map(([thai, ks]) =>
-      '<div style="font-size:0.78rem;padding:2px 0;color:var(--text-secondary)">' +
-        '<span style="color:var(--gold)">"' + esc(thai) + '"</span>' +
-        '<span style="color:var(--text-muted)"> \u2190 </span>' +
-        '<span style="color:var(--text-primary)">' + ks.map(k => esc(k)).join(', ') + '</span>' +
-      '</div>'
-    ).join('');
-    if (more > 0) html += '<div style="font-size:0.72rem;color:var(--text-muted)">...\u0e41\u0e25\u0e30\u0e2d\u0e35\u0e01 ' + more + ' \u0e04\u0e33</div>';
-  }
-
-  html += '<button onclick="document.getElementById(\'glossaryDupAlert\').style.display=\'none\'" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:0.8rem;float:right;margin-top:4px">\u2715</button>';
+  const shown = _lastSubstrPairs.slice(0, 8);
+  const more  = _lastSubstrPairs.length - shown.length;
+  html += '<div style="margin-bottom:4px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
+    '<span>🔍 <strong>คำซ้อน ' + _lastSubstrPairs.length + ' คู่</strong> — อาจ inject ผิด</span>' +
+    '<button id="dupAiResolveBtn" onclick="aiResolveSubstrDups()" style="background:linear-gradient(135deg,#7a5820,#c9a84c);color:#0c0800;border:none;padding:2px 10px;border-radius:4px;cursor:pointer;font-size:0.72rem;font-weight:600">🤖 ให้ AI จัดการ</button>' +
+    '</div>';
+  html += '<div id="dupAiStatus" style="font-size:0.74rem;color:var(--gold);min-height:16px"></div>';
+  html += shown.map(p =>
+    '<div style="font-size:0.78rem;padding:2px 0;color:var(--text-secondary)">' +
+      '<span style="color:var(--gold)">' + esc(p.sub) + '</span>' +
+      '<span style="color:var(--text-muted)"> ⊂ </span>' +
+      '<span style="color:var(--text-primary)">' + esc(p.full) + '</span>' +
+      '<span style="color:var(--text-muted);font-size:0.7rem"> — "' + esc(p.subThai) + '" vs "' + esc(p.fullThai) + '"</span>' +
+    '</div>'
+  ).join('');
+  if (more > 0) html += '<div style="font-size:0.72rem;color:var(--text-muted)">...และอีก ' + more + ' คู่</div>';
+  html += '<button onclick="document.getElementById(\'glossaryDupAlert\').style.display=\'none\'" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:0.8rem;float:right;margin-top:4px">✕</button>';
 
   dupAlert.style.display = 'block';
   dupAlert.innerHTML = html;
