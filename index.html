@@ -254,9 +254,7 @@
         <button class="btn btn-primary btn-sm" onclick="openNewStyle()">＋ สร้าง Style</button>
         <span class="count-label">Style กำหนด tone และรูปแบบการเขียนของคำแปล</span>
       </div>
-      <div class="styles-section-label">Style พื้นฐาน</div>
-      <div class="styles-grid" id="builtinStylesGrid"></div>
-      <div class="styles-section-label" style="margin-top:16px">Custom Styles</div>
+      <div class="styles-section-label">Style ของคุณ</div>
       <div class="styles-grid" id="customStylesGrid">
         <div class="styles-empty">ยังไม่มี — กด ＋ สร้าง Style</div>
       </div>
@@ -326,17 +324,10 @@
           <div class="sf-group"><div class="sf-label">คำอธิบาย</div><input id="wsEditDesc" type="text" class="text-input"/></div>
           <div class="sf-group"><div class="sf-label">Emoji</div><input id="wsEditEmoji" type="text" class="text-input" style="max-width:80px"/></div>
           <div class="sf-group">
-            <div class="sf-label">Translation Preset <span style="font-size:0.72rem;color:var(--text-muted)">(ใช้กับแท็บ ⚡แปล, ⚡Batch และ 🏃Marathon)</span></div>
+            <div class="sf-label">Translation Preset <span style="font-size:0.72rem;color:var(--text-muted)">(Preset ของคุณ — ใช้กับแท็บ ⚡แปล และ ⚡Batch)</span></div>
             <div style="display:flex;gap:8px;align-items:center">
-              <select id="wsPresetSelect" class="select-input" style="flex:1">
-                <option value="literary">📖 นิยาย — Literary (ภาษาวรรณกรรม)</option>
-                <option value="draft">⚡ ฉบับร่าง — Draft (เร็ว ประหยัด)</option>
-                <option value="dialogue">🎭 บทสนทนา — Dialogue (เน้น dialog)</option>
-                <option value="faithful">🔤 แปลตรง — Faithful (ใกล้ต้นฉบับ)</option>
-                <option value="webtoon">📱 เว็บตูน — Webtoon (สั้น มือถือ)</option>
-                <option value="mtlFix">🔧 ตรวจ MTL — MTL Fix (แก้ machine translation)</option>
-              </select>
-              <button class="btn btn-ghost btn-sm" onclick="openPresetEditor()" title="แก้ไข Prompt ของ Preset">✏ Customize</button>
+              <select id="wsPresetSelect" class="select-input" style="flex:1"></select>
+              <button class="btn btn-ghost btn-sm" onclick="openPresetEditor()" title="สร้าง/แก้ไข/ลบ Preset ของคุณ">✏ จัดการ Preset</button>
             </div>
           </div>
           <div class="sf-group"><div class="sf-label">AI Provider</div>
@@ -1417,44 +1408,50 @@
 <div class="modal-backdrop" id="modal-preset-editor">
   <div class="modal modal-wide">
     <div class="modal-header">
-      <span>✏ แก้ไข Translation Preset</span>
+      <span>✏ จัดการ Translation Preset</span>
       <button class="icon-btn" onclick="closeModal('modal-preset-editor')">✕</button>
     </div>
     <div class="modal-body">
       <div class="sf-group">
-        <div class="sf-label">Preset ที่ต้องการแก้ไข</div>
-        <select id="pe-preset-select" class="select-input" onchange="loadPresetForEdit()">
-          <option value="literary">📖 นิยาย — Literary</option>
-          <option value="draft">⚡ ฉบับร่าง — Draft</option>
-          <option value="dialogue">🎭 บทสนทนา — Dialogue</option>
-          <option value="faithful">🔤 แปลตรง — Faithful</option>
-          <option value="webtoon">📱 เว็บตูน — Webtoon</option>
-          <option value="mtlFix">🔧 ตรวจ MTL — MTL Fix</option>
-        </select>
+        <div class="sf-label">Preset</div>
+        <select id="pe-preset-select" class="select-input" onchange="loadPresetForEdit()"></select>
+      </div>
+      <div style="display:flex;gap:8px">
+        <div class="sf-group" style="flex:0 0 80px">
+          <div class="sf-label">Emoji</div>
+          <input id="pe-emoji" type="text" class="text-input" maxlength="4" value="📖"/>
+        </div>
+        <div class="sf-group" style="flex:1">
+          <div class="sf-label">ชื่อ Preset *</div>
+          <input id="pe-name" type="text" class="text-input" placeholder="เช่น นิยายของฉัน"/>
+        </div>
       </div>
       <div class="sf-group">
-        <div class="sf-label" style="display:flex;justify-content:space-between;align-items:center">
-          <span>System Prompt <span id="pe-custom-badge" class="tag tag-term" style="display:none;font-size:0.68rem">Custom</span></span>
-          <button class="btn-xs" onclick="resetPresetToDefault()">↺ คืนค่าเดิม</button>
-        </div>
-        <textarea id="pe-prompt-text" class="editor-ta" style="height:260px;font-size:0.76rem;font-family:'JetBrains Mono',monospace;resize:vertical"></textarea>
+        <div class="sf-label">System Prompt *</div>
+        <textarea id="pe-prompt-text" class="editor-ta" style="height:240px;font-size:0.76rem;font-family:'JetBrains Mono',monospace;resize:vertical"></textarea>
         <div style="font-size:0.70rem;color:var(--text-muted);margin-top:4px">
           Placeholders: <code style="background:var(--surface-2);padding:1px 4px;border-radius:2px">{glossary}</code>
           <code style="background:var(--surface-2);padding:1px 4px;border-radius:2px">{context}</code>
-          <code style="background:var(--surface-2);padding:1px 4px;border-radius:2px">{text}</code>
+          <code style="background:var(--surface-2);padding:1px 4px;border-radius:2px">{text}</code> (จำเป็น)
           <code style="background:var(--surface-2);padding:1px 4px;border-radius:2px">{style_note}</code>
-          <code style="background:var(--surface-2);padding:1px 4px;border-radius:2px">{mtl_draft}</code> (mtlFix เท่านั้น)
+          <code style="background:var(--surface-2);padding:1px 4px;border-radius:2px">{mtl_draft}</code> (โหมดแก้ MTL)
         </div>
       </div>
       <div class="sf-group">
-        <div class="sf-label">Temperature <span id="pe-temp-val">0.65</span></div>
-        <input type="range" id="pe-temperature" min="0" max="1" step="0.05" value="0.65" class="range-input" oninput="document.getElementById('pe-temp-val').textContent=this.value"/>
+        <div class="sf-label">Temperature <span id="pe-temp-val">0.6</span></div>
+        <input type="range" id="pe-temperature" min="0" max="1" step="0.05" value="0.6" class="range-input" oninput="document.getElementById('pe-temp-val').textContent=this.value"/>
       </div>
-      <div id="pe-validate-result" style="display:none"></div>
+      <div class="sf-group">
+        <label class="toggle-mini" style="gap:8px;cursor:pointer">
+          <input type="checkbox" id="pe-polish"/>
+          <span>ขัดเกลาหลังแปล (Polish pass — ช้าลง/ใช้ token เพิ่ม)</span>
+        </label>
+      </div>
     </div>
     <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="closeModal('modal-preset-editor')">ยกเลิก</button>
-      <button class="btn btn-primary" id="pe-validate-btn" onclick="validateAndSaveCustomPreset()">🤖 Validate &amp; บันทึก</button>
+      <button class="btn btn-ghost" id="pe-delete-btn" style="display:none;color:var(--crimson-light)" onclick="deletePreset()">🗑 ลบ</button>
+      <button class="btn btn-ghost" onclick="closeModal('modal-preset-editor')">ปิด</button>
+      <button class="btn btn-primary" onclick="savePreset()">💾 บันทึก</button>
     </div>
   </div>
 </div>
