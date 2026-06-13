@@ -102,6 +102,7 @@
           <textarea id="sourceText" class="editor-ta" placeholder="วางข้อความภาษาเกาหลีที่นี่..."></textarea>
           <div class="pane-footer">
             <span id="sourceStats">0 ตัวอักษร</span>
+            <span id="ctxTokenMeter" class="ctx-token-meter" title="ประมาณ token ที่จะส่งให้โมเดล (system + glossary + บริบท + ต้นฉบับ) เทียบกับ context window ของโมเดล">🧮 — / —</span>
             <div class="save-row">
               <select id="chapterSaveTarget" class="mini-select"></select>
               <button class="btn-xs" onclick="saveToChapter()">💾 บันทึก</button>
@@ -150,6 +151,7 @@
         <div class="quick-settings">
           <select id="translateProvider" class="mini-select" title="AI Provider" onchange="onProviderChange(this.value)"></select>
           <select id="translateModel" class="mini-select" onchange="onModelChange(this.value)"></select>
+          <button class="btn btn-ghost btn-sm" title="ดึงรายการโมเดลจาก API ของ provider" onclick="onFetchModels(this)">🔄</button>
           <select id="activeStyleSelect" class="mini-select" title="Style"></select>
           <label class="toggle-mini"><input type="checkbox" id="usePolish"/> Polish</label>
           <label class="toggle-mini"><input type="checkbox" id="useMemory" checked/> Memory</label>
@@ -278,7 +280,11 @@
             </div>
           </div>
           <div class="sf-group"><div class="sf-label">โมเดลแปล</div>
-            <select id="wsTranslateModel" class="select-input" onchange="onModelChange(this.value)"></select>
+            <div style="display:flex;gap:8px;align-items:center">
+              <select id="wsTranslateModel" class="select-input" style="flex:1" onchange="onModelChange(this.value)"></select>
+              <button class="btn btn-ghost btn-sm" title="ดึงรายการโมเดลจาก API" onclick="onFetchModels(this)">🔄 Fetch</button>
+            </div>
+            <div style="font-size:0.70rem;color:var(--text-muted);margin-top:4px">กด 🔄 Fetch เพื่อดึงรายชื่อโมเดลล่าสุดจาก API ของ provider (ตั้ง API Key ก่อน)</div>
           </div>
           <div class="sf-group">
             <div class="sf-label">Temperature <span id="wsTempVal">0.7</span></div>

@@ -250,6 +250,7 @@ body {
   flex-shrink: 0; gap: 8px;
 }
 .save-row { display: flex; align-items: center; gap: 4px; }
+.ctx-token-meter { font-variant-numeric: tabular-nums; white-space: nowrap; font-size: 0.7rem; cursor: help; }
 
 .editor-ta {
   flex: 1; width: 100%; min-height: 0;

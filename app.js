@@ -623,20 +623,25 @@ function renderModelSelect(sel, provName, selected, includeCustomOption = true) 
   const prov = PROVIDERS[provName];
   let found = false;
   let html = '';
-  for (const [group, items] of prov.models) {
-    const opts = items.map(([id, label]) => {
-      if (id === selected) found = true;
-      return `<option value="${id}">${label}</option>`;
+  // ✅ ถ้า fetch รายการโมเดลจาก API มาแล้ว → ใช้รายการนั้น (item 3: fetch อย่างเดียว)
+  const fetched = _fetchedModels[provName];
+  if (fetched && fetched.length) {
+    const opts = fetched.map(m => {
+      if (m.id === selected) found = true;
+      return `<option value="${m.id}">${esc(m.label || m.id)}</option>`;
     }).join('');
-    html += group ? `<optgroup label="${group}">${opts}</optgroup>` : opts;
-  }
-  // custom model id ที่ผู้ใช้เคยเพิ่มของ provider นี้
-  for (const id of (S.currentWs?.settings?.customModels?.[provName] || [])) {
-    if (id === selected) found = true;
-    html += `<option value="${id}">⭐ ${id}</option>`;
+    html += `<optgroup label="จาก API (${fetched.length} โมเดล)">${opts}</optgroup>`;
+  } else {
+    // ยังไม่ได้ fetch → ใช้รายการตั้งต้น (กดปุ่ม 🔄 เพื่อดึงจาก API)
+    for (const [group, items] of prov.models) {
+      const opts = items.map(([id, label]) => {
+        if (id === selected) found = true;
+        return `<option value="${id}">${label}</option>`;
+      }).join('');
+      html += group ? `<optgroup label="${group}">${opts}</optgroup>` : opts;
+    }
   }
   if (selected && !found) html += `<option value="${selected}">⭐ ${selected}</option>`;
-  if (includeCustomOption) html += `<option value="__custom__">✏ กำหนดเอง…</option>`;
   sel.innerHTML = html;
   sel.value = selected || defaultModelFor(provName);
 }
@@ -650,6 +655,7 @@ function renderProviderUI() {
   renderProviderSelect(document.getElementById('wsProviderSelect'), provName);
   renderModelSelect(document.getElementById('translateModel'), provName, model);
   renderModelSelect(document.getElementById('wsTranslateModel'), provName, model);
+  ctxUpdateTokenMeter();
 }
 
 async function onProviderChange(p) {
@@ -662,19 +668,129 @@ async function onProviderChange(p) {
 }
 
 async function onModelChange(v) {
-  if (!S.currentWs) return;
-  const provName = getProvider();
-  if (v === '__custom__') {
-    const id = prompt(`ใส่ model id ของ ${PROVIDERS[provName].label} (เช่น ${defaultModelFor(provName)}):`);
-    if (!id || !id.trim()) { renderProviderUI(); return; }
-    v = id.trim();
-    const cm = S.currentWs.settings?.customModels || {};
-    cm[provName] = [...new Set([...(cm[provName] || []), v])];
-    S.currentWs.settings = { ...(S.currentWs.settings || {}), customModels: cm };
-  }
+  if (!S.currentWs || !v) return;
   S.currentWs.settings = { ...(S.currentWs.settings || {}), translateModel: v };
   await lsSaveWorkspace(S.currentWs);
   renderProviderUI();
+  ctxUpdateTokenMeter();
+}
+
+// ═══════════════════════════════════════════════
+// ─── Fetch Models จาก API ของ provider (item 3) ──
+// ═══════════════════════════════════════════════
+const _fetchedModels = {};      // provName → [{ id, label, context }]
+const _modelContextMap = {};    // model id → context window (tokens)
+const LS_KEY_MODELS = 'nt8_fetched_models';
+
+// แปลง response ของแต่ละ provider → [{ id, label, context }]
+function parseModelsResponse(provName, json) {
+  try {
+    if (provName === 'gemini') {
+      return (json.models || [])
+        .filter(m => !m.supportedGenerationMethods || m.supportedGenerationMethods.includes('generateContent'))
+        .map(m => ({
+          id: String(m.name || '').replace(/^models\//, ''),
+          label: m.displayName || String(m.name || '').replace(/^models\//, ''),
+          context: m.inputTokenLimit || null,
+        }))
+        .filter(m => m.id);
+    }
+    if (provName === 'anthropic') {
+      return (json.data || []).map(m => ({ id: m.id, label: m.display_name || m.id, context: 200000 })).filter(m => m.id);
+    }
+    // openrouter / openai / deepseek → OpenAI-style { data: [{ id, name, context_length }] }
+    return (json.data || []).map(m => ({
+      id: m.id,
+      label: m.name ? `${m.name}` : m.id,
+      context: m.context_length || m.context_window || null,
+    })).filter(m => m.id);
+  } catch { return []; }
+}
+
+async function fetchModels(provName) {
+  const prov = PROVIDERS[provName];
+  if (!prov || !prov.testEndpoint) throw new Error('provider ไม่รองรับการ fetch');
+  const key = getApiKey(provName);
+  if (!key) throw new Error(`ยังไม่ได้ตั้ง API Key ของ ${prov.label}`);
+  const { url, headers } = prov.testEndpoint(key);
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), getTimeoutMs('chunk'));
+  let res;
+  try {
+    res = await fetch(url, { headers, signal: ctrl.signal });
+  } catch (e) {
+    throw aiNetworkError(prov, provName);
+  } finally { clearTimeout(timer); }
+  if (!res.ok) throw await aiHttpError(prov, res);
+  const json = await res.json();
+  let list = parseModelsResponse(provName, json);
+  // เรียงตามชื่อ
+  list.sort((a, b) => (a.label || a.id).localeCompare(b.label || b.id));
+  _fetchedModels[provName] = list;
+  list.forEach(m => { if (m.context) _modelContextMap[m.id] = m.context; });
+  saveFetchedModelsCache();
+  return list;
+}
+
+function saveFetchedModelsCache() {
+  try {
+    localStorage.setItem(LS_KEY_MODELS, JSON.stringify({ models: _fetchedModels, ctx: _modelContextMap }));
+  } catch {}
+}
+
+function loadFetchedModelsCache() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(LS_KEY_MODELS) || '{}');
+    Object.assign(_fetchedModels, raw.models || {});
+    Object.assign(_modelContextMap, raw.ctx || {});
+  } catch {}
+}
+
+// ปุ่ม 🔄 ใน UI — ดึงรายการโมเดลของ provider ปัจจุบันแล้ว refresh dropdown
+async function onFetchModels(btn) {
+  const provName = getProvider();
+  const label = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = '⏳'; }
+  try {
+    const list = await fetchModels(provName);
+    renderProviderUI();
+    showToast(`ดึง ${list.length} โมเดลจาก ${PROVIDERS[provName].label} แล้ว ✓`, 'success');
+  } catch (e) {
+    showToast(e.message || 'ดึงรายการโมเดลไม่สำเร็จ', 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = label || '🔄'; }
+  }
+}
+
+// ── ขนาด context window ของโมเดล (tokens) — ใช้กับมิเตอร์ (item 4) ──
+// ลำดับการหา: รายการที่ fetch มา → ตารางค่าที่รู้จัก → เดาจากชื่อ → ค่า default
+const KNOWN_MODEL_CONTEXT = [
+  [/gemini-2\.5|gemini-2\.0|gemini-1\.5/i, 1048576],
+  [/gpt-5|gpt-4\.1/i, 1047576],
+  [/gpt-4o/i, 128000],
+  [/claude/i, 200000],
+  [/deepseek/i, 128000],
+  [/grok-4/i, 256000],
+  [/llama-4/i, 1048576],
+  [/llama-3/i, 131072],
+];
+function getModelContextWindow(model) {
+  if (!model) return 128000;
+  const bare = model.includes(':') ? model.split(':').pop() : (model.includes('/') ? model.split('/').pop() : model);
+  if (_modelContextMap[model]) return _modelContextMap[model];
+  if (_modelContextMap[bare]) return _modelContextMap[bare];
+  for (const [re, ctx] of KNOWN_MODEL_CONTEXT) if (re.test(model)) return ctx;
+  return 128000; // default ปลอดภัย
+}
+
+// ประมาณจำนวน token จากข้อความ (heuristic ครอบคลุมหลายภาษา)
+// อังกฤษ ~4 ตัวอักษร/token, CJK/ไทย token หนาแน่นกว่า → ใช้ ~2 ตัวอักษร/token เป็นค่ากลาง
+function estimateTokens(text) {
+  if (!text) return 0;
+  const s = String(text);
+  const cjk = (s.match(/[ᄀ-ᇿ⺀-꓏가-힯豈-﫿฀-๿]/g) || []).length;
+  const rest = s.length - cjk;
+  return Math.ceil(cjk / 1.2 + rest / 4);
 }
 
 const MODEL_COSTS = {
@@ -823,6 +939,7 @@ document.addEventListener('keydown', (e) => {
 document.addEventListener('DOMContentLoaded', async () => {
   // Load costs (still in localStorage — tiny)
   try { S.costs = JSON.parse(localStorage.getItem(LS_KEY_COSTS)) || S.costs; } catch {}
+  loadFetchedModelsCache();   // รายการโมเดลที่เคย fetch ไว้
   updateCostUI();
   checkHealth();
   document.getElementById('sourceText').addEventListener('input', updateSourceStats);
@@ -4304,6 +4421,39 @@ function stopTranslation() {
 function updateSourceStats() {
   const len = document.getElementById('sourceText').value.length;
   document.getElementById('sourceStats').textContent = `${len.toLocaleString()} ตัวอักษร`;
+  ctxUpdateTokenMeter();
+}
+
+// ── มิเตอร์ context window (item 4) ──
+// ประมาณ token ของคำขอแปลปัจจุบัน = system prompt + glossary + บริบทเรื่อง + ต้นฉบับ
+// เทียบกับ context window สูงสุดของโมเดลที่เลือก แล้วแสดง used / max (%)
+function ctxUpdateTokenMeter() {
+  const el = document.getElementById('ctxTokenMeter');
+  if (!el) return;
+  const model = document.getElementById('translateModel')?.value
+    || S.currentWs?.settings?.translateModel || '';
+  const maxCtx = getModelContextWindow(model);
+  const src = document.getElementById('sourceText')?.value || '';
+  let used = estimateTokens(src);
+  // system prompt (preset)
+  const preset = getActivePreset(S.currentWs);
+  if (preset?.systemPrompt) used += estimateTokens(preset.systemPrompt);
+  // บริบทเรื่อง (context memory)
+  used += estimateTokens(ctxGetPromptText(S.currentWs));
+  // glossary ที่เกี่ยวข้องกับต้นฉบับ (smart glossary)
+  try {
+    if (src.trim() && (S.glossaryData || []).length) {
+      const sg = getSmartGlossary(src, S.glossaryData);
+      const gObj = {};
+      sg.forEach(g => { gObj[g.korean] = { thai: g.thai, type: g.type, note: g.note }; });
+      used += estimateTokens(buildGlossaryStr(gObj));
+    }
+  } catch {}
+  const pct = maxCtx ? Math.min(999, Math.round(used / maxCtx * 100)) : 0;
+  const fmt = n => n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 1) + 'k' : String(n);
+  el.textContent = `🧮 ${fmt(used)} / ${fmt(maxCtx)} (${pct}%)`;
+  el.style.color = pct > 90 ? 'var(--crimson-light)' : pct > 70 ? 'var(--gold)' : 'var(--text-muted)';
+  el.title = `ประมาณ ${used.toLocaleString()} token จาก context window ${maxCtx.toLocaleString()} ของโมเดล ${model || '—'}`;
 }
 function clearSource() { document.getElementById('sourceText').value = ''; updateSourceStats(); hideHighlight(); }
 function clearTranslation() {
