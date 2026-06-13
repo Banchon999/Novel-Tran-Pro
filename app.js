@@ -1824,7 +1824,13 @@ async function saveToChapter() {
 }
 
 // ─── Glossary Manager ───
-function renderGlossaryTable(filter = '', typeFilter = '', sortBy = 'default') {
+function renderGlossaryTable(filter, typeFilter, sortBy) {
+  // ไม่ส่ง args → อ่านจาก control ปัจจุบัน เพื่อไม่ให้ filter/หน้าโดนรีเซ็ตหลัง edit/save/delete
+  if (filter === undefined)     filter     = document.getElementById('glossarySearch')?.value.trim() || '';
+  if (typeFilter === undefined) typeFilter = document.getElementById('glossaryTypeFilter')?.value || '';
+  if (sortBy === undefined)     sortBy     = document.getElementById('glossarySortSelect')?.value || 'default';
+  const wrap = document.querySelector('.glossary-table-wrap');
+  const prevScroll = wrap ? wrap.scrollTop : 0;
   const tbody = document.getElementById('glossaryTableBody');
   let data = [...(S.glossaryData || [])];
   if (filter) {
@@ -1842,7 +1848,9 @@ function renderGlossaryTable(filter = '', typeFilter = '', sortBy = 'default') {
 
   document.getElementById('glossaryCount').textContent = `${data.length} รายการ`;
   if (!data.length) {
-    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--text-muted)">ไม่พบรายการ</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:20px;color:var(--text-muted)">ไม่พบรายการ</td></tr>`;
+    if (wrap) requestAnimationFrame(() => { wrap.scrollTop = prevScroll; });
+    glUpdateBulkBar();
     return;
   }
   // Refresh type filter dropdown with any custom types
@@ -1850,6 +1858,7 @@ function renderGlossaryTable(filter = '', typeFilter = '', sortBy = 'default') {
   const GENDER_LABEL = { male: '♂ ชาย', female: '♀ หญิง', neutral: '⚥ กลาง' };
   tbody.innerHTML = data.map(g => `
     <tr${g._rootWarning ? ' class="tr-root-warn"' : ''}>
+      <td class="td-check"><input type="checkbox" class="gl-check" ${_glossarySelected.has(g.korean) ? 'checked' : ''} onchange="glToggleSelect('${esc(g.korean)}',this.checked)"/></td>
       <td class="td-korean">${esc(g.korean)}</td>
       <td class="td-thai">${esc(g.thai)}${g._rootWarning ? `<span class="root-warn-badge" title="คำนี้มี root ซ้ำกับ &quot;${esc(g._rootWarning)}&quot; ที่มีอยู่แล้ว">⚠ root ซ้ำ</span>` : ''}</td>
       <td><span class="tag ${getTagClass(g.type || 'term')}">${esc(g.type || 'term')}</span></td>
@@ -1862,7 +1871,53 @@ function renderGlossaryTable(filter = '', typeFilter = '', sortBy = 'default') {
       </td>
     </tr>
   `).join('');
+  if (wrap) requestAnimationFrame(() => { wrap.scrollTop = prevScroll; });
+  glUpdateBulkBar();
 }
+
+// ─── Glossary multi-select ───
+let _glossarySelected = new Set();
+function glToggleSelect(korean, checked) {
+  if (checked) _glossarySelected.add(korean); else _glossarySelected.delete(korean);
+  glUpdateBulkBar();
+}
+function glToggleSelectAll(checked) {
+  // เลือก/ยกเลิกทุกแถวที่กำลังแสดง (ตาม filter ปัจจุบัน)
+  document.querySelectorAll('#glossaryTableBody .gl-check').forEach(cb => {
+    cb.checked = checked;
+    const kr = cb.getAttribute('onchange')?.match(/glToggleSelect\('(.*)',/)?.[1];
+  });
+  // ใช้ข้อมูลจริงตาม filter ปัจจุบัน
+  const filter     = document.getElementById('glossarySearch')?.value.trim() || '';
+  const typeFilter = document.getElementById('glossaryTypeFilter')?.value || '';
+  (S.glossaryData || []).forEach(g => {
+    const q = filter.toLowerCase();
+    const matchF = !filter || g.korean.includes(q) || g.thai.includes(q) || (g.note || '').toLowerCase().includes(q);
+    const matchT = !typeFilter || g.type === typeFilter;
+    if (matchF && matchT) { if (checked) _glossarySelected.add(g.korean); else _glossarySelected.delete(g.korean); }
+  });
+  glUpdateBulkBar();
+}
+function glUpdateBulkBar() {
+  const bar = document.getElementById('glossaryBulkBar');
+  const cnt = document.getElementById('glossaryBulkCount');
+  if (!bar) return;
+  const n = _glossarySelected.size;
+  bar.style.display = n > 0 ? 'flex' : 'none';
+  if (cnt) cnt.textContent = `${n} รายการที่เลือก`;
+}
+async function glDeleteSelected() {
+  const n = _glossarySelected.size;
+  if (!n) return;
+  if (!confirm(`ลบ ${n} คำที่เลือก?`)) return;
+  S.currentWs.glossary = (S.currentWs.glossary || []).filter(g => !_glossarySelected.has(g.korean));
+  S.glossaryData = S.currentWs.glossary;
+  _glossarySelected.clear();
+  await lsSaveWorkspace(S.currentWs);
+  renderGlossaryTable();
+  showToast(`ลบ ${n} คำแล้ว ✓`, 'success');
+}
+function glClearSelection() { _glossarySelected.clear(); renderGlossaryTable(); }
 
 function filterGlossary() {
   renderGlossaryTable(
