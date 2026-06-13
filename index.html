@@ -908,7 +908,7 @@
     <div class="modal-body">
       <!-- AI Rename toolbar -->
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
-        <button class="btn btn-secondary btn-sm" id="bulkRenameAiBtn" onclick="bulkRenameWithAI()">🤖 AI แปลชื่อทั้งหมด</button>
+        <button class="btn btn-secondary btn-sm" id="bulkRenameAiBtn" onclick="bulkRenameWithAI()">🤖 AI แปลชื่อ</button>
         <select id="bulkRenameModel" class="mini-select">
           <option value="google/gemini-2.5-flash">Gemini 2.5 Flash</option>
           <option value="google/gemini-2.5-flash-lite">Gemini 2.5 Flash Lite</option>
@@ -916,21 +916,39 @@
           <option value="deepseek/deepseek-chat">DeepSeek V3</option>
           <option value="openai/gpt-4.1-nano">GPT-4.1 Nano</option>
         </select>
+        <button class="btn btn-ghost btn-sm" onclick="brTogglePromptBox()" title="แก้ prompt ที่ใช้แปลชื่อตอน">⚙ Prompt</button>
         <span id="bulkRenameStatus" style="font-size:0.78rem;color:var(--gold)"></span>
       </div>
-      <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:8px">แก้ไขชื่อโดยตรง หรือกด 🤖 เพื่อให้ AI แปลชื่อเกาหลีเป็นไทยทั้งหมด</div>
+      <!-- Multi-select bar -->
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+        <label class="toggle-mini" style="gap:6px"><input type="checkbox" id="brSelectAll" style="accent-color:var(--gold)" onchange="brToggleSelectAll(this.checked)"/> เลือกทั้งหมด</label>
+        <span id="brSelCount" style="font-size:0.74rem;color:var(--text-muted)">ยังไม่ได้เลือก — จะทำกับทุกตอน</span>
+      </div>
 
-      <!-- Find & Replace in title names -->
+      <!-- Custom prompt box (hidden by default) -->
+      <div id="brPromptBox" style="display:none;margin-bottom:8px;padding:8px;background:var(--bg-deep);border:1px solid var(--border);border-radius:var(--radius)">
+        <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:4px">Custom prompt แปลชื่อตอน · ใช้ <code>{titles}</code> (รายการ) และ <code>{count}</code> (จำนวน) · ต้องสั่งให้ตอบเป็น JSON array</div>
+        <textarea id="brPromptText" class="editor-ta" style="height:130px;font-size:0.74rem;font-family:'JetBrains Mono',monospace;resize:vertical;width:100%"></textarea>
+        <div style="display:flex;gap:6px;margin-top:6px">
+          <button class="btn btn-primary btn-sm" onclick="brSavePrompt()">💾 บันทึก prompt</button>
+          <button class="btn btn-ghost btn-sm" onclick="brResetPrompt()">↺ ค่าเริ่มต้น</button>
+        </div>
+      </div>
+      <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:8px">แก้ไขชื่อโดยตรง · ติ๊กเลือกเฉพาะบางตอน · หรือกด 🤖 ให้ AI แปลชื่อ</div>
+
+      <!-- Find & Replace / Regex delete in title names -->
       <div class="br-fr-box">
-        <div class="br-fr-label">⇄ Find &amp; Replace ชื่อตอน</div>
+        <div class="br-fr-label">⇄ Find &amp; Replace / 🗑 ลบด้วย Regex (ชื่อตอน)</div>
         <div style="display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap">
-          <input id="brFrFind" type="text" class="text-input" placeholder="ค้นหาใน ชื่อตอน..." style="flex:1;min-width:120px" oninput="brFrLive()"/>
-          <input id="brFrReplace" type="text" class="text-input" placeholder="แทนที่ด้วย..." style="flex:1;min-width:120px"/>
+          <input id="brFrFind" type="text" class="text-input" placeholder="ค้นหา / regex pattern..." style="flex:1;min-width:120px" oninput="brFrLive()"/>
+          <input id="brFrReplace" type="text" class="text-input" placeholder="แทนที่ด้วย... (เว้นว่าง = ลบ)" style="flex:1;min-width:120px"/>
         </div>
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-          <label class="toggle-mini"><input type="checkbox" id="brFrCase"/> Case Sensitive</label>
+          <label class="toggle-mini"><input type="checkbox" id="brFrCase" onchange="brFrLive()"/> Case</label>
+          <label class="toggle-mini"><input type="checkbox" id="brFrRegex" onchange="brFrLive()"/> Regex</label>
           <span id="brFrInfo" style="font-size:0.74rem;color:var(--text-muted);flex:1">พิมพ์เพื่อค้นหา</span>
-          <button class="btn-xs" onclick="brFrReplaceAll()">แทนที่ทั้งหมด</button>
+          <button class="btn-xs" onclick="brFrReplaceAll()">แทนที่</button>
+          <button class="btn-xs" style="color:var(--crimson-light)" onclick="brFrDeleteMatches()">🗑 ลบที่ตรงกัน</button>
         </div>
       </div>
 
