@@ -1,0 +1,23 @@
+{
+  "name": "NovelTrans Pro — เครื่องมือแปลนิยาย",
+  "short_name": "NovelTrans",
+  "description": "เครื่องมือแปลนิยายเกาหลีด้วย AI พร้อมคลังศัพท์ โหมดอ่าน และ Multi-provider",
+  "lang": "th",
+  "dir": "ltr",
+  "start_url": "./index.html",
+  "scope": "./",
+  "id": "noveltrans-pro",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#0c0800",
+  "theme_color": "#0c0800",
+  "categories": ["productivity", "books", "utilities"],
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

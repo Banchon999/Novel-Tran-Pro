@@ -44,6 +44,28 @@ function brTogglePromptBox() {
   if (box) box.style.display = box.style.display === 'none' ? 'block' : 'none';
 }
 
+// ── โมเดลแปลชื่อตอน — เลือกได้หลายโมเดลตาม provider ปัจจุบัน (รวมที่ fetch มา/custom) ──
+// จำค่าแยกต่อ workspace (settings.titleModel) · default = โมเดลแปลหลักของ workspace
+function brGetTitleModel() {
+  return S.currentWs?.settings?.titleModel
+      || S.currentWs?.settings?.translateModel
+      || (typeof defaultModelFor === 'function' ? defaultModelFor(getProvider()) : 'deepseek/deepseek-chat');
+}
+function brSyncModelSelect() {
+  const sel = document.getElementById('bulkRenameModel');
+  if (!sel) return;
+  renderModelSelect(sel, getProvider(), brGetTitleModel());
+}
+async function brSaveModel(v) {
+  if (!S.currentWs || !v) return;
+  S.currentWs.settings = { ...(S.currentWs.settings || {}), titleModel: v };
+  await lsSaveWorkspace(S.currentWs);
+}
+async function brFetchModels(btn) {
+  await onFetchModels(btn);   // ดึงรายชื่อโมเดลล่าสุดจาก provider แล้ว cache
+  brSyncModelSelect();        // อัปเดต dropdown ของหน้าแก้ชื่อตอนให้เห็นรายการใหม่
+}
+
 // ── Multi-select: target = แถวที่ติ๊ก ถ้าไม่ติ๊กเลย = ทุกแถว ──
 function brTargetInputs() {
   const all = [...document.querySelectorAll('.bulk-rename-input')];
@@ -76,6 +98,7 @@ function openBulkRename() {
   document.getElementById('bulkRenameStatus').textContent = '';
   const selAll = document.getElementById('brSelectAll');
   if (selAll) selAll.checked = false;
+  brSyncModelSelect();
   brLoadPrompt();
   brUpdateSelCount();
   openModal('modal-bulk-rename');
@@ -89,7 +112,7 @@ async function bulkRenameWithAI() {
   btn.disabled = true;
 
   const titles = inputs.map(inp => inp.value.trim());
-  const model = document.getElementById('bulkRenameModel').value;
+  const model = document.getElementById('bulkRenameModel').value || brGetTitleModel();
   const tmpl = brGetPromptTemplate();
 
   // แบ่ง batch ละ 30 ตอน เพื่อป้องกัน JSON truncation
@@ -482,11 +505,21 @@ function getTagClass(type) {
 // ─── Duplicate Check (รองรับทุกภาษา) ───
 let _lastSubstrPairs = [];
 
-// ตรวจว่า `full` เป็น "คำซ้อน" ของ `sub` หรือไม่ — แบบเป็นกลางต่อทุกภาษา
-// • ภาษาที่มีเว้นวรรค (อังกฤษ/ไทยที่เว้นวรรค ฯลฯ): นับเฉพาะเมื่อ sub เป็น token ต้น/ท้ายที่ขอบคำ
-// • ภาษาที่ไม่เว้นวรรค (เกาหลี/ญี่ปุ่น/จีน ฯลฯ): นับเมื่อส่วนที่เกินสั้น (≤3 อักษร — มักเป็นคำชี้/คำต่อท้าย)
+// เป็น "คำเกาหลี" หรือไม่ — ต้องมีอักษรฮันกึล (Hangul) และต้องไม่มีคานะญี่ปุ่น
+// ใช้กรองการตรวจคำซ้อน (substring) ให้ทำเฉพาะคำเกาหลีเท่านั้น
+function isKoreanTerm(s) {
+  if (!s) return false;
+  if (/[぀-ヿ]/.test(s)) return false;                       // มีฮิรางานะ/คาตากานะ = ญี่ปุ่น
+  return /[가-힣ᄀ-ᇿ㄰-㆏ꥠ-꥿]/.test(s); // มีฮันกึล
+}
+
+// ตรวจว่า `full` เป็น "คำซ้อน" ของ `sub` หรือไม่ — ตรวจเฉพาะคำเกาหลีเท่านั้น
+// (ทั้ง sub และ full ต้องเป็นคำเกาหลี — คำภาษาอื่นจะข้ามไป ไม่ถือเป็นคำซ้อน)
+// • รูปแบบมีเว้นวรรค: นับเฉพาะเมื่อ sub เป็น token ต้น/ท้ายที่ขอบคำ
+// • รูปแบบไม่เว้นวรรค (ปกติของเกาหลี): นับเมื่อส่วนที่เกินสั้น (≤3 อักษร — มักเป็นคำชี้/คำต่อท้าย)
 function isSubstringDup(sub, full) {
   if (!sub || !full || sub === full || !full.includes(sub)) return false;
+  if (!isKoreanTerm(sub) || !isKoreanTerm(full)) return false;       // ตรวจแต่เกาหลี
   const hasSpaces = /\s/.test(sub) || /\s/.test(full);
   if (hasSpaces) {
     return full.startsWith(sub + ' ') || full.endsWith(' ' + sub) || full.includes(' ' + sub + ' ');
