@@ -499,94 +499,147 @@ function isSubstringDup(sub, full) {
 }
 
 // normalize คำเกาหลีก่อนเทียบ: รวม Unicode เป็น NFC + ตัดอักขระล่องหน (zero-width) + trim
-// (กันกรณีคำที่ "ดูเหมือนกัน" แต่ byte ต่างกัน เลยตรวจไม่เจอ)
+// (กันคำที่ "ดูเหมือนกัน" แต่ byte ต่างกัน เลยตรวจไม่เจอ)
 function _normGlossKey(s) {
   return (s || '').normalize('NFC').replace(/[​-‍﻿]/g, '').trim();
 }
 
-async function checkDuplicateGlossary() {
-  const dupAlert = document.getElementById('glossaryDupAlert');
-  let data = S.glossaryData || [];
-  if (!data.length) { showToast('คลังศัพท์ว่างเปล่า', ''); return; }
+let _dupExactGroups = [];   // [{ key, korean, entries:[{korean,thai}], count }]
 
-  // ── 1. คำเกาหลีซ้ำแบบเป๊ะ → ลบอัตโนมัติทันที (เก็บตัวแรก ไม่ต้องใช้ AI) ──
-  const seen = new Set();
-  const deduped = [];
-  let removed = 0;
-  data.forEach(g => {
-    const k = _normGlossKey(g.korean);
-    if (!k) { deduped.push(g); return; }
-    if (seen.has(k)) { removed++; }          // ซ้ำเป๊ะ → ทิ้ง
-    else { seen.add(k); deduped.push(g); }
+// คำนวณคำซ้ำทั้งหมด (ไม่แก้ไขข้อมูล) — exact groups + substring pairs
+function computeGlossaryDuplicates() {
+  const data = S.glossaryData || [];
+  const map = new Map();                 // normKey -> [entries]
+  data.forEach(e => {
+    const k = _normGlossKey(e.korean);
+    if (!k) return;
+    if (!map.has(k)) map.set(k, []);
+    map.get(k).push(e);
   });
-  if (removed > 0) {
-    S.currentWs.glossary = deduped;
-    S.glossaryData = deduped;
-    data = deduped;
-    if (typeof _glossarySelected !== 'undefined' && _glossarySelected) _glossarySelected.clear();
-    await lsSaveWorkspace(S.currentWs);
-    renderGlossaryTable();
-    showToast(`ลบคำเกาหลีซ้ำอัตโนมัติ ${removed} รายการ ✓`, 'success');
+  const exactGroups = [];
+  for (const [key, entries] of map) {
+    if (entries.length > 1) exactGroups.push({ key, korean: entries[0].korean, entries, count: entries.length });
   }
-
-  // ── 2. คำซ้อน (substring) — ต้องใช้วิจารณญาณ จึงแสดงรายการ/ให้ AI ช่วย ──
-  _lastSubstrPairs = [];
-  const items = data.map(g => ({ key: _normGlossKey(g.korean), thai: g.thai || '' })).filter(x => x.key);
-  for (let i = 0; i < items.length; i++) {
-    for (let j = 0; j < items.length; j++) {
+  // substring pairs (เทียบจาก key ที่ unique แล้ว)
+  const uniqKeys = [...map.keys()];
+  const firstThai = {};
+  for (const [k, es] of map) firstThai[k] = es[0].thai || '';
+  const pairs = [];
+  for (let i = 0; i < uniqKeys.length; i++) {
+    for (let j = 0; j < uniqKeys.length; j++) {
       if (i === j) continue;
-      if (isSubstringDup(items[i].key, items[j].key)) {
-        if (!_lastSubstrPairs.some(p => p.sub === items[i].key && p.full === items[j].key)) {
-          _lastSubstrPairs.push({ sub: items[i].key, full: items[j].key, subThai: items[i].thai, fullThai: items[j].thai });
+      if (isSubstringDup(uniqKeys[i], uniqKeys[j])) {
+        if (!pairs.some(p => p.sub === uniqKeys[i] && p.full === uniqKeys[j])) {
+          pairs.push({ sub: uniqKeys[i], full: uniqKeys[j], subThai: firstThai[uniqKeys[i]], fullThai: firstThai[uniqKeys[j]] });
         }
       }
     }
   }
+  return { exactGroups, pairs };
+}
 
-  if (_lastSubstrPairs.length === 0) {
-    dupAlert.style.display = 'none';
-    if (!removed) showToast('✓ ไม่พบคำซ้ำ', 'success');
-    return;
+// แสดงผลคำซ้ำในแถบ alert (ไม่ลบอัตโนมัติ — ผู้ใช้กดลบเอง) · คืน true ถ้าพบคำซ้ำ
+function renderDupPanel() {
+  const dupAlert = document.getElementById('glossaryDupAlert');
+  if (!dupAlert) return false;
+  const { exactGroups, pairs } = computeGlossaryDuplicates();
+  _dupExactGroups = exactGroups;
+  _lastSubstrPairs = pairs;
+  if (!exactGroups.length && !pairs.length) { dupAlert.style.display = 'none'; dupAlert.innerHTML = ''; return false; }
+
+  const btnDanger = 'background:var(--crimson-light);color:#fff;border:none;padding:2px 8px;border-radius:4px;cursor:pointer;font-size:0.72rem';
+  let html = '';
+
+  // ── คำเกาหลีซ้ำแบบเป๊ะ ──
+  if (exactGroups.length) {
+    const totalDup = exactGroups.reduce((s, g) => s + (g.count - 1), 0);
+    html += '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">' +
+      '<span>⚠ <strong>คำเกาหลีซ้ำ ' + exactGroups.length + ' คำ</strong> (มีตัวซ้ำเกินรวม ' + totalDup + ')</span>' +
+      '<button onclick="dupRemoveAllExact()" style="' + btnDanger + '">🗑 ลบให้เหลืออย่างละ 1</button>' +
+      '</div>';
+    html += exactGroups.slice(0, 12).map((g, idx) =>
+      '<div style="display:flex;align-items:center;gap:6px;font-size:0.78rem;padding:2px 0">' +
+        '<span style="color:var(--gold);font-weight:600">' + esc(g.korean) + '</span>' +
+        '<span style="color:var(--text-muted)">×' + g.count + '</span>' +
+        '<span style="color:var(--text-muted);font-size:0.7rem;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + g.entries.map(e => esc(e.thai || '—')).join(' / ') + '</span>' +
+        '<button onclick="dupRemoveGroup(' + idx + ')" style="' + btnDanger + '">ลบซ้ำ</button>' +
+      '</div>'
+    ).join('');
+    if (exactGroups.length > 12) html += '<div style="font-size:0.72rem;color:var(--text-muted)">...และอีก ' + (exactGroups.length - 12) + ' คำ</div>';
   }
 
-  let html = '';
-  const shown = _lastSubstrPairs.slice(0, 8);
-  const more  = _lastSubstrPairs.length - shown.length;
-  html += '<div style="margin-bottom:4px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
-    '<span>🔍 <strong>คำซ้อน ' + _lastSubstrPairs.length + ' คู่</strong> — อาจ inject ผิด</span>' +
-    '<button id="dupAiResolveBtn" onclick="aiResolveSubstrDups()" style="background:linear-gradient(135deg,#7a5820,#c9a84c);color:#0c0800;border:none;padding:2px 10px;border-radius:4px;cursor:pointer;font-size:0.72rem;font-weight:600">🤖 ให้ AI จัดการ</button>' +
-    '</div>';
-  html += '<div id="dupAiStatus" style="font-size:0.74rem;color:var(--gold);min-height:16px"></div>';
-  html += shown.map(p =>
-    '<div style="font-size:0.78rem;padding:2px 0;color:var(--text-secondary)">' +
-      '<span style="color:var(--gold)">' + esc(p.sub) + '</span>' +
-      '<span style="color:var(--text-muted)"> ⊂ </span>' +
-      '<span style="color:var(--text-primary)">' + esc(p.full) + '</span>' +
-      '<span style="color:var(--text-muted);font-size:0.7rem"> — "' + esc(p.subThai) + '" vs "' + esc(p.fullThai) + '"</span>' +
-    '</div>'
-  ).join('');
-  if (more > 0) html += '<div style="font-size:0.72rem;color:var(--text-muted)">...และอีก ' + more + ' คู่</div>';
+  // ── คำซ้อน (substring) — ต้องใช้วิจารณญาณ ให้ AI ช่วยได้ ──
+  if (pairs.length) {
+    if (exactGroups.length) html += '<div style="border-top:1px solid var(--border);margin:6px 0"></div>';
+    const shown = pairs.slice(0, 8);
+    const more  = pairs.length - shown.length;
+    html += '<div style="margin-bottom:4px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
+      '<span>🔍 <strong>คำซ้อน ' + pairs.length + ' คู่</strong> — อาจ inject ผิด</span>' +
+      '<button id="dupAiResolveBtn" onclick="aiResolveSubstrDups()" style="background:linear-gradient(135deg,#7a5820,#c9a84c);color:#0c0800;border:none;padding:2px 10px;border-radius:4px;cursor:pointer;font-size:0.72rem;font-weight:600">🤖 ให้ AI จัดการ</button>' +
+      '</div>';
+    html += '<div id="dupAiStatus" style="font-size:0.74rem;color:var(--gold);min-height:16px"></div>';
+    html += shown.map(p =>
+      '<div style="font-size:0.78rem;padding:2px 0;color:var(--text-secondary)">' +
+        '<span style="color:var(--gold)">' + esc(p.sub) + '</span>' +
+        '<span style="color:var(--text-muted)"> ⊂ </span>' +
+        '<span style="color:var(--text-primary)">' + esc(p.full) + '</span>' +
+        '<span style="color:var(--text-muted);font-size:0.7rem"> — "' + esc(p.subThai) + '" vs "' + esc(p.fullThai) + '"</span>' +
+      '</div>'
+    ).join('');
+    if (more > 0) html += '<div style="font-size:0.72rem;color:var(--text-muted)">...และอีก ' + more + ' คู่</div>';
+  }
+
   html += '<button onclick="document.getElementById(\'glossaryDupAlert\').style.display=\'none\'" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:0.8rem;float:right;margin-top:4px">✕</button>';
 
   dupAlert.style.display = 'block';
   dupAlert.innerHTML = html;
+  return true;
 }
 
-async function removeDuplicateGlossary() {
+function checkDuplicateGlossary() {
+  if (!(S.glossaryData || []).length) { showToast('คลังศัพท์ว่างเปล่า', ''); return; }
+  const found = renderDupPanel();
+  if (!found) showToast('✓ ไม่พบคำซ้ำ', 'success');
+}
+
+// ลบตัวซ้ำของกลุ่มเดียว (เก็บตัวแรก) — อ้างอิงด้วย index กัน bug จากอักขระพิเศษใน onclick
+async function dupRemoveGroup(idx) {
+  const g = _dupExactGroups[idx];
+  if (!g || !S.currentWs) return;
+  let kept = false;
+  S.currentWs.glossary = (S.currentWs.glossary || []).filter(e => {
+    if (_normGlossKey(e.korean) !== g.key) return true;
+    if (!kept) { kept = true; return true; }   // เก็บตัวแรก
+    return false;                               // ตัวซ้ำที่เหลือ → ลบ
+  });
+  S.glossaryData = S.currentWs.glossary;
+  if (typeof _glossarySelected !== 'undefined' && _glossarySelected) _glossarySelected.clear();
+  await lsSaveWorkspace(S.currentWs);
+  renderGlossaryTable();
+  showToast('ลบคำซ้ำของ "' + g.korean + '" แล้ว ✓', 'success');
+  renderDupPanel();
+}
+
+// ลบตัวซ้ำทุกกลุ่ม (เก็บอย่างละ 1)
+async function dupRemoveAllExact() {
+  if (!S.currentWs) return;
   const seen = new Set();
   const deduped = [];
   let removed = 0;
-  (S.currentWs.glossary || []).forEach(g => {
-    const key = g.korean.trim();
-    if (!seen.has(key)) { seen.add(key); deduped.push(g); }
-    else removed++;
+  (S.currentWs.glossary || []).forEach(e => {
+    const k = _normGlossKey(e.korean);
+    if (!k) { deduped.push(e); return; }
+    if (seen.has(k)) { removed++; }
+    else { seen.add(k); deduped.push(e); }
   });
+  if (!removed) { showToast('ไม่มีคำซ้ำเป๊ะ', ''); return; }
   S.currentWs.glossary = deduped;
   S.glossaryData = deduped;
+  if (typeof _glossarySelected !== 'undefined' && _glossarySelected) _glossarySelected.clear();
   await lsSaveWorkspace(S.currentWs);
-  document.getElementById('glossaryDupAlert').style.display = 'none';
   renderGlossaryTable();
-  showToast(`ลบคำซ้ำ ${removed} รายการ ✓`, 'success');
+  showToast('ลบคำซ้ำ ' + removed + ' รายการแล้ว ✓', 'success');
+  renderDupPanel();
 }
 
 // ─── AI Resolve Substring Duplicates (รองรับทุกภาษา) ───
