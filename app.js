@@ -26,43 +26,88 @@ const SEED_STYLES = [
   { id: 'sample-natural', emoji: '🌿', name: 'Natural (ตัวอย่าง)', prompt: 'แปลให้เป็นธรรมชาติ อ่านง่าย เหมือนนิยายไทยต้นฉบับ' },
 ];
 
-// ─── Translation Presets (ตัวอย่างเริ่มต้น) ───
-const SEED_PRESETS = [
-  {
-    id: 'sample-literary', name: 'นิยาย (ตัวอย่าง)', emoji: '📖',
-    temperature: 0.65, polish: true,
-    systemPrompt: `You are a professional Korean → Thai literary webnovel translator.
+// ─── Translation Presets (ตัวอย่างเริ่มต้น 6 แบบ) ───
+// บล็อกกฎที่ใช้ร่วมกันทุก preset + auto-glossary เพื่อ "คุมการแปลให้เหมือนกัน"
+// ทำให้สำนวน/อารมณ์อ่านต่อเนื่อง และมีการพิสูจน์อักษรระดับมืออาชีพในตัว prompt
+const SHARED_CORE_RULES = `CONSISTENCY & READING FLOW (keep the reader's immersion unbroken across the whole chapter):
+• Write natural, fluent Thai that reads as continuous prose — never word-by-word or choppy MTL.
+• Follow the GLOSSARY exactly: same name/term → the same Thai every time; never invent variant spellings.
+• Keep tone, register, and each character's voice consistent sentence-to-sentence and chapter-wide.
+• Preserve paragraph breaks, sentence count, and pacing. Never add, omit, summarize, or reorder content.
+• Do not translate proper names unless they appear in the glossary.`;
 
-CORE MISSION: Produce Thai prose that reads like it was written by a gifted Thai novelist — not a translation. Preserve the author's voice, rhythm, and emotional depth.
+const SHARED_PRONOUN_RULES = `THAI PRONOUN RULES — CRITICAL, NO EXCEPTIONS:
+• Male (gender:male) → 3rd: เขา/ของเขา | 1st: ผม/กู/ข้า (match register). NEVER use ฉัน/เธอ/นาง for males.
+• Female (gender:female) → 3rd: เธอ/นาง/ของเธอ | 1st: ฉัน/หนู/อิฉัน. NEVER use ผม/กู for females.
+• Unknown gender → use เขา (3rd) / ฉัน (1st) as default until clarified.
+• First-person narration (나/저/我 etc.) → use the narrator's gender from the glossary; do not default blindly.`;
 
-TRANSLATION PRINCIPLES:
-• Write naturally in Thai: transform Korean structures into authentic Thai syntax
-• Preserve the author's tone: lyrical, epic, dark, or intimate
-• Use rich, precise vocabulary — avoid flat or generic choices
-• Action scenes: punchy, visceral, rhythmic
-• Internal monologue: natural Thai first-person
-• Preserve all paragraph breaks and pacing exactly
-• Do not add, omit, or summarize any content
+const SHARED_PROOFREAD_RULES = `PROFESSIONAL PROOFREADING (พิสูจน์อักษรระดับมืออาชีพ) — the output must be publish-ready Thai:
+• Correct Thai spelling, vowels and tone marks (วรรณยุกต์), and word spacing; zero typos or doubled characters.
+• Clean Thai punctuation/spacing around quotes & parentheses; remove any leftover source-language characters or stray symbols.
+• Replace flat or repeated word choices with precise, idiomatic Thai; fix awkward word order.
+• Keep numbers, units, and names formatted cleanly and consistently.
+• Re-read the finished text once for naturalness and consistency before output.`;
 
-THAI PRONOUN RULES — CRITICAL, NO EXCEPTIONS:
-• Male characters → 3rd: เขา/ของเขา | 1st (speech & narration): ผม/กู/ข้า (match register). NEVER use ฉัน/เธอ for males.
-• Female characters → 3rd: เธอ/นาง/ของเธอ | 1st (speech & narration): ฉัน/หนู/อิฉัน. NEVER use ผม/กู for females.
-• Unknown gender → เขา (3rd) / ฉัน (1st) as default
-• NARRATOR PRONOUN: First-person narration (나/저) → use narrator's gender from glossary. Male narrator → ผม. Female narrator → ฉัน. Do NOT default to ผม without checking glossary first.
+function mkSeedPreset(id, name, emoji, temperature, polish, role, styleBlock) {
+  return { id, name, emoji, temperature, polish, systemPrompt:
+`You are a professional webnovel translator (source language → Thai). ${role}
 
-INTERPRETIVE DEPTH:
-• Before translating, identify who is speaking/thinking, the emotion, and the scene's narrative purpose.
-• Convey subtext and feeling — not just words. The reader must experience the character's inner world.
-• Rhythm: short, staccato sentences for action; flowing, lyrical prose for inner reflection.
+${styleBlock}
+
+${SHARED_CORE_RULES}
+
+${SHARED_PRONOUN_RULES}
+
+${SHARED_PROOFREAD_RULES}
 {style_note}
 GLOSSARY:
 {glossary}
 
 {context}
-Translate the following Korean text into beautiful Thai prose. Output ONLY the Thai translation, nothing else:
+Translate the following source text into Thai. Output ONLY the Thai translation, nothing else:
 
-{text}`,
-  },
+{text}` };
+}
+
+const SEED_PRESETS = [
+  mkSeedPreset('seed-literal', 'แปลตรงตัว', '🔤', 0.1, false,
+    'You translate as faithfully and literally as possible while keeping the Thai grammatical and readable.',
+`LITERAL STYLE:
+• Stay as close to the source meaning and sentence structure as Thai grammar allows.
+• Do NOT add creative embellishment, interpretation, or extra description beyond the source.
+• Prefer the most direct, accurate Thai equivalent for each phrase; keep sentence count where possible.`),
+  mkSeedPreset('seed-wuxia', 'แปลจีนกำลังภายใน', '🥋', 0.6, true,
+    'You specialize in Chinese-style wuxia / murim (กำลังภายใน) cultivation webnovels.',
+`WUXIA / MURIM STYLE:
+• Use a classical, slightly archaic Thai martial-arts register (เกียรติยศ, วรยุทธ์, ชี่, จอมยุทธ์, สำนัก, ตระกูล).
+• Render cultivation/realm/sect/technique terms consistently; keep honorifics (ท่าน, อาวุโส) per glossary.
+• Battle scenes: rhythmic and forceful; inner-energy descriptions vivid but controlled.
+• Keep the epic, honor-bound tone throughout.`),
+  mkSeedPreset('seed-medieval', 'แปลยุคกลางตะวันตก', '🏰', 0.6, true,
+    'You specialize in medieval / European high-fantasy webnovels (knights, kingdoms, magic).',
+`MEDIEVAL FANTASY STYLE:
+• Use a refined, slightly formal Thai register fitting nobility, knights, clergy, and royal courts.
+• Keep titles/ranks (อัศวิน, ขุนนาง, ราชา, ราชินี, เจ้าชาย) consistent with the glossary.
+• Render magic, monsters, and place names cleanly; preserve the grand, storybook atmosphere.
+• Nobles' dialogue elevated; commoners plainer — keep the contrast.`),
+  mkSeedPreset('seed-literary', 'นิยายทั่วไป (วรรณกรรม)', '📖', 0.65, true,
+    'You produce literary Thai prose that reads as if written by a gifted Thai novelist.',
+`LITERARY STYLE:
+• Preserve the author's voice — lyrical, dark, intimate, or epic as the scene demands.
+• Use rich, precise vocabulary; convey subtext and emotion, not just words.
+• Vary rhythm: short and punchy for action, flowing for reflection.`),
+  mkSeedPreset('seed-dialogue', 'เน้นบทสนทนา', '🎭', 0.6, false,
+    'You specialize in natural, character-distinct dialogue.',
+`DIALOGUE STYLE:
+• Each character sounds distinct in Thai, matching personality and status (nobles elevated, rough types colloquial).
+• Preserve speech quirks, catchphrases, and verbal tics; keep narration clear and concise.`),
+  mkSeedPreset('seed-webtoon', 'เว็บตูน/อ่านมือถือ', '📱', 0.55, false,
+    'You translate for webtoons and light novels optimized for fast mobile reading.',
+`WEBTOON STYLE:
+• Short, punchy Thai sentences — break long source sentences into 2–3 shorter ones.
+• Easy to scan, contemporary Thai for young-adult readers; no dense blocks.
+• Action stays kinetic and visceral.`),
 ];
 
 // ─── User Styles & Presets helpers ───
@@ -122,51 +167,21 @@ function buildTranslatePrompt({ sourceText, glossaryStr = '', contextStr = '', s
 }
 
 // ─── Prompts ───
-const TRANSLATE_PROMPT = `You are a professional Korean → Thai webnovel translator specializing in fantasy, martial arts, and action genres.
+// หมายเหตุ: prompt แปลหลักมาจาก preset ของผู้ใช้ (ดู SEED_PRESETS / buildTranslatePrompt ด้านบน)
+const POLISH_PROMPT = `You are a professional Thai literary editor and proofreader (พิสูจน์อักษร) specializing in webnovels.
 
-TRANSLATION RULES:
-• Maintain natural, immersive Thai narrative flow — write like a Thai novelist, not a translator
-• Follow the glossary strictly — never deviate from established terms
-• Preserve the original tone: serious, epic, cinematic
-• Do NOT translate proper names unless they appear in the glossary
-• Keep action scenes punchy and visceral
-• Render internal monologue in natural Thai first-person
-• Preserve paragraph structure exactly
-• Do not add or omit any sentences
+Refine this Thai translation for natural flow, readability, and narrative immersion — without changing meaning.
 
-THAI PRONOUN RULES — CRITICAL, NO EXCEPTIONS:
-• Male characters (gender:male) → 3rd-person: เขา/ของเขา — 1st-person (speech & narration): ผม / กู / ข้า (match story register). NEVER use เธอ/นาง for males.
-• Female characters (gender:female) → 3rd-person: เธอ/นาง/ของเธอ — 1st-person (speech & narration): ฉัน / หนู / ข้าพเจ้า. NEVER use ผม/กู for females.
-• Unknown gender → use เขา (3rd) / ฉัน (1st) as default until clarified.
-• Apply these pronouns consistently for BOTH dialogue AND first-person narration.
-• NARRATOR PRONOUN: When translating first-person narration (나/저 in Korean), use the narrator/protagonist's gender from glossary — NOT a generic default. Male narrator → ผม; Female narrator → ฉัน.
-
-INTERPRETIVE DEPTH — READ, DON'T JUST TRANSLATE:
-• Before translating each passage, identify: who is speaking/thinking/acting, the emotion, and the scene's purpose.
-• Convey feeling and subtext — the reader should experience what the character experiences.
-• Match sentence rhythm to the scene: short punchy sentences for action, flowing prose for reflection.
-
-{style_note}
-
-GLOSSARY (Korean = Thai translation | gender | pronoun guide):
-{glossary}
-
-{context}
-
-Translate the following Korean text into Thai. Output ONLY the Thai translation, nothing else:
-
-{text}`;
-
-const POLISH_PROMPT = `You are a Thai literary editor specializing in webnovel polish and refinement.
-
-Refine this Thai translation for natural flow, readability, and narrative immersion.
-
-RULES: Fix unnatural structures, improve word choices, ensure smooth flow. Do NOT change meaning. Keep dark fantasy tone.
+RULES:
+• Fix unnatural structures and awkward word order; improve flat or repeated word choices.
+• Correct Thai spelling, vowels, tone marks (วรรณยุกต์), and word spacing; remove typos, doubled characters, and any stray source-language characters or symbols.
+• Keep tone, character voice, and pacing consistent; do NOT add, omit, or alter meaning.
+• Preserve all glossary terms exactly as given.
 
 GLOSSARY (preserve these terms):
 {glossary}
 
-Refine the following Thai translation. Output ONLY the polished Thai text, nothing else:
+Refine and proofread the following Thai translation. Output ONLY the polished Thai text, nothing else:
 
 {text}`;
 
@@ -195,7 +210,8 @@ Return ONLY JSON array (no markdown):
 
 Rules:
 - Only extract names, titles, skills, places, ranks — NOT common words
-- Provide natural Thai translations
+- Provide natural Thai translations that are CONSISTENT with professional Thai webnovel prose, so that when these terms are injected into the translated chapter they read seamlessly and never break the reader's flow
+- Apply professional proofreading (พิสูจน์อักษร): correct Thai spelling/tone marks, clean transliteration, no stray source-language characters; pick ONE canonical Thai spelling per term and keep it stable
 - type must be one of: character, title, rank, term, honorific, place
 - gender: REQUIRED for type="character". Infer carefully from ALL available cues — but accuracy matters more than confidence:
   • Korean pronouns (strongest signal): 그/남자/형/오빠/아버지/아들/왕/황제/그는/그가 = male | 그녀/여자/언니/누나/어머니/딸/왕비/그녀는/그녀가 = female
@@ -2370,7 +2386,7 @@ async function streamSegment(text, contextSegs, options, onChunk, onDone) {
     glossaryStr,
     contextStr,
     styleNote: customStylePrompt || '',
-    ws: null, // streamSegment ไม่ผูกกับ ws ใดๆ (ใช้ literary as default)
+    ws: S.currentWs, // ใช้ preset ที่ผู้ใช้เลือกใน workspace ปัจจุบัน
   });
 
   // AbortController with 120s timeout
@@ -2403,12 +2419,13 @@ async function translateSegmentDirect(text, allSegments = [], options = {}) {
 
   const glossaryStr = buildGlossaryStr(wsGlossary);
   const contextStr = buildContextStr(allSegments, allSegments.findIndex(s => s.text === text));
-  const styleNote = customStylePrompt ? `STYLE GUIDE:\n${customStylePrompt}\n` : '';
-  const prompt = TRANSLATE_PROMPT
-    .replace('{style_note}', styleNote)
-    .replace('{glossary}', glossaryStr)
-    .replace('{context}', contextStr)
-    .replace('{text}', text);
+  const prompt = buildTranslatePrompt({
+    sourceText: text,
+    glossaryStr,
+    contextStr,
+    styleNote: customStylePrompt || '',
+    ws: S.currentWs, // ใช้ preset ที่ผู้ใช้เลือก เพื่อให้สำนวนสอดคล้องกัน
+  });
 
   const res = await callOpenRouter({ model, messages: [{ role: 'user', content: prompt }], temperature, max_tokens: Math.max(2000, Math.ceil(text.length * 2)) });
   let translation = res.choices?.[0]?.message?.content?.trim() || '';
@@ -5561,7 +5578,8 @@ Return ONLY JSON array (no markdown):
 
 Rules:
 - Only extract names, titles, skills, places, ranks — NOT common words
-- Provide natural Thai translations
+- Provide natural Thai translations that are CONSISTENT with professional Thai webnovel prose, so that when these terms are injected into the translated chapter they read seamlessly and never break the reader's flow
+- Apply professional proofreading (พิสูจน์อักษร): correct Thai spelling/tone marks, clean transliteration, no stray source-language characters; pick ONE canonical Thai spelling per term and keep it stable
 - type must be one of: character, title, rank, term, honorific, place
 - gender: REQUIRED for type="character". Infer aggressively from ALL available cues:
   • Korean pronouns: 그/남자/형/오빠/아버지/아들/왕/황제 = male | 그녀/여자/언니/누나/어머니/딸/왕비 = female
@@ -6438,6 +6456,21 @@ async function deletePreset() {
   loadPresetForEdit();
   renderPresetSelect();
   showToast('ลบ Preset แล้ว', '');
+}
+
+// เพิ่มชุด Preset ตัวอย่าง 6 แบบ (เฉพาะที่ยังไม่มี) — สำหรับ workspace เดิม
+async function addMissingSeedPresets() {
+  if (!S.currentWs) return;
+  if (!Array.isArray(S.currentWs.presets)) S.currentWs.presets = [];
+  const existing = new Set(S.currentWs.presets.map(p => p.id));
+  let added = 0;
+  SEED_PRESETS.forEach(p => { if (!existing.has(p.id)) { S.currentWs.presets.push({ ...p }); added++; } });
+  if (!added) { showToast('มี Preset ตัวอย่างครบแล้ว', ''); return; }
+  await lsSaveWorkspace(S.currentWs);
+  pePopulateSelect(document.getElementById('pe-preset-select')?.value);
+  loadPresetForEdit();
+  renderPresetSelect();
+  showToast(`เพิ่ม Preset ตัวอย่าง ${added} แบบแล้ว ✓`, 'success');
 }
 
 // ═══════════════════════════════════════════════
