@@ -219,6 +219,14 @@ function renderWsSettings() {
   document.getElementById('wsAutoGlossary').checked = autoGlossary;
   const pcc = document.getElementById('wsPrevCtxChars');
   if (pcc) pcc.value = w.settings?.prevCtxChars || 400;
+  // Consistency Lock
+  const clEl  = document.getElementById('wsConsistencyLock');
+  const clOpt = document.getElementById('wsConsistencyOptions');
+  const clRef = document.getElementById('wsConsistencySelfRef');
+  const clOn  = !!w.settings?.consistencyLock;
+  if (clEl)  clEl.checked = clOn;
+  if (clOpt) clOpt.style.display = clOn ? 'block' : 'none';
+  if (clRef) clRef.value = w.settings?.consistencySelfRef || 'auto';
   renderPresetSelect();
   // Context Memory settings
   const ctx = wsGetContext(w);
@@ -245,6 +253,8 @@ async function saveWsSettings() {
     temperature: parseFloat(document.getElementById('wsTemp').value),
     autoGlossary: document.getElementById('wsAutoGlossary').checked,
     prevCtxChars: Math.max(100, Math.min(4000, parseInt(document.getElementById('wsPrevCtxChars')?.value) || 400)),
+    consistencyLock: !!document.getElementById('wsConsistencyLock')?.checked,
+    consistencySelfRef: document.getElementById('wsConsistencySelfRef')?.value || 'auto',
   };
   const presetSel = document.getElementById('wsPresetSelect');
   if (presetSel) S.currentWs.presetId = presetSel.value || (S.currentWs.presets?.[0]?.id || '');

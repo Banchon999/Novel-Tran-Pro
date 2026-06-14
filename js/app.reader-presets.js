@@ -12,7 +12,7 @@ async function translateChapterCore(ch, {
 } = {}) {
   const ws = S.currentWs;
   const presetBase = (ws.presets || []).find(p => p.id === presetId) || getActivePreset(ws);
-  const systemPrompt = presetBase.systemPrompt;
+  const systemPrompt = applyConsistencyLock(presetBase.systemPrompt, ws);
   const temperature  = presetBase.temperature;
   const useModel = model || ws.settings?.translateModel || document.getElementById('translateModel')?.value || 'google/gemini-2.5-flash';
 

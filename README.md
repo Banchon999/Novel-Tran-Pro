@@ -1,5 +1,23 @@
 # NovelTrans v12 Pro — User-Owned Styles/Presets Edition
 
+## ใหม่ล่าสุด
+- **🔒 Consistency Lock (ล็อกความสม่ำเสมอ)** — เปิด/ปิดได้ต่อ workspace (⚙ ตั้งค่า Workspace)
+  เมื่อเปิดจะแทรกกฎเข้า prompt ตอนแปล: ล็อกสรรพนาม (Pronoun) + ระดับภาษา (Register) +
+  มุมมองเล่าเรื่อง (POV) + ความเสถียรของคำแปล (Deterministic) · แก้ปัญหา "กดแปลรอบสอง
+  ได้ฉัน รอบสามได้ผม รอบสี่ได้ข้าพเจ้า" ทั้งที่ต้นฉบับเดิม · **เลือกสรรพนามบุรุษ 1
+  เริ่มต้นได้** (ฉัน/ผม/ข้าพเจ้า/ข้า… หรือ "อัตโนมัติ" = อิงเพศจาก glossary) สำหรับกรณี
+  ต้นฉบับละประธาน (나는/내가/저는/제가) · ไม่บังคับ inject ถ้า preset มีบล็อกนี้อยู่แล้ว
+  (idempotent) · เก็บใน `settings.consistencyLock`, `settings.consistencySelfRef`
+- **📱 PWA (ติดตั้งเป็นแอพ + ใช้ออฟไลน์ได้)** — มี `manifest.webmanifest` + `sw.js` (service worker)
+  ที่ precache app shell (HTML/CSS/JS/ไอคอน) จึงเปิดแอพแบบ offline ได้ และ "Add to Home Screen"
+  ได้บนมือถือ · การเรียก API ไม่ถูก cache (ปล่อยผ่านเครือข่ายตรง)
+- **🈁 เช็คคำซ้อน (substring) เฉพาะภาษาเกาหลี** — ตรวจคู่คำซ้อนเฉพาะคำที่เป็นเกาหลี (มีฮันกึล
+  และไม่มีคานะญี่ปุ่น) เท่านั้น · คำภาษาอื่น (อังกฤษ/ญี่ปุ่น/จีน) จะไม่ถูกแจ้งเป็นคำซ้อน
+  (เช็คคำซ้ำเป๊ะยังทำกับทุกภาษาเหมือนเดิม)
+- **🤖 แปลชื่อตอน — เลือกได้หลายโมเดล + custom prompt** — dropdown โมเดลในหน้า "แก้ชื่อตอน"
+  ดึงตาม provider ปัจจุบัน (รวมโมเดลที่ 🔄 fetch มา/กำหนดเอง) · จำค่าแยกต่อ workspace
+  (`settings.titleModel`) · แก้ prompt แปลชื่อตอนเองได้ (`settings.titlePromptTemplate`)
+
 ## ใหม่ใน v12 (refactor)
 - **Styles & Translation Presets เป็นของผู้ใช้ทั้งหมด** — ไม่มีของ built-in แล้ว; workspace ใหม่จะมีตัวอย่าง 1 อันที่แก้/ลบได้ และจัดการ Preset แบบสร้าง/แก้/ลบได้เต็มรูปแบบ
 - **🔄 Fetch โมเดลจาก API** — ดึงรายชื่อโมเดลล่าสุดจาก provider โดยตรง (เลิกพิมพ์ model id เอง)
