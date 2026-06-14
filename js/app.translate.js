@@ -445,6 +445,35 @@ function _chunkSrcHash(text) {
   return text.length + ':' + text.slice(0, 64) + ':' + text.slice(-64);
 }
 
+// แบ่งแบบ smart: ตอนสั้น (≤ size) ไม่แบ่งเลย · ตอนยาวแบ่งที่ "ขอบย่อหน้า" ให้แต่ละก้อน ~size
+// (ย่อหน้าเดี่ยวที่ยาวเกิน size จะ fallback ไปแบ่งด้วย splitByChunkSize)
+function smartChunk(text, size) {
+  if (!size || size <= 0 || !text || text.length <= size) return [text];
+  const paras = text.split(/\n{2,}/);
+  const chunks = [];
+  let cur = '';
+  const flush = () => { if (cur.trim()) chunks.push(cur); cur = ''; };
+  for (const para of paras) {
+    if (para.length > size) {                 // ย่อหน้ายักษ์ → ซอยย่อย
+      flush();
+      splitByChunkSize(para, size).forEach(c => chunks.push(c));
+      continue;
+    }
+    if (cur && cur.length + 2 + para.length > size) flush();
+    cur = cur ? cur + '\n\n' + para : para;
+  }
+  flush();
+  return chunks.length ? chunks : [text];
+}
+
+// เลือกวิธีแบ่ง chunk ตามโหมด — ใช้กับ batch (off=ทั้งตอน, smart=แบ่งเฉพาะตอนยาว, fixed=แบ่งทุกตอน)
+function getBatchChunks(text, mode, size) {
+  if (!text) return [text];
+  if (mode === 'fixed') return splitByChunkSize(text, size);
+  if (mode === 'smart') return smartChunk(text, size);
+  return [text];
+}
+
 async function translateChunked(text, options) {
   setTranslating(true);
   clearTranslation();

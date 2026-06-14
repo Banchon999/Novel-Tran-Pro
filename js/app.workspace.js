@@ -219,6 +219,14 @@ function renderWsSettings() {
   document.getElementById('wsAutoGlossary').checked = autoGlossary;
   const pcc = document.getElementById('wsPrevCtxChars');
   if (pcc) pcc.value = w.settings?.prevCtxChars || 400;
+  // Batch chunking
+  const bcMode = document.getElementById('wsBatchChunkMode');
+  const bcSize = document.getElementById('wsBatchChunkSize');
+  const bcWrap = document.getElementById('wsBatchChunkSizeWrap');
+  const bcm = w.settings?.batchChunkMode || 'off';
+  if (bcMode) bcMode.value = bcm;
+  if (bcSize) bcSize.value = w.settings?.batchChunkSize || 3000;
+  if (bcWrap) bcWrap.style.display = bcm === 'off' ? 'none' : 'inline-flex';
   // Consistency Lock
   const clEl  = document.getElementById('wsConsistencyLock');
   const clOpt = document.getElementById('wsConsistencyOptions');
@@ -255,6 +263,8 @@ async function saveWsSettings() {
     prevCtxChars: Math.max(100, Math.min(4000, parseInt(document.getElementById('wsPrevCtxChars')?.value) || 400)),
     consistencyLock: !!document.getElementById('wsConsistencyLock')?.checked,
     consistencySelfRef: document.getElementById('wsConsistencySelfRef')?.value || 'auto',
+    batchChunkMode: document.getElementById('wsBatchChunkMode')?.value || 'off',
+    batchChunkSize: Math.max(1000, Math.min(20000, parseInt(document.getElementById('wsBatchChunkSize')?.value) || 3000)),
   };
   const presetSel = document.getElementById('wsPresetSelect');
   if (presetSel) S.currentWs.presetId = presetSel.value || (S.currentWs.presets?.[0]?.id || '');

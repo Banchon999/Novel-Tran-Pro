@@ -855,6 +855,9 @@ async function startBatchChapters() {
   const model          = document.getElementById('bchModel').value;
   const usePolish      = document.getElementById('bchUsePolish').checked;
   const usePrevContext = document.getElementById('bchUsePrevContext').checked;
+  // ── โหมดแบ่ง chunk สำหรับ batch (ตั้งใน ⚙ ตั้งค่า Workspace) ──
+  const batchChunkMode = S.currentWs?.settings?.batchChunkMode || 'off';
+  const batchChunkSize = Math.max(1000, Math.min(20000, parseInt(S.currentWs?.settings?.batchChunkSize) || 3000));
   // Batch: glossaryStr จะสร้างใหม่ per chapter (smart filtering)
   let selectedChapters = checked
     .map(el => S.currentWs.chapters.find(c => c.id === el.dataset.id)).filter(Boolean)
@@ -985,31 +988,44 @@ async function startBatchChapters() {
     try {
       const styleId = document.getElementById('activeStyleSelect')?.value || S.activeStyleId;
       const csp = getStyleById(styleId)?.prompt || null;
-      // Smart Glossary per chapter (ลด token)
-      const chSmartGloss = getSmartGlossary(ch.sourceText, S.glossaryData);
-      const chGlossObj = chSmartGloss.reduce((acc, g) => { acc[g.korean] = { thai: g.thai, type: g.type, note: g.note, gender: g.gender }; return acc; }, {});
-      const chGlossaryStr = buildGlossaryStr(chGlossObj);
       const batchPreset = getActivePreset(S.currentWs);
-      const prompt = buildTranslatePrompt({
-        sourceText: prepareSourceForTranslation(ch.sourceText),
-        glossaryStr: chGlossaryStr,
-        contextStr: ctxStr,
-        styleNote: csp || '',
-        ws: S.currentWs,
-      });
-      S.abortCtrl = new AbortController();
-      const timer = setTimeout(() => S.abortCtrl.abort(), getTimeoutMs('full'));
-      let fullText = '', inTok = 0, outTok = 0;
-      try {
-        fullText = await aiStream(
-          { model, temperature: batchPreset.temperature ?? 0.65, max_tokens: Math.max(4000, Math.ceil(ch.sourceText.length * 2)), messages: [{role:'user',content:prompt}] },
-          d => { fullText += d; }, (inp,out) => { inTok=inp; outTok=out; }, S.abortCtrl.signal
-        );
-      } finally { clearTimeout(timer); }
-      if (inTok||outTok) addCosts(inTok, outTok, model);
+      const src = prepareSourceForTranslation(ch.sourceText);
+      // ── แบ่ง chunk ตามโหมดที่ตั้งไว้ (off=ทั้งตอน, smart=เฉพาะตอนยาว, fixed=ทุกตอน) ──
+      const chChunks = getBatchChunks(src, batchChunkMode, batchChunkSize);
+      const multi = chChunks.length > 1;
+      if (multi) addLog(log, `  ↳ แบ่งเป็น ${chChunks.length} chunk (${batchChunkMode})`, '');
+
+      let fullText = '';
+      for (let ci = 0; ci < chChunks.length; ci++) {
+        const chunk = chChunks[ci];
+        // Smart Glossary per chunk (ลด token)
+        const cg = getSmartGlossary(chunk, S.glossaryData);
+        const cgObj = cg.reduce((acc, g) => { acc[g.korean] = { thai: g.thai, type: g.type, note: g.note, gender: g.gender }; return acc; }, {});
+        const cgStr = buildGlossaryStr(cgObj);
+        // context: ตอน summary เฉพาะ chunk แรก + ท้ายคำแปล chunk ก่อนหน้า (ต่อเนื่อง)
+        const prevTail = ci > 0 ? fullText.slice(-getPrevCtxChars()) : '';
+        const chunkCtx = (ci === 0 ? ctxStr : '') + (prevTail ? `CONTEXT (ท้าย chunk ก่อนหน้า):\n${prevTail}\n` : '');
+        const prompt = buildTranslatePrompt({ sourceText: chunk, glossaryStr: cgStr, contextStr: chunkCtx, styleNote: csp || '', ws: S.currentWs });
+        if (multi) document.getElementById('bchProgressLabel').textContent = `แปลตอน ${i+1}/${n} · chunk ${ci+1}/${chChunks.length}: ${ch.title}`;
+
+        S.abortCtrl = new AbortController();
+        const timer = setTimeout(() => S.abortCtrl.abort(), getTimeoutMs(multi ? 'chunk' : 'full'));
+        let part = '', inTok = 0, outTok = 0;
+        try {
+          part = await aiStream(
+            { model, temperature: batchPreset.temperature ?? 0.65, max_tokens: Math.max(2000, Math.ceil(chunk.length * 2)), messages: [{role:'user',content:prompt}] },
+            d => { part += d; }, (inp,out) => { inTok=inp; outTok=out; }, S.abortCtrl.signal
+          );
+        } finally { clearTimeout(timer); }
+        if (inTok||outTok) addCosts(inTok, outTok, model);
+        fullText += (ci > 0 && part ? '\n\n' : '') + part;
+      }
+
       if (usePolish && fullText) {
         try {
-          const pr = await callOpenRouter({ model, messages:[{role:'user',content:POLISH_PROMPT.replace('{glossary}',chGlossaryStr).replace('{text}',fullText)}], temperature:0.5, max_tokens:Math.max(4000,Math.ceil(fullText.length*1.2)) });
+          const fg = getSmartGlossary(src, S.glossaryData);
+          const fgStr = buildGlossaryStr(fg.reduce((acc, g) => { acc[g.korean] = { thai: g.thai, type: g.type, note: g.note, gender: g.gender }; return acc; }, {}));
+          const pr = await callOpenRouter({ model, messages:[{role:'user',content:POLISH_PROMPT.replace('{glossary}',fgStr).replace('{text}',fullText)}], temperature:0.5, max_tokens:Math.max(4000,Math.ceil(fullText.length*1.2)) });
           fullText = pr.choices?.[0]?.message?.content?.trim() || fullText;
         } catch {}
       }

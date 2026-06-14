@@ -348,6 +348,24 @@
               <span style="font-size:0.72rem;color:var(--text-muted)">ตัวอักษร (default 400) — มาก = ต่อเนื่องขึ้นแต่เปลือง token</span>
             </div>
           </div>
+
+          <!-- ── Batch chunking (แบ่ง chunk ตอนแปลหลายตอน) ── -->
+          <div class="sf-group">
+            <div class="sf-label">📚 แบ่ง chunk ตอนแปล Batch (ตอนยาว)</div>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+              <select id="wsBatchChunkMode" class="select-input" style="width:auto;font-size:0.78rem"
+                onchange="document.getElementById('wsBatchChunkSizeWrap').style.display=this.value==='off'?'none':'inline-flex'">
+                <option value="off">ปิด — ส่งทั้งตอนทีเดียว (เดิม)</option>
+                <option value="smart">Smart — แบ่งเฉพาะตอนยาว ตัดที่ย่อหน้า (แนะนำ)</option>
+                <option value="fixed">ตามตัวอักษร — แบ่งทุกตอนเท่า ๆ กัน</option>
+              </select>
+              <span id="wsBatchChunkSizeWrap" style="display:none;align-items:center;gap:6px">
+                <input type="number" id="wsBatchChunkSize" class="text-input" style="width:100px" min="1000" max="20000" step="500" value="3000"/>
+                <span style="font-size:0.72rem;color:var(--text-muted)">ตัวอักษร/chunk</span>
+              </span>
+            </div>
+            <div style="font-size:0.70rem;color:var(--text-muted);margin-top:4px">ตอนยาวจะถูกแบ่งเป็นหลายคำขอ (มี context ต่อเนื่องระหว่าง chunk) — เลี่ยงคำแปลถูกตัดกลางคัน/timeout · Smart = ตอนสั้นกว่าขนาดที่ตั้งจะไม่ถูกแบ่ง</div>
+          </div>
           <div class="sf-group">
             <div class="sf-label">Auto Glossary หลังแปล</div>
             <label class="toggle-mini" style="gap:8px">
