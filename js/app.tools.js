@@ -609,6 +609,7 @@ function renderDupPanel() {
     html += '<div style="margin-bottom:4px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
       '<span>🔍 <strong>คำซ้อน ' + pairs.length + ' คู่</strong> — อาจ inject ผิด</span>' +
       '<button id="dupAiResolveBtn" onclick="aiResolveSubstrDups()" style="background:linear-gradient(135deg,#7a5820,#c9a84c);color:#0c0800;border:none;padding:2px 10px;border-radius:4px;cursor:pointer;font-size:0.72rem;font-weight:600">🤖 ให้ AI จัดการ</button>' +
+      '<button id="dupFixBtn" onclick="aiFixSubstrConsistency()" title="ตรวจคู่ที่คำแปลของส่วนซ้อนไม่ตรงกัน แล้วแก้ทั้งสองให้ใช้คำเดียวกัน" style="background:linear-gradient(135deg,#2a5d4c,#4cc9a0);color:#04120c;border:none;padding:2px 10px;border-radius:4px;cursor:pointer;font-size:0.72rem;font-weight:600">🔧 แก้คำแปลให้ตรงกัน</button>' +
       '</div>';
     html += '<div id="dupAiStatus" style="font-size:0.74rem;color:var(--gold);min-height:16px"></div>';
     html += shown.map(p =>
@@ -815,6 +816,117 @@ async function aiResolveSubstrDups() {
   } catch (e) {
     status.textContent = '❌ ' + e.message;
     btn.disabled = false; btn.textContent = '🤖 ให้ AI จัดการ';
+  }
+}
+
+// ─── ตรวจทาน #2: แก้คำแปลของคู่ substring ให้สอดคล้องกัน (รองรับเกาหลี) ───
+// ปัญหา: คำสั้น (겁화="กอบฮวา") ถูกแปลคนละแบบกับตอนที่อยู่ในคำยาว (겁화 가문="ตระกูลเพลิงกัลป์")
+// → ให้ AI เลือกคำแปลที่ถูกต้องของส่วนที่ใช้ร่วมกัน แล้วแก้ทั้งสอง entry ให้ตรงกัน (ไม่แตะภาษาเกาหลี)
+const DUP_FIX_PROMPT = `You are a Thai glossary consistency editor for a Korean→Thai webnovel glossary.
+Each item is a pair where the shorter Korean term (sub) appears inside the longer Korean term (full).
+Your job: find pairs where the shared Korean part is translated INCONSISTENTLY between the two Thai entries, then rewrite BOTH Thai entries so the shared part is rendered IDENTICALLY.
+
+Inconsistency example:
+- sub:  겁화 = "กอบฮวา"            (raw transliteration)
+- full: 겁화 가문 = "ตระกูลเพลิงกัลป์"  (meaning-based; 가문 = ตระกูล, 겁화 = เพลิงกัลป์)
+Here 겁화 is "กอบฮวา" alone but "เพลิงกัลป์" inside the compound → inconsistent.
+Decide ONE best Thai for 겁화 and apply it to both:
+  → 겁화 = "เพลิงกัลป์", 겁화 가문 = "ตระกูลเพลิงกัลป์"
+
+RULES:
+- Pick the single best canonical Thai for the SHARED Korean part. Prefer the meaning-based rendering already used inside the compound over a raw transliteration that doesn't match; otherwise keep whatever reads best and is most consistent.
+- Rewrite subThai and fullThai so the shared part is spelled the same in both. Keep the extra word(s) of the longer term (e.g. 가문 → ตระกูล) intact.
+- NEVER change the Korean. Only change the Thai.
+- If a pair is ALREADY consistent (the sub's Thai already appears inside the full's Thai), or the two legitimately differ and need no change, set action = "ok" and leave the Thai as given.
+
+PAIRS (JSON):
+{pairs}
+
+Respond with ONLY a raw JSON array. No markdown fences, no text before/after.
+Each element must have exactly: sub, full, action, subThai, fullThai, reason
+action must be exactly "fix" or "ok".
+
+Example output:
+[{"sub":"겁화","full":"겁화 가문","action":"fix","subThai":"เพลิงกัลป์","fullThai":"ตระกูลเพลิงกัลป์","reason":"unify 겁화 → เพลิงกัลป์"},{"sub":"검","full":"검기","action":"ok","subThai":"ดาบ","fullThai":"กระบี่ปราณ","reason":"different concepts, already fine"}]`;
+
+async function aiFixSubstrConsistency() {
+  if (!_lastSubstrPairs.length) return;
+  if (!S.currentWsId) { showToast('เลือก Workspace ก่อน', 'error'); return; }
+
+  const btn    = document.getElementById('dupFixBtn');
+  const status = document.getElementById('dupAiStatus');
+  if (!btn || !status) return;
+
+  btn.disabled = true;
+  const origLabel = btn.textContent;
+  btn.textContent = '🔧 กำลังตรวจ...';
+  status.textContent = `กำลังตรวจคำแปล ${_lastSubstrPairs.length} คู่...`;
+
+  const model = document.getElementById('translateModel')?.value || 'google/gemini-2.5-flash';
+  const pairData = _lastSubstrPairs.map(p => ({ sub: p.sub, full: p.full, subThai: p.subThai, fullThai: p.fullThai }));
+
+  let decisions = null;
+  try {
+    const prompt = DUP_FIX_PROMPT.replace('{pairs}', JSON.stringify(pairData, null, 2));
+    const res = await callOpenRouter({ model, messages: [{ role: 'user', content: prompt }], temperature: 0.1, max_tokens: 2000 });
+    let cleaned = (res.choices?.[0]?.message?.content || '').trim()
+      .replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/, '').trim()
+      .replace(/[“”„‟]/g, '"').replace(/[‘’‚‛]/g, "'");
+    try { decisions = JSON.parse(cleaned); } catch {}
+    if (!Array.isArray(decisions)) { const m = cleaned.match(/\[[\s\S]*\]/); if (m) try { decisions = JSON.parse(m[0]); } catch {} }
+  } catch (e) {
+    status.textContent = '❌ ' + e.message;
+    btn.disabled = false; btn.textContent = origLabel;
+    return;
+  }
+
+  if (!Array.isArray(decisions)) {
+    status.textContent = '❌ AI ตอบไม่ใช่ JSON — ลองใหม่อีกครั้ง';
+    btn.disabled = false; btn.textContent = origLabel;
+    return;
+  }
+
+  // ── สร้างแผนแก้: korean (trim) → thai ใหม่ (เฉพาะ action=fix และคำแปลเปลี่ยนจริง) ──
+  const newThaiByKorean = new Map();
+  const changeList = [];
+  decisions.forEach(d => {
+    if (!d || d.action !== 'fix') return;
+    const sub = (d.sub || '').trim(), full = (d.full || '').trim();
+    const st = (d.subThai || '').trim(), ft = (d.fullThai || '').trim();
+    if (sub && st) newThaiByKorean.set(sub, st);
+    if (full && ft) newThaiByKorean.set(full, ft);
+    changeList.push({ sub, full, st, ft, reason: d.reason || '' });
+  });
+
+  if (!newThaiByKorean.size) {
+    status.textContent = '✓ คำแปลทุกคู่สอดคล้องกันแล้ว ไม่ต้องแก้';
+    btn.disabled = false; btn.textContent = origLabel;
+    return;
+  }
+
+  // ── ลงมือแก้คลังศัพท์ (เทียบด้วย korean ที่ trim แล้ว · แก้ทุก entry ที่ตรง) ──
+  try {
+    let updated = 0;
+    S.currentWs.glossary.forEach(g => {
+      const k = (g.korean || '').trim();
+      if (newThaiByKorean.has(k)) {
+        const nt = newThaiByKorean.get(k);
+        if ((g.thai || '').trim() !== nt) { g.thai = nt; updated++; }
+      }
+    });
+    S.glossaryData = S.currentWs.glossary;
+    await lsSaveWorkspace(S.currentWs);
+    renderGlossaryTable();
+
+    const detail = changeList.slice(0, 3)
+      .map(c => `"${c.sub}"→"${c.st}"`)
+      .join(' · ');
+    status.textContent = `✓ แก้คำแปลให้ตรงกัน ${updated} รายการ${detail ? ' · ' + detail : ''}`;
+    showToast(`ตรวจทานคำแปล — แก้ ${updated} รายการให้สอดคล้อง ✓`, 'success');
+    setTimeout(() => checkDuplicateGlossary(), 400);
+  } catch (e) {
+    status.textContent = '❌ ' + e.message;
+    btn.disabled = false; btn.textContent = origLabel;
   }
 }
 
