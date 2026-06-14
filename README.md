@@ -1,6 +1,13 @@
 # NovelTrans v12 Pro — User-Owned Styles/Presets Edition
 
 ## ใหม่ล่าสุด
+- **🔒 Consistency Lock (ล็อกความสม่ำเสมอ)** — เปิด/ปิดได้ต่อ workspace (⚙ ตั้งค่า Workspace)
+  เมื่อเปิดจะแทรกกฎเข้า prompt ตอนแปล: ล็อกสรรพนาม (Pronoun) + ระดับภาษา (Register) +
+  มุมมองเล่าเรื่อง (POV) + ความเสถียรของคำแปล (Deterministic) · แก้ปัญหา "กดแปลรอบสอง
+  ได้ฉัน รอบสามได้ผม รอบสี่ได้ข้าพเจ้า" ทั้งที่ต้นฉบับเดิม · **เลือกสรรพนามบุรุษ 1
+  เริ่มต้นได้** (ฉัน/ผม/ข้าพเจ้า/ข้า… หรือ "อัตโนมัติ" = อิงเพศจาก glossary) สำหรับกรณี
+  ต้นฉบับละประธาน (나는/내가/저는/제가) · ไม่บังคับ inject ถ้า preset มีบล็อกนี้อยู่แล้ว
+  (idempotent) · เก็บใน `settings.consistencyLock`, `settings.consistencySelfRef`
 - **📱 PWA (ติดตั้งเป็นแอพ + ใช้ออฟไลน์ได้)** — มี `manifest.webmanifest` + `sw.js` (service worker)
   ที่ precache app shell (HTML/CSS/JS/ไอคอน) จึงเปิดแอพแบบ offline ได้ และ "Add to Home Screen"
   ได้บนมือถือ · การเรียก API ไม่ถูก cache (ปล่อยผ่านเครือข่ายตรง)

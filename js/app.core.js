@@ -158,12 +158,65 @@ function getActivePreset(ws) {
 
 function buildTranslatePrompt({ sourceText, glossaryStr = '', contextStr = '', styleNote = '', ws = null, mtlDraft = '' }) {
   const preset = getActivePreset(ws);
-  return preset.systemPrompt
+  return applyConsistencyLock(preset.systemPrompt, ws)
     .replace('{style_note}', styleNote ? `STYLE GUIDE:\n${styleNote}\n` : '')
     .replace('{glossary}',   glossaryStr || '(ไม่มี)')
     .replace('{context}',   contextStr)
     .replace('{text}',      sourceText)
     .replace('{mtl_draft}', mtlDraft || '(ไม่มี MTL draft)');
+}
+
+// ─── Consistency Lock (ระบบล็อกความสม่ำเสมอ — กดเปิด/ปิดต่อ workspace) ───
+// แก้ปัญหา "กดแปลรอบสองได้สรรพนามคนละแบบ" โดยล็อกสรรพนาม/ระดับภาษา/มุมมอง/การตัดสินใจ
+// ค่าที่เก็บใน ws.settings: consistencyLock (bool), consistencySelfRef (string|'auto')
+function buildConsistencyBlock(selfRef) {
+  const sr = (selfRef && selfRef !== 'auto') ? selfRef : '';
+  const defaultRule = sr
+    ? `• Unless the source explicitly indicates otherwise, render first-person narration/self-reference as "${sr}" and keep it fixed for the ENTIRE passage.\n• Do NOT substitute other first-person forms (ฉัน/ผม/ข้า/ข้าพเจ้า/กระผม/ดิฉัน ฯลฯ) and do NOT upgrade or downgrade the level of formality.`
+    : `• When the source does not specify, derive the narrator's 1st-person Thai word from the glossary gender (male→ผม, female→ฉัน, unknown→ฉัน) and keep it fixed for the whole passage.\n• Do NOT upgrade or downgrade the level of formality beyond what the source/glossary supports.`;
+  return `━━━━━━━━━━━━━━━━━━━━
+PRONOUN CONSISTENCY CONTROL (ล็อกสรรพนาม) — CRITICAL
+━━━━━━━━━━━━━━━━━━━━
+• Once a 1st/2nd/3rd-person reference is established for a character within the current passage, keep that EXACT Thai form for the rest of the passage unless the source explicitly requires a change.
+• Do NOT alternate Thai pronouns for stylistic variation (e.g. ฉัน↔ผม↔ข้าพเจ้า, นาย↔คุณ↔แก, เขา↔เธอ).
+• When the source omits the subject or uses bare forms (나는/내가/저는/제가 or a dropped subject), REUSE the previously established form — never re-interpret it.
+• Narrative consistency outweighs stylistic diversity. Use the minimum interpretation needed to stay consistent.
+
+━━━━━━━━━━━━━━━━━━━━
+REGISTER CONSISTENCY (ล็อกระดับภาษา)
+━━━━━━━━━━━━━━━━━━━━
+• Once a speaker's Thai speech register is established, preserve it throughout the passage.
+• Do NOT fluctuate between colloquial / neutral / polite / formal / literary / archaic Thai without explicit evidence from the source.
+• Avoid unnecessary variation in self-reference and address terms.
+
+━━━━━━━━━━━━━━━━━━━━
+NARRATIVE POV LOCK (ล็อกมุมมองเล่าเรื่อง)
+━━━━━━━━━━━━━━━━━━━━
+• Once the narrative voice is established, do NOT change the narrator's Thai self-reference during the same passage.
+• First-person narration must retain the SAME Thai self-reference throughout the passage unless the source explicitly changes the speaker/identity.
+
+━━━━━━━━━━━━━━━━━━━━
+DEFAULT THAI SELF-REFERENCE (สรรพนามบุรุษ 1 เริ่มต้น)
+━━━━━━━━━━━━━━━━━━━━
+${defaultRule}
+
+━━━━━━━━━━━━━━━━━━━━
+DETERMINISTIC TRANSLATION POLICY
+━━━━━━━━━━━━━━━━━━━━
+• If multiple valid Thai renderings exist, always choose the one most consistent with earlier decisions in the same passage.
+• Prefer consistency with earlier choices over re-evaluating alternatives.
+• Treat established terminology, pronouns, titles, honorifics, relationship terms, and self-references as LOCKED for the rest of the passage unless the source explicitly changes them.`;
+}
+
+// แทรกบล็อกกฎ Consistency เข้า systemPrompt (ก่อน {text}) เมื่อ workspace เปิดใช้งาน
+// idempotent: ถ้า prompt ของผู้ใช้มีบล็อกนี้อยู่แล้ว จะไม่แทรกซ้ำ
+function applyConsistencyLock(systemPrompt, ws) {
+  if (!ws?.settings?.consistencyLock || typeof systemPrompt !== 'string') return systemPrompt;
+  if (systemPrompt.includes('PRONOUN CONSISTENCY CONTROL')) return systemPrompt;
+  const block = buildConsistencyBlock(ws.settings.consistencySelfRef);
+  return systemPrompt.includes('{text}')
+    ? systemPrompt.replace('{text}', block + '\n\n{text}')
+    : systemPrompt + '\n\n' + block;
 }
 
 // ─── Prompts ───

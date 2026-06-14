@@ -356,6 +356,37 @@
             </label>
           </div>
 
+          <!-- ── Consistency Lock (ล็อกความสม่ำเสมอสรรพนาม/ระดับภาษา) ── -->
+          <div class="sf-group" style="border-top:1px solid var(--border);padding-top:10px;margin-top:2px">
+            <div class="sf-label" style="margin-bottom:6px">
+              🔒 ล็อกความสม่ำเสมอ (Consistency Lock)
+              <span style="font-size:0.70rem;color:var(--text-muted);font-weight:400"> — กันสรรพนาม/ระดับภาษาเปลี่ยนทุกครั้งที่แปลซ้ำ</span>
+            </div>
+            <label class="toggle-mini" style="gap:8px;margin-bottom:8px;cursor:pointer">
+              <input type="checkbox" id="wsConsistencyLock" onchange="document.getElementById('wsConsistencyOptions').style.display=this.checked?'block':'none'"/>
+              <span style="font-size:0.78rem;color:var(--text-secondary)">เปิดล็อกสรรพนาม + ระดับภาษา + มุมมองเล่าเรื่อง + ความเสถียรของคำแปล</span>
+            </label>
+            <div id="wsConsistencyOptions" style="display:none;padding-left:2px">
+              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                <span style="font-size:0.78rem;color:var(--text-secondary)">สรรพนามบุรุษ 1 เริ่มต้น:</span>
+                <select id="wsConsistencySelfRef" class="select-input" style="width:auto;font-size:0.78rem">
+                  <option value="auto">อัตโนมัติ (อิงเพศจาก glossary)</option>
+                  <option value="ฉัน">ฉัน</option>
+                  <option value="ผม">ผม</option>
+                  <option value="ดิฉัน">ดิฉัน</option>
+                  <option value="ข้าพเจ้า">ข้าพเจ้า</option>
+                  <option value="กระผม">กระผม</option>
+                  <option value="ข้า">ข้า</option>
+                  <option value="ข้าน้อย">ข้าน้อย</option>
+                  <option value="เรา">เรา</option>
+                  <option value="หนู">หนู</option>
+                  <option value="กู">กู</option>
+                </select>
+              </div>
+              <div style="font-size:0.70rem;color:var(--text-muted);margin-top:6px">เมื่อต้นฉบับไม่ระบุสรรพนาม จะใช้คำที่เลือกนี้คงที่ตลอดทั้งตอน · "อัตโนมัติ" = อิงเพศตัวละครจาก glossary (male→ผม, female→ฉัน)</div>
+            </div>
+          </div>
+
           <!-- ── Translation Context Memory ── -->
           <div class="sf-group" style="border-top:1px solid var(--border);padding-top:10px;margin-top:2px">
             <div class="sf-label" style="margin-bottom:6px">
