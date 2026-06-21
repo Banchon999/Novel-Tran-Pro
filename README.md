@@ -1,6 +1,15 @@
 # NovelTrans v12 Pro — User-Owned Styles/Presets Edition
 
 ## ใหม่ล่าสุด
+- **📤 แท็บ ReadRealm — โพสต์ตอนที่แปลแล้วขึ้น readrealm.co ตรงจากในแอป** — รวมระบบ
+  [AUTO-POST-READREALM](https://github.com/Banchon999/AUTO-POST-READREALM) เข้ามาเป็นแท็บ
+  `📤 ReadRealm` (ฝังแบบ iframe same-origin เพื่อแยกสโคป JS/CSS ไม่ชนกับแอปหลัก) · ในแท็บ
+  เลือก input `🔗 NovelTrans` แล้วกด **📥 ดึงตอนเข้าคิว** จะดึงตอนที่ **แปลแล้ว** ของ Workspace
+  ปัจจุบันมาเข้าคิวอัปโหลดทันที (ไม่ต้อง export/import) · รองรับฟีเจอร์เดิมครบ: ตั้งราคา
+  (ฟรี/คงที่/สลับ pattern), ตั้งเวลาโพสต์ล่วงหน้า, ฉบับร่าง, delay + retry, แก้/ลบตอนที่โพสต์แล้ว ·
+  ไฟล์: `readrealm.html` + `js/app.readrealm.js` · ใช้ Bearer token ของ readrealm.co (เก็บใน
+  localStorage คีย์ `rr_bearer_token` · มี bookmarklet ดึง token อัตโนมัติ)
+
 - **📚 แบ่ง chunk ตอนแปล Batch (เลือกได้หลายโหมด)** — ตั้งใน ⚙ ตั้งค่า Workspace · เดิม batch
   ส่งทั้งตอนเป็นคำขอเดียว (ตอนยาวเสี่ยงคำแปลถูกตัด/timeout) · ตอนนี้เลือกได้ 3 โหมด:
   **ปิด** (เดิม) · **Smart** (แบ่งเฉพาะตอนที่ยาวเกินขนาดที่ตั้ง ตัดที่ขอบย่อหน้า) ·

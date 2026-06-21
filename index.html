@@ -93,6 +93,7 @@
       <button class="sub-tab" data-tab="read" onclick="switchTab('read')">📖 อ่าน/แก้ไข</button>
       <button class="sub-tab" data-tab="glossary" onclick="switchTab('glossary')">📖 คลังศัพท์</button>
       <button class="sub-tab" data-tab="styles" onclick="switchTab('styles')">🖊 Styles</button>
+      <button class="sub-tab" data-tab="readrealm" onclick="switchTab('readrealm')">📤 ReadRealm</button>
       <button class="sub-tab" data-tab="settings-ws" onclick="switchTab('settings-ws')">⚙ ตั้งค่า</button>
     </div>
 
@@ -311,6 +312,9 @@
     </div>
 
     <!-- WORKSPACE SETTINGS TAB -->
+    <!-- READREALM TAB (embedded poster) -->
+    <div class="tab-content" id="tab-readrealm" style="display:none"></div>
+
     <div class="tab-content" id="tab-settings-ws" style="display:none">
       <div class="settings-scroll">
         <div class="settings-form">
@@ -1466,6 +1470,7 @@
 <script src="js/app.review-batch.js"></script>
 <script src="js/app.tools.js"></script>
 <script src="js/app.reader-presets.js"></script>
+<script src="js/app.readrealm.js"></script>
 <!-- PWA: register service worker (เปิดแบบ http(s):// เท่านั้น — file:// จะไม่ทำงาน) -->
 <script>
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {

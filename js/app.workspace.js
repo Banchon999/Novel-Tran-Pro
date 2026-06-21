@@ -161,6 +161,7 @@ function renderCurrentTab() {
     case 'read': renderReadTab(); break;
     case 'glossary': renderGlossaryTable(); break;
     case 'styles': renderStyles(); break;
+    case 'readrealm': RR.render(); break;
     case 'settings-ws': renderWsSettings(); break;
   }
 }

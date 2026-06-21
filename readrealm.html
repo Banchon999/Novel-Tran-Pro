@@ -1,0 +1,1491 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ReadRealm Auto Poster</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Sarabun:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a0f; --surface: #111118; --surface2: #1a1a24; --surface3: #22222e;
+    --border: #2a2a3a; --border-bright: #3d3d55;
+    --accent: #7c5aff; --accent2: #a78bfa; --accent-glow: rgba(124,90,255,0.25);
+    --green: #22c55e; --green-dim: rgba(34,197,94,0.15);
+    --red: #ef4444; --red-dim: rgba(239,68,68,0.15);
+    --yellow: #eab308; --yellow-dim: rgba(234,179,8,0.15);
+    --text: #e2e8f0; --text-dim: #94a3b8; --text-muted: #475569;
+    --mono: 'JetBrains Mono', monospace; --sans: 'Sarabun', sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--sans); min-height: 100vh; overflow-x: hidden; }
+  body::before {
+    content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 0;
+    background-image: linear-gradient(rgba(124,90,255,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(124,90,255,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+  .app { position: relative; z-index: 1; max-width: 900px; margin: 0 auto; padding: 24px 20px; }
+
+  /* Header */
+  .header { display: flex; align-items: center; gap: 14px; margin-bottom: 28px; padding-bottom: 20px; border-bottom: 1px solid var(--border); }
+  .logo { width: 42px; height: 42px; background: var(--accent); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-family: var(--mono); font-weight: 700; font-size: 18px; color: white; flex-shrink: 0; box-shadow: 0 0 20px var(--accent-glow); }
+  .header-text h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.3px; }
+  .header-text p { font-size: 13px; color: var(--text-dim); font-family: var(--mono); }
+  .version-badge { margin-left: auto; background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px; font-family: var(--mono); font-size: 11px; color: var(--text-muted); }
+
+  /* Card */
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; margin-bottom: 16px; }
+  .card-title { font-size: 12px; font-family: var(--mono); color: var(--accent2); letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+  .card-title::before { content: ''; display: block; width: 3px; height: 14px; background: var(--accent); border-radius: 2px; }
+
+  /* Form */
+  label { display: block; font-size: 13px; color: var(--text-dim); margin-bottom: 6px; }
+  input[type="text"], input[type="number"], input[type="password"], textarea, select {
+    width: 100%; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px 13px; color: var(--text); font-family: var(--mono); font-size: 13px; outline: none;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  input:focus, textarea:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+  select option { background: var(--surface2); }
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .form-group { margin-bottom: 12px; }
+  .form-group:last-child { margin-bottom: 0; }
+  .input-sm { width: 80px !important; text-align: center; }
+
+  /* Token */
+  .token-wrap { position: relative; }
+  .token-wrap input { padding-right: 80px; }
+  .token-status { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); font-size: 11px; font-family: var(--mono); padding: 3px 8px; border-radius: 4px; cursor: pointer; }
+  .token-status.valid { background: var(--green-dim); color: var(--green); }
+  .token-status.invalid { background: var(--red-dim); color: var(--red); }
+  .token-status.idle { background: var(--surface3); color: var(--text-muted); }
+
+  /* Novel */
+  #novel-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; max-height: 280px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+  .novel-card { display: flex; align-items: center; gap: 12px; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 13px; cursor: pointer; transition: border-color 0.15s; }
+  .novel-card:hover { border-color: var(--border-bright); }
+  .novel-card.selected { border-color: var(--accent); background: rgba(124,90,255,0.08); }
+  .novel-thumb { width: 36px; height: 50px; border-radius: 4px; object-fit: cover; flex-shrink: 0; background: var(--surface3); }
+  .novel-info { flex: 1; min-width: 0; }
+  .novel-title { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .novel-meta { font-size: 11px; color: var(--text-muted); font-family: var(--mono); margin-top: 2px; }
+  .novel-check { color: var(--accent); font-size: 18px; flex-shrink: 0; }
+  .load-novels-btn { width: 100%; padding: 10px; background: var(--surface2); border: 1px dashed var(--border-bright); border-radius: 8px; color: var(--text-dim); font-family: var(--mono); font-size: 13px; cursor: pointer; transition: all 0.15s; }
+  .load-novels-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* Tabs */
+  .tabs { display: flex; gap: 4px; background: var(--surface2); border-radius: 8px; padding: 4px; margin-bottom: 14px; }
+  .tab { flex: 1; padding: 7px; border-radius: 6px; border: none; background: transparent; color: var(--text-muted); font-family: var(--mono); font-size: 12px; cursor: pointer; transition: all 0.15s; }
+  .tab.active { background: var(--surface3); color: var(--text); border: 1px solid var(--border); }
+
+  /* Drop zone */
+  .drop-zone { border: 2px dashed var(--border-bright); border-radius: 10px; padding: 28px; text-align: center; cursor: pointer; transition: all 0.2s; position: relative; }
+  .drop-zone:hover, .drop-zone.dragging { border-color: var(--accent); background: var(--accent-glow); }
+  .drop-zone input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+  .drop-icon { font-size: 28px; margin-bottom: 8px; }
+  .drop-label { font-size: 14px; color: var(--text-dim); }
+  .drop-sub { font-size: 12px; color: var(--text-muted); font-family: var(--mono); margin-top: 4px; }
+
+  /* Chapter list */
+  #chapter-list { max-height: 320px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+  .chapter-item { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 6px; }
+  .chapter-item:hover { border-color: var(--border-bright); }
+  .ch-num { font-family: var(--mono); font-size: 11px; color: var(--text-muted); background: var(--surface3); border-radius: 4px; padding: 2px 7px; flex-shrink: 0; }
+  .ch-title { font-size: 13px; font-weight: 500; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: text; }
+  .ch-title-input { font-size: 13px; flex: 1; background: var(--surface3); border: 1px solid var(--accent); border-radius: 4px; padding: 2px 6px; color: var(--text); font-family: var(--sans); outline: none; }
+  .ch-chars { font-family: var(--mono); font-size: 11px; color: var(--text-muted); flex-shrink: 0; }
+  .ch-status { font-family: var(--mono); font-size: 11px; flex-shrink: 0; padding: 2px 8px; border-radius: 4px; }
+  .ch-status.pending { background: var(--surface3); color: var(--text-muted); }
+  .ch-status.uploading { background: var(--yellow-dim); color: var(--yellow); }
+  .ch-status.done { background: var(--green-dim); color: var(--green); }
+  .ch-status.error { background: var(--red-dim); color: var(--red); }
+  .ch-btn { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 14px; flex-shrink: 0; padding: 2px 5px; border-radius: 4px; transition: all 0.15s; }
+  .ch-btn:hover { color: var(--accent2); background: var(--surface3); }
+  .ch-btn.del:hover { color: var(--red); }
+
+  /* Single mode */
+  #single-content { min-height: 180px; resize: vertical; line-height: 1.7; font-family: var(--sans) !important; font-size: 14px !important; }
+
+  /* Settings */
+  .setting-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--border); }
+  .setting-row:last-child { border-bottom: none; }
+  .setting-label { font-size: 13px; }
+  .setting-desc { font-size: 11px; color: var(--text-muted); font-family: var(--mono); margin-top: 2px; }
+  .radio-group { display: flex; gap: 8px; flex-wrap: wrap; }
+  .radio-opt { display: flex; align-items: center; gap: 6px; padding: 6px 12px; background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; font-size: 13px; transition: all 0.15s; }
+  .radio-opt input { display: none; }
+  .radio-opt.checked { border-color: var(--accent); background: rgba(124,90,255,0.1); color: var(--accent2); }
+  .toggle { position: relative; width: 40px; height: 22px; flex-shrink: 0; }
+  .toggle input { opacity: 0; width: 0; height: 0; }
+  .toggle-slider { position: absolute; inset: 0; background: var(--surface3); border: 1px solid var(--border); border-radius: 22px; cursor: pointer; transition: 0.2s; }
+  .toggle-slider::before { content: ''; position: absolute; width: 16px; height: 16px; background: var(--text-muted); border-radius: 50%; left: 2px; top: 2px; transition: 0.2s; }
+  .toggle input:checked + .toggle-slider { background: var(--accent); border-color: var(--accent); }
+  .toggle input:checked + .toggle-slider::before { transform: translateX(18px); background: white; }
+
+  /* Prefix */
+  .prefix-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 4px; }
+  .prefix-row select { width: auto; }
+  .prefix-preview { font-family: var(--mono); font-size: 12px; color: var(--accent2); background: var(--surface3); border-radius: 5px; padding: 3px 10px; white-space: nowrap; }
+
+  /* Run button */
+  .run-btn { width: 100%; padding: 14px; background: var(--accent); border: none; border-radius: 10px; color: white; font-family: var(--mono); font-size: 15px; font-weight: 600; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 0 30px var(--accent-glow); }
+  .run-btn:hover { background: #6d4fe0; }
+  .run-btn:disabled { background: var(--surface3); color: var(--text-muted); box-shadow: none; cursor: not-allowed; }
+
+  /* Progress */
+  .progress-wrap { background: var(--surface2); border-radius: 6px; height: 6px; overflow: hidden; margin-bottom: 16px; }
+  .progress-bar { height: 100%; background: var(--accent); border-radius: 6px; transition: width 0.4s; box-shadow: 0 0 10px var(--accent-glow); }
+
+  /* Log */
+  #log { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 12px; height: 200px; overflow-y: auto; font-family: var(--mono); font-size: 12px; line-height: 1.8; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+  .log-line { display: flex; gap: 8px; }
+  .log-time { color: var(--text-muted); flex-shrink: 0; }
+  .log-info .log-msg { color: var(--text-dim); }
+  .log-ok .log-msg { color: var(--green); }
+  .log-warn .log-msg { color: var(--yellow); }
+  .log-err .log-msg { color: var(--red); }
+
+  /* Stats */
+  .stats-bar { display: flex; gap: 16px; padding: 12px 16px; background: var(--surface2); border-radius: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+  .stat { font-family: var(--mono); font-size: 12px; }
+  .stat span { color: var(--accent2); font-weight: 600; }
+
+  /* Buttons */
+  .btn-sm { padding: 6px 14px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface2); color: var(--text-dim); font-family: var(--mono); font-size: 12px; cursor: pointer; transition: all 0.15s; }
+  .btn-sm:hover { border-color: var(--border-bright); color: var(--text); }
+  .btn-sm.primary { border-color: var(--accent); color: var(--accent2); background: rgba(124,90,255,0.1); }
+  .btn-sm.primary:hover { background: rgba(124,90,255,0.2); }
+  .btn-sm.danger { border-color: rgba(239,68,68,0.4); color: var(--red); }
+  .btn-sm.danger:hover { background: var(--red-dim); }
+
+  /* Manage */
+  .manage-toolbar { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; align-items: center; }
+  #manage-list { max-height: 50vh; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+  .manage-item { display: flex; align-items: center; gap: 8px; padding: 10px 12px; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 6px; }
+  .manage-item:hover { border-color: var(--border-bright); }
+  .manage-item-title { flex: 1; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .manage-item-num { font-family: var(--mono); font-size: 11px; color: var(--text-muted); background: var(--surface3); border-radius: 4px; padding: 2px 7px; flex-shrink: 0; }
+  .manage-item-meta { font-family: var(--mono); font-size: 11px; color: var(--text-muted); flex-shrink: 0; }
+  .manage-check { width: 16px; height: 16px; accent-color: var(--accent); flex-shrink: 0; cursor: pointer; }
+
+  /* Modal */
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.75); display: flex; align-items: center; justify-content: center; z-index: 1000; backdrop-filter: blur(4px); }
+  .modal-box { background: var(--surface); border: 1px solid var(--border-bright); border-radius: 14px; padding: 24px; width: 90%; max-width: 680px; max-height: 88vh; overflow-y: auto; position: relative; }
+  .modal-title { font-size: 13px; font-family: var(--mono); color: var(--accent2); letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; }
+  .modal-close { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 18px; padding: 2px 6px; border-radius: 4px; }
+  .modal-close:hover { color: var(--text); }
+  .modal-footer { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
+
+  /* Preview */
+  .preview-tabs { display: flex; gap: 4px; margin-bottom: 12px; }
+  .preview-tab { padding: 5px 14px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface2); color: var(--text-muted); font-family: var(--mono); font-size: 12px; cursor: pointer; }
+  .preview-tab.active { border-color: var(--accent); color: var(--accent2); background: rgba(124,90,255,0.1); }
+  .preview-rendered { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 20px 24px; font-family: var(--sans); font-size: 15px; line-height: 1.9; max-height: 420px; overflow-y: auto; }
+  .preview-rendered p { margin-bottom: 0; }
+  .preview-html-raw { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 14px; font-family: var(--mono); font-size: 11px; color: var(--text-dim); max-height: 420px; overflow-y: auto; word-break: break-all; white-space: pre-wrap; }
+
+  /* Edit modal */
+  .edit-ta { width: 100%; min-height: 260px; resize: vertical; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; color: var(--text); font-family: var(--sans); font-size: 14px; line-height: 1.8; outline: none; }
+  .edit-ta:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+
+  /* Datetime */
+  input[type="datetime-local"] { width: 100%; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 13px; color: var(--text); font-family: var(--mono); font-size: 13px; outline: none; color-scheme: dark; }
+  input[type="datetime-local"]:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+
+  /* Misc */
+  .divider { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
+  .alert { padding: 10px 14px; border-radius: 8px; font-size: 13px; margin-bottom: 12px; }
+  .alert-warn { background: var(--yellow-dim); border: 1px solid rgba(234,179,8,0.3); color: var(--yellow); }
+  .alert-info { background: rgba(124,90,255,0.1); border: 1px solid rgba(124,90,255,0.3); color: var(--accent2); }
+  .hidden { display: none !important; }
+  .mt8 { margin-top: 8px; }
+  .mt12 { margin-top: 12px; }
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spin { display: inline-block; animation: spin 1s linear infinite; }
+  @media (max-width:600px) { .form-row { grid-template-columns: 1fr; } #novel-grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- Header -->
+  <div class="header">
+    <div class="logo">RR</div>
+    <div class="header-text">
+      <h1>ReadRealm Auto Poster</h1>
+      <p>ระบบลงนิยายอัตโนมัติ · readrealm.co</p>
+    </div>
+    <div class="version-badge">v2.5</div>
+  </div>
+
+  <!-- 01 Auth -->
+  <div class="card">
+    <div class="card-title">01 · Authentication</div>
+    <div class="form-group">
+      <label>Bearer Token</label>
+      <div class="token-wrap">
+        <input type="password" id="bearer-token" placeholder="eyJhbGciOiJIUzI1NiJ9..." autocomplete="off" oninput="onTokenInput()" />
+        <span class="token-status idle" id="token-status" onclick="verifyToken()">ตรวจสอบ</span>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center;">
+      <button class="btn-sm primary" onclick="saveToken()">💾 บันทึก Token</button>
+      <button class="btn-sm danger" onclick="clearToken()">✕ ลบที่บันทึก</button>
+      <span id="token-saved-badge" class="hidden" style="font-family:var(--mono);font-size:11px;color:var(--green);background:var(--green-dim);padding:3px 10px;border-radius:4px;">✓ โหลดจาก localStorage</span>
+    </div>
+    <div class="alert alert-info" style="margin-bottom:10px;font-size:12px;">
+      💡 <b>ดึง Token อัตโนมัติ:</b> ลาก Bookmarklet ด้านล่างใส่ Bookmark bar แล้วกดขณะอยู่บนหน้า readrealm.co<br>
+      <div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <a id="bookmarklet-link" href="#" style="display:inline-block;padding:5px 14px;background:var(--accent);color:white;border-radius:6px;font-family:var(--mono);font-size:12px;text-decoration:none;cursor:grab;" draggable="true">📌 RR Token</a>
+        <span style="font-size:11px;color:var(--text-muted);">← ลาก drop ใส่ Bookmark bar</span>
+      </div>
+    </div>
+    <button class="load-novels-btn" id="load-novels-btn" onclick="loadNovels()">⬇ โหลดรายการนิยาย</button>
+  </div>
+
+  <!-- 02 Novel -->
+  <div class="card">
+    <div class="card-title">02 · เลือกนิยาย</div>
+    <div id="novel-grid">
+      <div style="color:var(--text-muted);font-size:13px;font-family:var(--mono);grid-column:1/-1;padding:16px;text-align:center;">กรอก Token แล้วกด "โหลดรายการนิยาย"</div>
+    </div>
+  </div>
+
+  <!-- 03 Content -->
+  <div class="card">
+    <div class="card-title">03 · เนื้อหาตอน</div>
+    <div class="tabs">
+      <button class="tab active" onclick="switchMode('batch')" id="tab-batch">📦 Batch</button>
+      <button class="tab" onclick="switchMode('single')" id="tab-single">✏️ Single</button>
+    </div>
+
+    <div id="mode-batch">
+      <div class="tabs" style="margin-bottom:10px;flex-wrap:wrap;">
+        <button class="tab" onclick="switchInput('nt')" id="tab-nt">🔗 NovelTrans</button>
+        <button class="tab active" onclick="switchInput('files')" id="tab-files">📁 หลายไฟล์ .txt</button>
+        <button class="tab" onclick="switchInput('zip')" id="tab-zip">🗜️ ไฟล์ .zip</button>
+        <button class="tab" onclick="switchInput('delimiter')" id="tab-delim">📄 Delimiter</button>
+        <button class="tab" onclick="switchInput('epub')" id="tab-epub">📚 EPUB</button>
+      </div>
+
+      <div id="input-nt" class="hidden">
+        <div class="alert alert-info" id="nt-standalone-hint" style="font-size:12px;">
+          🔗 ฟีเจอร์นี้ใช้ได้เมื่อเปิดผ่านแท็บ <b>📤 ReadRealm</b> ในแอป NovelTrans เท่านั้น —
+          จะดึงตอนที่ <b>แปลแล้ว</b> ของ Workspace ปัจจุบันมาเข้าคิวอัปโหลดได้เลย ไม่ต้อง export/import
+        </div>
+        <div id="nt-bridge" class="hidden">
+          <div class="stats-bar" style="margin-bottom:10px;">
+            <div class="stat">Workspace: <span id="nt-ws-name">-</span></div>
+            <div class="stat">แปลแล้ว: <span id="nt-translated">0</span></div>
+            <div class="stat">ทั้งหมด: <span id="nt-all">0</span></div>
+          </div>
+          <div class="form-group">
+            <label class="radio-opt checked" id="nt-only-translated-opt" style="display:inline-flex;" onclick="toggleNtOnlyTranslated(this)">
+              <input type="checkbox" checked /> เฉพาะตอนที่แปลแล้ว
+            </label>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;">
+            <button class="btn-sm primary" onclick="pullFromNovelTrans()">📥 ดึงตอนเข้าคิว</button>
+            <button class="btn-sm" onclick="requestNtChapters()">↻ รีเฟรชรายการ</button>
+          </div>
+          <div class="alert alert-info mt8" style="font-size:12px;">
+            💡 ชื่อตอนจะใช้รูปแบบ <code style="font-family:var(--mono)">#เลขตอน ชื่อตอน</code> ·
+            เนื้อหาใช้คำแปลภาษาไทยล่าสุดของตอนนั้น
+          </div>
+        </div>
+      </div>
+
+      <div id="input-files">
+        <div class="drop-zone" id="drop-zone">
+          <input type="file" id="file-input" multiple accept=".txt" onchange="handleFiles(this.files)" />
+          <div class="drop-icon">📂</div>
+          <div class="drop-label">วางไฟล์ .txt ที่นี่ หรือคลิกเพื่อเลือก</div>
+          <div class="drop-sub">รองรับหลายไฟล์ · ชื่อไฟล์ = ชื่อตอน</div>
+        </div>
+      </div>
+
+      <div id="input-zip" class="hidden">
+        <div class="drop-zone" id="drop-zone-zip">
+          <input type="file" id="file-input-zip" accept=".zip" onchange="handleZip(this.files[0])" />
+          <div class="drop-icon">🗜️</div>
+          <div class="drop-label">วางไฟล์ .zip ที่นี่ หรือคลิกเพื่อเลือก</div>
+          <div class="drop-sub">ไฟล์ .txt ข้างใน zip จะถูกโหลดอัตโนมัติ · รองรับ deflate</div>
+        </div>
+      </div>
+
+      <div id="input-delimiter" class="hidden">
+        <div class="form-group">
+          <label>Delimiter คั่นตอน</label>
+          <input type="text" id="delimiter" value="---" style="width:160px" />
+        </div>
+        <div class="form-group">
+          <div class="alert alert-info">ตัวอย่าง: <code style="font-family:var(--mono)">--- ชื่อตอน ---</code> หรือบรรทัดแรกหลัง delimiter = ชื่อตอน</div>
+          <div class="drop-zone" id="drop-zone-delim">
+            <input type="file" id="file-input-delim" accept=".txt" onchange="handleDelimFile(this.files[0])" />
+            <div class="drop-icon">📄</div>
+            <div class="drop-label">วางไฟล์ .txt รวมทุกตอน</div>
+            <div class="drop-sub">แบ่งตอนด้วย delimiter</div>
+          </div>
+        </div>
+      </div>
+
+      <div id="input-epub" class="hidden">
+        <div class="drop-zone" id="drop-zone-epub">
+          <input type="file" id="file-input-epub" accept=".epub" onchange="handleEpub(this.files[0])" />
+          <div class="drop-icon">📚</div>
+          <div class="drop-label">วางไฟล์ .epub ที่นี่ หรือคลิกเพื่อเลือก</div>
+          <div class="drop-sub">แยกตอนจาก EPUB อัตโนมัติ · อ่าน spine order จาก OPF</div>
+        </div>
+        <div class="alert alert-info mt8" style="font-size:12px;">
+          📖 <b>รองรับ EPUB 2.x / 3.x (ตาม W3C EPUB 3.3 spec)</b><br>
+          • อ่าน spine order จาก Package Document (OPF) §5.7<br>
+          • ดึงชื่อตอนจาก Navigation Document (nav epub:type="toc") §7 → NCX fallback<br>
+          • ข้าม linear="no" และ nav document อัตโนมัติ<br>
+          • รองรับ <code>application/xhtml+xml</code> content documents §3.2
+        </div>
+      </div>
+
+      <div id="chapter-list-wrap" class="hidden mt12">
+        <div class="stats-bar">
+          <div class="stat">ทั้งหมด: <span id="stat-total">0</span></div>
+          <div class="stat">สำเร็จ: <span id="stat-done">0</span></div>
+          <div class="stat">ล้มเหลว: <span id="stat-fail">0</span></div>
+          <div class="stat">คงเหลือ: <span id="stat-remain">0</span></div>
+        </div>
+        <div id="chapter-list"></div>
+        <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
+          <button class="btn-sm" onclick="clearChapters()">✕ ล้างทั้งหมด</button>
+          <button class="btn-sm primary" onclick="previewChapter(null)">👁 Preview</button>
+          <button class="btn-sm" onclick="toggleBulkRename()">✂ Bulk Rename</button>
+        </div>
+        <div id="bulk-rename-panel" class="hidden" style="margin-top:10px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:14px;">
+          <div style="font-family:var(--mono);font-size:11px;color:var(--accent2);letter-spacing:0.06em;text-transform:uppercase;margin-bottom:10px;">✂ Remove Characters by Position</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+            <div class="form-group" style="margin:0;">
+              <label>ลบจากหน้า (First N)</label>
+              <input type="number" id="trim-first" value="0" min="0" class="input-sm" style="width:70px;" oninput="updateTrimPreview()" />
+            </div>
+            <div class="form-group" style="margin:0;">
+              <label>ลบจากหลัง (Last N)</label>
+              <input type="number" id="trim-last" value="0" min="0" class="input-sm" style="width:70px;" oninput="updateTrimPreview()" />
+            </div>
+          </div>
+          <div id="trim-preview" style="font-family:var(--mono);font-size:12px;color:var(--text-dim);background:var(--surface3);border-radius:6px;padding:8px 12px;margin-bottom:10px;min-height:28px;"></div>
+          <div style="display:flex;gap:8px;">
+            <button class="btn-sm primary" onclick="applyTrimAll()">✦ Apply ทุกตอน</button>
+            <button class="btn-sm" onclick="updateTrimPreview()">↺ Preview</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="mode-single" class="hidden">
+      <div class="form-group">
+        <label>ชื่อตอน</label>
+        <input type="text" id="single-title" placeholder="ตอนที่ 01..." maxlength="120" />
+      </div>
+      <div class="form-group">
+        <label>เนื้อหา</label>
+        <textarea id="single-content" placeholder="วางเนื้อหาตรงนี้..."></textarea>
+      </div>
+      <button class="btn-sm primary" style="margin-top:6px;" onclick="previewSingle()">👁 Preview</button>
+    </div>
+  </div>
+
+  <!-- 05 Settings -->
+  <div class="card">
+    <div class="card-title">05 · การตั้งค่า</div>
+    <div class="setting-row">
+      <div><div class="setting-label">ราคาตอน</div><div class="setting-desc">chapter_price</div></div>
+      <div class="radio-group" id="price-group">
+        <label class="radio-opt checked" onclick="selectPrice(this,0)"><input type="radio" name="price" checked /> อ่านฟรี</label>
+        <label class="radio-opt" onclick="selectPrice(this,null)"><input type="radio" name="price" /> กำหนดเอง</label>
+        <label class="radio-opt" onclick="selectPrice(this,'pattern')"><input type="radio" name="price" /> 🔄 สลับราคา</label>
+      </div>
+    </div>
+    <div class="form-group hidden" id="price-custom-wrap">
+      <label>จำนวนเหรียญ</label>
+      <input type="number" id="price-custom" value="1" min="0" step="0.01" style="width:160px" />
+    </div>
+    <div class="hidden" id="price-pattern-wrap" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:14px;margin-top:4px;">
+      <div style="font-family:var(--mono);font-size:11px;color:var(--accent2);letter-spacing:0.06em;text-transform:uppercase;margin-bottom:10px;">🔄 ตั้งรูปแบบสลับราคา</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px;">
+        <div class="form-group" style="margin:0;">
+          <label>ตอนเสียเงิน (N)</label>
+          <input type="number" id="pattern-paid-count" value="10" min="1" max="999" oninput="updatePatternPreview()" style="width:80px;" />
+        </div>
+        <div class="form-group" style="margin:0;">
+          <label>ตอนฟรี (M)</label>
+          <input type="number" id="pattern-free-count" value="1" min="1" max="999" oninput="updatePatternPreview()" style="width:80px;" />
+        </div>
+        <div class="form-group" style="margin:0;">
+          <label>ราคา (เหรียญ)</label>
+          <input type="number" id="pattern-price" value="1" min="0" step="0.01" oninput="updatePatternPreview()" style="width:80px;" />
+        </div>
+      </div>
+      <div id="pattern-preview" style="font-family:var(--mono);font-size:12px;color:var(--text-dim);background:var(--surface3);border-radius:6px;padding:8px 12px;line-height:1.8;min-height:28px;"></div>
+    </div>
+    <hr class="divider">
+    <div class="setting-row">
+      <div><div class="setting-label">การเผยแพร่</div><div class="setting-desc">chapter_publish</div></div>
+      <div class="radio-group" id="publish-group">
+        <label class="radio-opt checked" onclick="selectPublish(this,'now')"><input type="radio" name="pub" checked /> ทันที</label>
+        <label class="radio-opt" onclick="selectPublish(this,'schedule')"><input type="radio" name="pub" /> ตั้งเวลา</label>
+        <label class="radio-opt" onclick="selectPublish(this,'draft')"><input type="radio" name="pub" /> ฉบับร่าง</label>
+      </div>
+    </div>
+    <div id="schedule-wrap" class="hidden">
+      <div class="alert alert-info" style="margin-bottom:12px;">Interval จะเพิ่มให้แต่ละตอนอัตโนมัติ</div>
+      <div class="form-row">
+        <div class="form-group"><label>เวลาเริ่มต้น (ตอนแรก)</label><input type="datetime-local" id="schedule-start" /></div>
+        <div class="form-group"><label>Interval ระหว่างตอน (นาที)</label><input type="number" id="schedule-interval" value="60" min="1" /></div>
+      </div>
+    </div>
+    <hr class="divider">
+    <div class="setting-row">
+      <div><div class="setting-label">Delay ระหว่าง Upload</div><div class="setting-desc">ป้องกัน rate limit</div></div>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <input type="number" id="delay-sec" value="2" min="0" max="60" step="0.5" class="input-sm" />
+        <span style="font-family:var(--mono);font-size:12px;color:var(--text-muted);">วินาที</span>
+      </div>
+    </div>
+    <div class="setting-row">
+      <div><div class="setting-label">Retry เมื่อล้มเหลว</div><div class="setting-desc">จำนวนครั้งก่อนข้าม</div></div>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <input type="number" id="retry-count" value="2" min="0" max="5" class="input-sm" />
+        <span style="font-family:var(--mono);font-size:12px;color:var(--text-muted);">ครั้ง</span>
+      </div>
+    </div>
+    <div class="setting-row">
+      <div><div class="setting-label">หมายเหตุตอน</div><div class="setting-desc">chapter_note</div></div>
+      <input type="text" id="chapter-note" placeholder="" style="width:220px" />
+    </div>
+  </div>
+
+  <!-- 06 Manage published -->
+  <div class="card">
+    <div class="card-title">06 · จัดการตอนที่อัปไปแล้ว</div>
+    <button class="load-novels-btn" id="load-chapters-btn" onclick="loadPublishedChapters()">⬇ โหลดรายการตอนที่ลงแล้ว</button>
+    <div id="manage-area" class="hidden mt12">
+      <div class="manage-toolbar">
+        <button class="btn-sm" onclick="toggleSelectAll()">☑ เลือกทั้งหมด</button>
+        <button class="btn-sm danger" onclick="deleteSelected()">🗑 ลบที่เลือก</button>
+        <span style="font-family:var(--mono);font-size:12px;color:var(--text-muted);margin-left:auto;" id="manage-count"></span>
+      </div>
+      <div id="manage-list"></div>
+    </div>
+  </div>
+
+  <!-- 07 Run -->
+  <div class="card">
+    <div class="card-title">07 · ดำเนินการ</div>
+    <div class="progress-wrap" id="progress-wrap" style="display:none;"><div class="progress-bar" id="progress-bar" style="width:0%"></div></div>
+    <div style="display:flex;gap:10px;margin-bottom:12px;">
+      <button class="run-btn" id="run-btn" onclick="startUpload()">▶ เริ่มอัปโหลด</button>
+      <button id="stop-btn" onclick="stopUpload()" style="padding:14px 20px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;color:var(--red);font-family:var(--mono);font-size:14px;cursor:pointer;display:none;white-space:nowrap;">⏹ หยุด</button>
+    </div>
+    <div id="log"></div>
+  </div>
+
+</div>
+
+<!-- Preview Modal -->
+<div class="modal-overlay hidden" id="modal-preview">
+  <div class="modal-box">
+    <div class="modal-title">
+      <span>👁 Preview ตอน</span>
+      <button class="modal-close" onclick="closeModal('modal-preview')">✕</button>
+    </div>
+    <div id="preview-chapter-name" style="font-family:var(--mono);font-size:12px;color:var(--text-muted);margin-bottom:10px;"></div>
+    <div class="preview-tabs">
+      <button class="preview-tab active" onclick="switchPreviewTab('rendered')">🖥 Rendered</button>
+      <button class="preview-tab" onclick="switchPreviewTab('html')">📄 HTML Raw</button>
+    </div>
+    <div id="pv-rendered"><div class="preview-rendered" id="preview-content"></div></div>
+    <div id="pv-html" class="hidden"><div class="preview-html-raw" id="preview-html"></div></div>
+    <div class="modal-footer">
+      <button class="btn-sm" onclick="navigatePreview(-1)">← ก่อนหน้า</button>
+      <button class="btn-sm" onclick="navigatePreview(1)">ถัดไป →</button>
+      <button class="btn-sm primary" onclick="closeModal('modal-preview')">ปิด</button>
+    </div>
+  </div>
+</div>
+
+<!-- Edit Published Modal -->
+<div class="modal-overlay hidden" id="modal-edit">
+  <div class="modal-box">
+    <div class="modal-title">
+      <span>✏️ แก้ไขตอน</span>
+      <button class="modal-close" onclick="closeModal('modal-edit')">✕</button>
+    </div>
+    <div class="form-group">
+      <label>ชื่อตอน</label>
+      <input type="text" id="edit-title" style="font-family:var(--sans);font-size:14px;" />
+    </div>
+    <div class="form-group">
+      <label>เนื้อหา (plain text)</label>
+      <textarea class="edit-ta" id="edit-content"></textarea>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-sm" onclick="closeModal('modal-edit')">ยกเลิก</button>
+      <button class="btn-sm primary" onclick="saveEditedChapter()">💾 บันทึก</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ─── State ───────────────────────────────────────────────
+let chapters = [], selectedNovelId = null, selectedNovelTitle = '';
+let isRunning = false, shouldStop = false;
+let priceMode = 0, publishMode = 'now';
+let mode = 'batch', inputMode = 'files';
+let publishedChapters = [], editingRawId = null, editingChapterData = null, previewIndex = 0;
+let prefixApplied = false;
+
+// ─── Token / Novels ──────────────────────────────────────
+function getToken() { return document.getElementById('bearer-token').value.trim(); }
+
+// ─── Token localStorage ───────────────────────────────────
+function saveToken(){
+  const t=getToken(); if(!t){log('err','ไม่มี Token ให้บันทึก');return;}
+  localStorage.setItem('rr_bearer_token',t);
+  log('ok','บันทึก Token ลง localStorage แล้ว');
+  document.getElementById('token-saved-badge').classList.remove('hidden');
+}
+function clearToken(){
+  localStorage.removeItem('rr_bearer_token');
+  document.getElementById('bearer-token').value='';
+  document.getElementById('token-saved-badge').classList.add('hidden');
+  showTokenStatus('idle');
+  log('info','ลบ Token ที่บันทึกแล้ว');
+}
+function onTokenInput(){
+  // hide saved badge when user types new token
+  document.getElementById('token-saved-badge').classList.add('hidden');
+}
+function loadSavedToken(){
+  const t=localStorage.getItem('rr_bearer_token');
+  if(t){
+    document.getElementById('bearer-token').value=t;
+    document.getElementById('token-saved-badge').classList.remove('hidden');
+    log('info','โหลด Token จาก localStorage');
+  }
+}
+
+// ─── Bookmarklet setup ────────────────────────────────────
+function initBookmarklet(){
+  const code=`javascript:(function(){
+    try{
+      const cookies=document.cookie.split(';');
+      const sessionCookie=cookies.find(c=>c.trim().startsWith('__Secure-next-auth.session-token'));
+      fetch('/api/auth/session',{credentials:'include'})
+        .then(r=>r.json())
+        .then(data=>{
+          const token=data?.accessToken||data?.token||data?.bearerToken||data?.user?.token;
+          if(token){
+            navigator.clipboard.writeText(token).then(()=>alert('✓ คัดลอก Token แล้ว!\n\nวางใน ReadRealm Auto Poster'));
+          } else {
+            const msg='ไม่พบ token ใน session\n\nลอง Network tab แล้วหา Authorization header';
+            alert(msg);console.log('session data:',data);
+          }
+        }).catch(e=>alert('Error: '+e.message));
+    }catch(e){alert('Error: '+e.message);}
+  })();`;
+  const link=document.getElementById('bookmarklet-link');
+  link.href=code;
+}
+
+async function verifyToken() {
+  const t = getToken(); if (!t) { showTokenStatus('invalid'); return; }
+  const el = document.getElementById('token-status');
+  el.textContent = '...'; el.className = 'token-status idle';
+  try {
+    const r = await apiGet('https://api-writer.readrealm.co/writer/novels/getNovelsList?per_page=1&page=1');
+    r.ok ? (showTokenStatus('valid'), log('ok','Token ถูกต้อง')) : (showTokenStatus('invalid'), log('err','Token ผิด: '+r.status));
+  } catch(e) { showTokenStatus('invalid'); log('err','ตรวจสอบล้มเหลว'); }
+}
+
+function showTokenStatus(s) {
+  const el = document.getElementById('token-status');
+  el.className = 'token-status ' + s;
+  el.textContent = s==='valid'?'✓ ใช้ได้': s==='invalid'?'✗ ผิด':'ตรวจสอบ';
+}
+
+async function loadNovels() {
+  const t = getToken(); if (!t) { log('err','กรุณากรอก Token'); return; }
+  const btn = document.getElementById('load-novels-btn');
+  btn.textContent = '⏳ กำลังโหลด...'; btn.disabled = true;
+  try {
+    const r = await apiGet('https://api-writer.readrealm.co/writer/novels/getNovelsList?novel_subject=&novel_status=&novel_category=&novel_rating=&novel_publish=&per_page=50&page=1');
+    renderNovels(await r.json()); showTokenStatus('valid');
+  } catch(e) { log('err','โหลดไม่สำเร็จ: '+e.message); }
+  btn.textContent = '⬇ โหลดรายการนิยาย'; btn.disabled = false;
+}
+
+function renderNovels(data) {
+  const grid = document.getElementById('novel-grid');
+  const novels = data?.data||data?.novels||data?.items||(Array.isArray(data)?data:[]);
+  if (!novels.length) { grid.innerHTML='<div style="color:var(--text-muted);font-size:13px;font-family:var(--mono);grid-column:1/-1;padding:16px;text-align:center;">ไม่พบนิยาย</div>'; return; }
+  grid.innerHTML = '';
+  novels.forEach(n => {
+    const id = n.novel_ID||n.id||n._id;
+    const title = n.novel_subject||n.title||n.name||'ไม่มีชื่อ';
+    const cover = n.novel_cover||n.cover||'';
+    const cnt = n.total_chapters||n.chapter_count||0;
+    const card = document.createElement('div');
+    card.className = 'novel-card'; card.dataset.id = id;
+    card.innerHTML = `${cover?`<img class="novel-thumb" src="${cover}" onerror="this.style.display='none'"/>`:'<div class="novel-thumb"></div>'}
+      <div class="novel-info"><div class="novel-title" title="${title}">${title}</div><div class="novel-meta">${cnt} ตอน · ID: ${String(id).slice(0,8)}...</div></div>
+      <div class="novel-check hidden">✓</div>`;
+    card.onclick = () => selectNovel(id, title, card);
+    grid.appendChild(card);
+  });
+  log('ok',`โหลดนิยาย ${novels.length} เรื่อง`);
+}
+
+function selectNovel(id, title, el) {
+  document.querySelectorAll('.novel-card').forEach(c => { c.classList.remove('selected'); c.querySelector('.novel-check').classList.add('hidden'); });
+  el.classList.add('selected'); el.querySelector('.novel-check').classList.remove('hidden');
+  selectedNovelId = id; selectedNovelTitle = title;
+  log('info','เลือก: '+title);
+}
+
+// ─── Mode switching ───────────────────────────────────────
+function switchMode(m) {
+  mode = m;
+  ['batch','single'].forEach(k => {
+    document.getElementById('mode-'+k).classList.toggle('hidden', m!==k);
+    document.getElementById('tab-'+k).classList.toggle('active', m===k);
+  });
+}
+
+function switchInput(m) {
+  inputMode = m;
+  ['nt','files','zip','delimiter','epub'].forEach(k => {
+    document.getElementById('input-'+k).classList.toggle('hidden', m!==k);
+  });
+  document.getElementById('tab-nt').classList.toggle('active', m==='nt');
+  document.getElementById('tab-files').classList.toggle('active', m==='files');
+  document.getElementById('tab-zip').classList.toggle('active', m==='zip');
+  document.getElementById('tab-delim').classList.toggle('active', m==='delimiter');
+  document.getElementById('tab-epub').classList.toggle('active', m==='epub');
+}
+
+// ─── NovelTrans bridge (postMessage) ──────────────────────
+// Populated by the parent NovelTrans app when this page is embedded as an iframe.
+let ntChapters = [];           // [{title, content, chapterNum, status}]
+let ntOnlyTranslated = true;
+const isEmbedded = window.parent && window.parent !== window;
+
+function ntStatusTranslated(s){ return s === 'translated' || s === 'partial'; }
+
+function renderNtBridge(){
+  const hint = document.getElementById('nt-standalone-hint');
+  const bridge = document.getElementById('nt-bridge');
+  if (!isEmbedded) { hint.classList.remove('hidden'); bridge.classList.add('hidden'); return; }
+  hint.classList.add('hidden'); bridge.classList.remove('hidden');
+  const translated = ntChapters.filter(c => ntStatusTranslated(c.status) && (c.content||'').trim());
+  document.getElementById('nt-translated').textContent = translated.length;
+  document.getElementById('nt-all').textContent = ntChapters.length;
+}
+
+function toggleNtOnlyTranslated(el){
+  const cb = el.querySelector('input');
+  cb.checked = !cb.checked;
+  el.classList.toggle('checked', cb.checked);
+  ntOnlyTranslated = cb.checked;
+}
+
+function requestNtChapters(){
+  if (!isEmbedded){ log('warn','ไม่ได้เปิดผ่าน NovelTrans'); return; }
+  window.parent.postMessage({ type:'RR_REQUEST_CHAPTERS' }, '*');
+}
+
+function pullFromNovelTrans(){
+  if (!isEmbedded){ log('warn','ไม่ได้เปิดผ่าน NovelTrans'); return; }
+  let src = ntChapters.slice();
+  if (ntOnlyTranslated) src = src.filter(c => ntStatusTranslated(c.status));
+  src = src.filter(c => (c.content||'').trim());
+  if (!src.length){ log('warn','ไม่มีตอนที่แปลแล้วให้ดึง'); return; }
+  src.sort((a,b)=>(a.chapterNum||0)-(b.chapterNum||0));
+  let added = 0;
+  src.forEach(c=>{
+    const num = c.chapterNum!=null ? '#'+c.chapterNum+' ' : '';
+    addChapter((num + (c.title||'')).trim() || 'ไม่มีชื่อ', c.content);
+    added++;
+  });
+  log('ok',`ดึง ${added} ตอนจาก NovelTrans เข้าคิวแล้ว`);
+}
+
+window.addEventListener('message', e => {
+  const d = e.data; if (!d || typeof d !== 'object') return;
+  if (d.type === 'NT_CHAPTERS'){
+    ntChapters = Array.isArray(d.chapters) ? d.chapters : [];
+    if (d.wsName) document.getElementById('nt-ws-name').textContent = d.wsName;
+    renderNtBridge();
+  }
+});
+
+// ─── File / ZIP handling ──────────────────────────────────
+function handleFiles(files) {
+  const arr = Array.from(files).sort((a,b)=>a.name.localeCompare(b.name,undefined,{numeric:true}));
+  let pending = arr.length; const results = [];
+  arr.forEach((f,idx) => {
+    const reader = new FileReader();
+    reader.onload = e => { results[idx]={title:f.name.replace(/\.txt$/i,''),content:e.target.result}; if(--pending===0) results.forEach(r=>addChapter(r.title,r.content)); };
+    reader.readAsText(f,'UTF-8');
+  });
+}
+
+async function handleZip(file) {
+  if (!file) return;
+  log('info','กำลังแตก ZIP: '+file.name);
+  try {
+    const buf = await file.arrayBuffer();
+    const entries = await unzipEntries(buf);
+    const txts = entries.filter(e=>e.name.toLowerCase().endsWith('.txt')&&!e.name.startsWith('__MACOSX'));
+    txts.sort((a,b)=>a.name.localeCompare(b.name,undefined,{numeric:true}));
+    if (!txts.length) { log('warn','ไม่พบไฟล์ .txt ใน ZIP'); return; }
+    txts.forEach(e=>addChapter(e.name.replace(/^.*[\\/]/,'').replace(/\.txt$/i,''),e.text));
+    log('ok',`แตก ZIP: ${txts.length} ไฟล์`);
+  } catch(e) { log('err','แตก ZIP ล้มเหลว: '+e.message); }
+}
+
+async function unzipEntries(buf) {
+  const view = new DataView(buf), u8 = new Uint8Array(buf), dec = new TextDecoder('utf-8');
+  const entries = [];
+  let eocd = -1;
+  for (let i=u8.length-22;i>=0;i--) { if(view.getUint32(i,true)===0x06054b50){eocd=i;break;} }
+  if (eocd<0) throw new Error('ไม่ใช่ ZIP ที่ถูกต้อง');
+  const cdOffset = view.getUint32(eocd+16,true), cdCount = view.getUint16(eocd+8,true);
+  let pos = cdOffset;
+  for (let i=0;i<cdCount;i++) {
+    if (view.getUint32(pos,true)!==0x02014b50) break;
+    const compMethod=view.getUint16(pos+10,true), compSize=view.getUint32(pos+20,true);
+    const fileNameLen=view.getUint16(pos+28,true), extraLen=view.getUint16(pos+30,true), commentLen=view.getUint16(pos+32,true);
+    const localOffset=view.getUint32(pos+42,true);
+    const name=dec.decode(u8.slice(pos+46,pos+46+fileNameLen));
+    pos+=46+fileNameLen+extraLen+commentLen;
+    if (name.endsWith('/')) continue;
+    const lhFnLen=view.getUint16(localOffset+26,true), lhExtraLen=view.getUint16(localOffset+28,true);
+    const dataStart=localOffset+30+lhFnLen+lhExtraLen;
+    const compData=u8.slice(dataStart,dataStart+compSize);
+    let text='';
+    if (compMethod===0) {
+      text=dec.decode(compData);
+    } else if (compMethod===8) {
+      const ds=new DecompressionStream('deflate-raw'), w=ds.writable.getWriter();
+      w.write(compData); w.close();
+      const chunks=[]; const reader=ds.readable.getReader();
+      while(true){const{done,value}=await reader.read();if(done)break;chunks.push(value);}
+      const total=chunks.reduce((s,c)=>s+c.length,0), out=new Uint8Array(total); let off=0;
+      chunks.forEach(c=>{out.set(c,off);off+=c.length;});
+      text=dec.decode(out);
+    }
+    entries.push({name,text});
+  }
+  return entries;
+}
+
+function handleDelimFile(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => parseDelimited(e.target.result, document.getElementById('delimiter').value||'---');
+  reader.readAsText(file,'UTF-8');
+}
+
+// ─── EPUB 3.3 handling ────────────────────────────────────
+async function handleEpub(file) {
+  if (!file) return;
+  log('info','กำลังอ่าน EPUB 3.3: '+file.name);
+  try {
+    const buf = await file.arrayBuffer();
+    const entries = await unzipEntries(buf);
+
+    // Build lookup: normalized path → {name, text}
+    const fileMap = {};
+    entries.forEach(e => { fileMap[e.name.toLowerCase()] = e; });
+
+    // ── Step 1: OCF container.xml → locate rootfile (§4.2.6.3.1) ──
+    const containerEntry = fileMap['meta-inf/container.xml'];
+    if (!containerEntry) throw new Error('ไม่พบ META-INF/container.xml — ไม่ใช่ EPUB ที่ถูกต้อง (OCF §4.2.6)');
+    const containerXml = containerEntry.text;
+    // rootfile element with media-type="application/oebps-package+xml"
+    const rootfileMatch = containerXml.match(/<rootfile[^>]+full-path\s*=\s*["']([^"']+)["'][^>]*>/i);
+    if (!rootfileMatch) throw new Error('ไม่พบ <rootfile> ใน container.xml');
+    const opfPath = rootfileMatch[1];
+    const opfDir = opfPath.includes('/') ? opfPath.substring(0, opfPath.lastIndexOf('/') + 1) : '';
+
+    // ── Step 2: Parse Package Document (§5) ──
+    const opfEntry = fileMap[opfPath.toLowerCase()];
+    if (!opfEntry) throw new Error('ไม่พบ Package Document: ' + opfPath);
+    const opfText = opfEntry.text;
+
+    // Detect EPUB version from <package version="...">
+    const versionMatch = opfText.match(/<package[^>]+version\s*=\s*["']([^"']+)["']/i);
+    const epubVersion = versionMatch ? versionMatch[1] : 'unknown';
+    log('info', `EPUB version: ${epubVersion}`);
+
+    // ── Step 2a: Parse manifest (§5.6) ──
+    // Extract all <item> elements with id, href, media-type, properties
+    const manifestItems = {};
+    let navDocId = null, coverImageId = null;
+    const manifestRegex = /<item\s([^>]+?)\/?>/gi;
+    let mm;
+    while ((mm = manifestRegex.exec(opfText)) !== null) {
+      const attrs = mm[1];
+      const idM = attrs.match(/\bid\s*=\s*["']([^"']+)["']/i);
+      const hrefM = attrs.match(/\bhref\s*=\s*["']([^"']+)["']/i);
+      const mtM = attrs.match(/\bmedia-type\s*=\s*["']([^"']+)["']/i);
+      const propsM = attrs.match(/\bproperties\s*=\s*["']([^"']+)["']/i);
+      if (!idM || !hrefM) continue;
+      const itemId = idM[1];
+      const href = decodeURIComponent(hrefM[1]);
+      const mediaType = mtM ? mtM[1] : '';
+      const properties = propsM ? propsM[1].split(/\s+/) : [];
+      manifestItems[itemId] = { href, mediaType, properties };
+      // EPUB 3.3 §D.6.3: properties="nav" → navigation document
+      if (properties.includes('nav')) navDocId = itemId;
+      // EPUB 3.3 §D.6.1: properties="cover-image"
+      if (properties.includes('cover-image')) coverImageId = itemId;
+    }
+
+    // ── Step 2b: Parse nav document for TOC titles (§7) ──
+    // EPUB 3.3 uses XHTML nav with epub:type="toc" instead of NCX
+    const tocTitles = {}; // href → title mapping from nav
+    if (navDocId && manifestItems[navDocId]) {
+      const navItem = manifestItems[navDocId];
+      const navPath = (opfDir + navItem.href).toLowerCase();
+      const navEntry = fileMap[navPath] || fileMap[navItem.href.toLowerCase()];
+      if (navEntry) {
+        const navHtml = navEntry.text;
+        // Find <nav epub:type="toc"> ... </nav>
+        const tocNavMatch = navHtml.match(/<nav[^>]*epub:type\s*=\s*["'][^"']*\btoc\b[^"']*["'][^>]*>([\s\S]*?)<\/nav>/i);
+        if (tocNavMatch) {
+          // Extract <a href="...">title</a> from nested <li> elements
+          const linkRegex = /<a[^>]+href\s*=\s*["']([^"'#]+)[^"']*["'][^>]*>([\s\S]*?)<\/a>/gi;
+          let lm;
+          while ((lm = linkRegex.exec(tocNavMatch[1])) !== null) {
+            const linkHref = decodeURIComponent(lm[1]).toLowerCase();
+            const linkTitle = lm[2].replace(/<[^>]+>/g,'').trim();
+            if (linkTitle) {
+              // Resolve relative to nav document location
+              const navDir = navItem.href.includes('/') ? navItem.href.substring(0, navItem.href.lastIndexOf('/') + 1) : '';
+              const resolvedHref = (opfDir + navDir + linkHref).toLowerCase()
+                .replace(/\/\.\//g, '/'); // normalize ./
+              tocTitles[resolvedHref] = linkTitle;
+              // Also store with just the filename for fallback matching
+              const fname = linkHref.split('/').pop();
+              if (fname) tocTitles[fname] = tocTitles[fname] || linkTitle;
+            }
+          }
+        }
+        log('info', `TOC nav: พบ ${Object.keys(tocTitles).length} รายการ`);
+      }
+    }
+
+    // Fallback: try NCX (§5.9.5 legacy) if no nav document
+    if (!navDocId || Object.keys(tocTitles).length === 0) {
+      // Find NCX by media-type
+      for (const [id, item] of Object.entries(manifestItems)) {
+        if (item.mediaType === 'application/x-dtbncx+xml') {
+          const ncxPath = (opfDir + item.href).toLowerCase();
+          const ncxEntry = fileMap[ncxPath] || fileMap[item.href.toLowerCase()];
+          if (ncxEntry) {
+            const ncxText = ncxEntry.text;
+            const npRegex = /<navPoint[^>]*>[\s\S]*?<navLabel>\s*<text>([\s\S]*?)<\/text>[\s\S]*?<content\s[^>]*src\s*=\s*["']([^"'#]+)[^"']*["']/gi;
+            let nm;
+            while ((nm = npRegex.exec(ncxText)) !== null) {
+              const ncxTitle = nm[1].replace(/<[^>]+>/g,'').trim();
+              const ncxHref = decodeURIComponent(nm[2]).toLowerCase();
+              const resolvedNcx = (opfDir + ncxHref).toLowerCase();
+              if (ncxTitle) {
+                tocTitles[resolvedNcx] = tocTitles[resolvedNcx] || ncxTitle;
+                const fname = ncxHref.split('/').pop();
+                if (fname) tocTitles[fname] = tocTitles[fname] || ncxTitle;
+              }
+            }
+            log('info', `NCX fallback: พบ ${Object.keys(tocTitles).length} รายการ`);
+          }
+          break;
+        }
+      }
+    }
+
+    // ── Step 2c: Parse spine (§5.7) ──
+    const spineItems = [];
+    const spineRegex = /<itemref\s([^>]+?)\/?>/gi;
+    let sm;
+    while ((sm = spineRegex.exec(opfText)) !== null) {
+      const attrs = sm[1];
+      const idrefM = attrs.match(/\bidref\s*=\s*["']([^"']+)["']/i);
+      const linearM = attrs.match(/\blinear\s*=\s*["']([^"']+)["']/i);
+      if (!idrefM) continue;
+      const linear = linearM ? linearM[1].toLowerCase() : 'yes';
+      // §5.7.2: linear="no" items are auxiliary content (not primary reading order)
+      spineItems.push({ idref: idrefM[1], linear });
+    }
+
+    if (!spineItems.length) throw new Error('ไม่พบ <itemref> ใน spine (§5.7)');
+
+    // ── Step 3: Extract chapters in spine order ──
+    let added = 0, skipped = 0;
+    for (const spineItem of spineItems) {
+      const item = manifestItems[spineItem.idref];
+      if (!item) { skipped++; continue; }
+
+      // Skip non-linear items (cover, TOC pages, etc.)
+      if (spineItem.linear === 'no') { skipped++; continue; }
+
+      // Skip the nav document itself (it's the TOC, not content)
+      if (spineItem.idref === navDocId) { skipped++; continue; }
+
+      // §3.2: EPUB content documents must be application/xhtml+xml or image/svg+xml
+      const mt = item.mediaType.toLowerCase();
+      if (mt !== 'application/xhtml+xml' && !mt.includes('html')) { skipped++; continue; }
+
+      // Resolve file path
+      const filePath = (opfDir + item.href).toLowerCase();
+      const entry = fileMap[filePath] || fileMap[item.href.toLowerCase()];
+      if (!entry) { skipped++; continue; }
+
+      const htmlContent = entry.text;
+
+      // ── Title resolution priority: ──
+      // 1. TOC nav/NCX title (most reliable, user-facing)
+      // 2. <title> tag in content document
+      // 3. First <h1>-<h3> heading
+      // 4. Filename fallback
+      let chTitle = '';
+
+      // 1) From TOC
+      const fname = item.href.split('/').pop().toLowerCase();
+      chTitle = tocTitles[filePath] || tocTitles[fname] || '';
+
+      // 2) From <title>
+      if (!chTitle) {
+        const titleMatch = htmlContent.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+        if (titleMatch) {
+          const t = titleMatch[1].replace(/<[^>]+>/g,'').trim();
+          if (t && t.toLowerCase() !== 'untitled' && t.length > 0) chTitle = t;
+        }
+      }
+
+      // 3) From headings
+      if (!chTitle) {
+        const hMatch = htmlContent.match(/<h[1-3][^>]*>([\s\S]*?)<\/h[1-3]>/i);
+        if (hMatch) chTitle = hMatch[1].replace(/<[^>]+>/g,'').trim();
+      }
+
+      // 4) Filename
+      if (!chTitle) {
+        chTitle = item.href.split('/').pop().replace(/\.(xhtml|html|htm|xml)$/i, '');
+      }
+
+      // ── Convert XHTML body to plain text ──
+      const bodyMatch = htmlContent.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+      const bodyHtml = bodyMatch ? bodyMatch[1] : htmlContent;
+
+      let plainText = bodyHtml
+        .replace(/<script[\s\S]*?<\/script>/gi, '')
+        .replace(/<style[\s\S]*?<\/style>/gi, '')
+        // Remove heading tags (title already extracted separately)
+        .replace(/<h[1-6][^>]*>[\s\S]*?<\/h[1-6]>/gi, '')
+        // <ruby> → keep base text, remove <rt>/<rp>
+        .replace(/<rt[^>]*>[\s\S]*?<\/rt>/gi, '')
+        .replace(/<rp[^>]*>[\s\S]*?<\/rp>/gi, '')
+        // Block elements → newlines
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<\/?(p|div|section|article|blockquote|li|tr|dd|dt|figcaption)[^>]*>/gi, '\n')
+        // Remove all remaining tags
+        .replace(/<[^>]+>/g, '')
+        // Decode entities
+        .replace(/&nbsp;/g, ' ')
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&apos;/g, "'")
+        .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n)))
+        .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCharCode(parseInt(n, 16)))
+        // Clean whitespace
+        .replace(/[ \t]+/g, ' ')
+        .replace(/\n[ \t]+/g, '\n')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+
+      // Skip near-empty content (covers, blank pages, copyright, etc.)
+      if (plainText.length < 20) { skipped++; continue; }
+
+      addChapter(chTitle, plainText);
+      added++;
+    }
+
+    log('ok', `EPUB ${epubVersion}: เพิ่ม ${added} ตอน · ข้าม ${skipped} ไฟล์`);
+    if (added === 0) log('warn', 'ไม่พบเนื้อหาตอนใน EPUB — ลองตรวจสอบไฟล์ต้นฉบับ');
+
+  } catch(e) {
+    log('err', 'อ่าน EPUB ล้มเหลว: ' + e.message);
+  }
+}
+
+function parseDelimited(text, delim) {
+  const lines=text.split('\n'); let ct='',cl=[],num=0;
+  function flush(){if(cl.join('').trim()){addChapter(ct||`ตอนที่ ${String(num).padStart(2,'0')}`,cl.join('\n').trim());}}
+  lines.forEach(line=>{
+    const tr=line.trim();
+    if(tr.startsWith(delim)){flush();num++;cl=[];ct=tr.replace(new RegExp('^'+escapeRegex(delim)).source,'').replace(new RegExp(escapeRegex(delim)+'$').source,'').trim();}
+    else{if(!ct&&!cl.length&&tr){ct=tr;}else{cl.push(line);}}
+  });
+  flush();
+}
+
+function escapeRegex(s){return s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');}
+
+function addChapter(title,content){chapters.push({id:Date.now()+Math.random(),title,content,status:'pending'});renderChapterList();}
+
+function renderChapterList(){
+  const list=document.getElementById('chapter-list'),wrap=document.getElementById('chapter-list-wrap');
+  if(!chapters.length){wrap.classList.add('hidden');return;}
+  wrap.classList.remove('hidden'); list.innerHTML='';
+  chapters.forEach((ch,i)=>{
+    const div=document.createElement('div'); div.className='chapter-item'; div.id='ch-'+ch.id;
+    div.innerHTML=`<input type="checkbox" class="manage-check ch-check" data-id="${ch.id}" data-idx="${i}" onchange="onChapterCheck(event,${i})" style="width:16px;height:16px;accent-color:var(--accent);flex-shrink:0;cursor:pointer;" />
+      <span class="ch-num">#${i+1}</span>
+      <span class="ch-title" title="${escHtml(ch.title)}" ondblclick="inlineEdit(this,'${ch.id}')">${escHtml(ch.title)}</span>
+      <span class="ch-chars">${ch.content.length.toLocaleString()} ตัว</span>
+      <span class="ch-status ${ch.status}" id="status-${ch.id}">${statusLabel(ch.status)}</span>
+      <button class="ch-btn" onclick="previewChapter('${ch.id}')" title="Preview">👁</button>
+      <button class="ch-btn del" onclick="removeChapter('${ch.id}')" title="ลบ" ${isRunning?'disabled':''}>✕</button>`;
+    list.appendChild(div);
+  });
+  updateStats();
+}
+
+function inlineEdit(el,id){
+  if(isRunning)return;
+  const ch=chapters.find(c=>String(c.id)===String(id)); if(!ch)return;
+  const inp=document.createElement('input'); inp.className='ch-title-input'; inp.value=ch.title;
+  el.replaceWith(inp); inp.focus(); inp.select();
+  function commit(){ch.title=inp.value.trim()||ch.title;renderChapterList();}
+  inp.onblur=commit;
+  inp.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();commit();}if(e.key==='Escape')renderChapterList();};
+}
+
+function statusLabel(s){return{pending:'รอ',uploading:'⏳ ส่ง',done:'✓ สำเร็จ',error:'✗ ล้มเหลว'}[s]||s;}
+function removeChapter(id){chapters=chapters.filter(c=>String(c.id)!==String(id));renderChapterList();}
+function clearChapters(){chapters=[];renderChapterList();['file-input','file-input-delim','file-input-zip','file-input-epub'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});}
+function updateStats(){
+  document.getElementById('stat-total').textContent=chapters.length;
+  document.getElementById('stat-done').textContent=chapters.filter(c=>c.status==='done').length;
+  document.getElementById('stat-fail').textContent=chapters.filter(c=>c.status==='error').length;
+  document.getElementById('stat-remain').textContent=chapters.filter(c=>c.status==='pending').length;
+}
+
+// ─── Prefix ───────────────────────────────────────────────
+function onPrefixToggle(){document.getElementById('prefix-options').classList.toggle('hidden',!document.getElementById('prefix-enable').checked);updatePrefixPreview();}
+function onPrefixFormatChange(){document.getElementById('prefix-custom-wrap').classList.toggle('hidden',document.getElementById('prefix-format').value!=='custom');updatePrefixPreview();}
+
+function getPrefix(n){
+  const fmt=document.getElementById('prefix-format').value;
+  const p2=String(n).padStart(2,'0'),p3=String(n).padStart(3,'0'),p4=String(n).padStart(4,'0');
+  const map={'N ':n+' ','0N ':p2+' ','00N ':p3+' ','0000N ':p4+' ','N- ':n+'- ','0N- ':p2+'- ','00N- ':p3+'- ','[N] ':'['+n+'] ','[0N] ':'['+p2+'] '};
+  if(fmt==='custom'){const tpl=document.getElementById('prefix-custom').value||'{N} ';return tpl.replace('{0N}',p2).replace('{N}',n);}
+  return map[fmt]||(n+' ');
+}
+
+function updatePrefixPreview(){
+  const start=parseInt(document.getElementById('prefix-start').value)||1;
+  document.getElementById('prefix-preview').textContent=getPrefix(start)+'ชื่อตอน';
+}
+
+function applyPrefixToAll(){
+  if(!chapters.length){log('warn','ยังไม่มีตอน');return;}
+  const start=parseInt(document.getElementById('prefix-start').value)||1;
+  chapters.forEach((ch,i)=>{ch.title=getPrefix(start+i)+ch.title;});
+  renderChapterList(); log('ok','Apply prefix ให้ '+chapters.length+' ตอนแล้ว');
+}
+
+// ─── Bulk Rename ─────────────────────────────────────────
+function toggleBulkRename(){
+  const p=document.getElementById('bulk-rename-panel');
+  p.classList.toggle('hidden');
+  if(!p.classList.contains('hidden'))updateTrimPreview();
+}
+
+function updateTrimPreview(){
+  const first=parseInt(document.getElementById('trim-first').value)||0;
+  const last=parseInt(document.getElementById('trim-last').value)||0;
+  const preview=document.getElementById('trim-preview');
+  if(!chapters.length){preview.textContent='ยังไม่มีตอน';return;}
+  const samples=chapters.slice(0,3).map(ch=>{
+    let t=ch.title;
+    if(first>0)t=t.slice(first);
+    if(last>0&&t.length>last)t=t.slice(0,-last);
+    return `"${ch.title}" → "${t}"`;
+  });
+  preview.innerHTML=samples.join('<br>');
+}
+
+function applyTrimAll(){
+  const first=parseInt(document.getElementById('trim-first').value)||0;
+  const last=parseInt(document.getElementById('trim-last').value)||0;
+  if(first===0&&last===0){log('warn','กำหนดค่า First N หรือ Last N ก่อน');return;}
+  if(!chapters.length){log('warn','ยังไม่มีตอน');return;}
+  chapters.forEach(ch=>{
+    let t=ch.title;
+    if(first>0)t=t.slice(first);
+    if(last>0&&t.length>last)t=t.slice(0,-last);
+    ch.title=t||ch.title;
+  });
+  renderChapterList();
+  log('ok',`Trim ชื่อตอน ${chapters.length} ตอน · first:${first} last:${last}`);
+  updateTrimPreview();
+}
+
+// ─── Range Select (shared helper) ────────────────────────
+let lastChapterCheckIdx = -1;
+let lastManageCheckIdx = -1;
+
+function onChapterCheck(e, idx){
+  if(e.shiftKey && lastChapterCheckIdx >= 0){
+    const checks = Array.from(document.querySelectorAll('.ch-check'));
+    const lo=Math.min(idx, lastChapterCheckIdx), hi=Math.max(idx, lastChapterCheckIdx);
+    const state=e.target.checked;
+    checks.forEach(cb=>{
+      const i=parseInt(cb.dataset.idx);
+      if(i>=lo&&i<=hi)cb.checked=state;
+    });
+  }
+  lastChapterCheckIdx=idx;
+}
+
+function onManageCheck(e, idx){
+  if(e.shiftKey && lastManageCheckIdx >= 0){
+    const checks = Array.from(document.querySelectorAll('.manage-check'));
+    const lo=Math.min(idx, lastManageCheckIdx), hi=Math.max(idx, lastManageCheckIdx);
+    const state=e.target.checked;
+    checks.forEach(cb=>{
+      const i=parseInt(cb.dataset.idx);
+      if(i>=lo&&i<=hi)cb.checked=state;
+    });
+  }
+  lastManageCheckIdx=idx;
+  updateManageCount();
+}
+
+// ─── Preview ─────────────────────────────────────────────
+function previewChapter(id){
+  if(id===null){const p=chapters.filter(c=>c.status!=='done');if(!p.length){log('warn','ไม่มีตอน');return;}previewIndex=chapters.indexOf(p[0]);}
+  else{previewIndex=chapters.findIndex(c=>String(c.id)===String(id));}
+  renderPreview();
+}
+
+function previewSingle(){
+  const title=document.getElementById('single-title').value||'(ไม่มีชื่อ)';
+  const html=textToHtml(document.getElementById('single-content').value);
+  document.getElementById('preview-chapter-name').textContent=title;
+  document.getElementById('preview-content').innerHTML=html;
+  document.getElementById('preview-html').textContent=html;
+  switchPreviewTab('rendered'); openModal('modal-preview');
+}
+
+function renderPreview(){
+  const ch=chapters[previewIndex]; if(!ch)return;
+  const html=textToHtml(ch.content);
+  document.getElementById('preview-chapter-name').textContent=`[${previewIndex+1}/${chapters.length}] ${ch.title}`;
+  document.getElementById('preview-content').innerHTML=html;
+  document.getElementById('preview-html').textContent=html;
+  switchPreviewTab('rendered'); openModal('modal-preview');
+}
+
+function navigatePreview(dir){if(!chapters.length)return;previewIndex=(previewIndex+dir+chapters.length)%chapters.length;renderPreview();}
+
+function switchPreviewTab(tab){
+  document.getElementById('pv-rendered').classList.toggle('hidden',tab!=='rendered');
+  document.getElementById('pv-html').classList.toggle('hidden',tab!=='html');
+  document.querySelectorAll('.preview-tab').forEach((el,i)=>el.classList.toggle('active',(i===0&&tab==='rendered')||(i===1&&tab==='html')));
+}
+
+// ─── Manage Published ─────────────────────────────────────
+async function loadPublishedChapters(){
+  const t=getToken(); if(!t){log('err','กรุณากรอก Token');return;}
+  if(!selectedNovelId){log('err','กรุณาเลือกนิยายก่อน');return;}
+  const btn=document.getElementById('load-chapters-btn');
+  btn.textContent='⏳ กำลังโหลด...'; btn.disabled=true;
+  try {
+    const r=await apiGet(`https://api-writer.readrealm.co/writer/novels/chapters/getChaptersList?novel_ID=${selectedNovelId}&per_page=500&page=1&sort_column=asc`);
+    const data=await r.json();
+    publishedChapters=data?.data||data?.chapters||data?.items||(Array.isArray(data)?data:[]);
+    renderManageList(); document.getElementById('manage-area').classList.remove('hidden');
+    log('ok',`โหลด ${publishedChapters.length} ตอน · total: ${data?.total??publishedChapters.length}`);
+  } catch(e){log('err','โหลดล้มเหลว: '+e.message);}
+  btn.textContent='⬇ โหลดรายการตอนที่ลงแล้ว'; btn.disabled=false;
+}
+
+function renderManageList(){
+  const list=document.getElementById('manage-list'); list.innerHTML='';
+  if(!publishedChapters.length){list.innerHTML='<div style="color:var(--text-muted);font-size:13px;font-family:var(--mono);padding:16px;text-align:center;">ไม่พบตอน</div>';return;}
+  publishedChapters.forEach((ch,i)=>{
+    const id=ch.novel_chapter_ID||ch.chapter_ID||ch.id||ch._id;
+    const title=ch.novel_chapter_title||ch.chapter_title||ch.title||'ไม่มีชื่อ';
+    const price=ch.novel_chapter_price!=null?(ch.novel_chapter_price===0?'ฟรี':ch.novel_chapter_price+' เหรียญ'):
+                ch.chapter_price!=null?(ch.chapter_price===0?'ฟรี':ch.chapter_price+' เหรียญ'):'';
+    const div=document.createElement('div'); div.className='manage-item';
+    div.innerHTML=`<input type="checkbox" class="manage-check" data-id="${escHtml(String(id))}" data-idx="${i}" onchange="onManageCheck(event,${i})"/>
+      <span class="manage-item-num">#${i+1}</span>
+      <span class="manage-item-title" title="${escHtml(title)}">${escHtml(title)}</span>
+      <span class="manage-item-meta">${price}</span>
+      <button class="ch-btn" onclick="openEditPublished('${escHtml(String(id))}','${escHtml(title)}')" title="แก้ไข">✏️</button>`;
+    list.appendChild(div);
+  });
+  updateManageCount();
+}
+
+function updateManageCount(){
+  const n=document.querySelectorAll('.manage-check:checked').length;
+  document.getElementById('manage-count').textContent=n?`เลือก ${n} ตอน`:`${publishedChapters.length} ตอน`;
+}
+
+function toggleSelectAll(){
+  const checks=document.querySelectorAll('.manage-check'), all=Array.from(checks).every(c=>c.checked);
+  checks.forEach(c=>c.checked=!all); updateManageCount();
+}
+
+async function deleteSelected(){
+  const sel=Array.from(document.querySelectorAll('.manage-check:checked')).map(c=>c.dataset.id);
+  if(!sel.length){log('warn','ยังไม่ได้เลือกตอน');return;}
+  if(!confirm(`ลบ ${sel.length} ตอน? ไม่สามารถกู้คืนได้`))return;
+  log('info',`กำลังลบ ${sel.length} ตอน...`);
+  try {
+    const r=await apiPost('https://api-writer.readrealm.co/writer/novels/chapters/chapterAction',{action:'delete',chapter_select:sel});
+    if(r.ok){
+      log('ok',`ลบ ${sel.length} ตอนสำเร็จ`);
+      publishedChapters=publishedChapters.filter(ch=>{
+        const id=String(ch.novel_chapter_ID||ch.chapter_ID||ch.id||ch._id);
+        return !sel.includes(id);
+      });
+      renderManageList();
+    } else {const e=await r.json().catch(()=>({}));log('err',`ลบล้มเหลว: ${r.status} · ${e?.message||''}`);}
+  } catch(e){log('err','ลบล้มเหลว: '+e.message);}
+}
+
+async function openEditPublished(id,title){
+  log('info','กำลังโหลดตอน: '+title);
+  try {
+    const r=await apiGet(`https://api-writer.readrealm.co/writer/novels/chapters/getChapter?chapter_ID=${id}&novel_ID=${selectedNovelId}`);
+    const data=await r.json();
+    const ch=data?.data||data?.chapter||data;
+    editingRawId=id;
+    editingChapterData=ch;
+    document.getElementById('edit-title').value=ch?.novel_chapter_title||ch?.chapter_title||title;
+    document.getElementById('edit-content').value=htmlToPlain(ch?.novel_chapter_content||ch?.chapter_content||'');
+    openModal('modal-edit');
+  } catch(e){log('err','โหลดล้มเหลว: '+e.message);}
+}
+
+async function saveEditedChapter(){
+  const title=document.getElementById('edit-title').value.trim();
+  const content=document.getElementById('edit-content').value;
+  if(!title){alert('กรุณากรอกชื่อตอน');return;}
+  try {
+    const orig=editingChapterData||{};
+    const payload={
+      chapter_ID:editingRawId,
+      novel_ID:selectedNovelId,
+      chapter_title:title,
+      chapter_content:textToHtml(content),
+      chapter_note:orig.novel_chapter_note??orig.chapter_note??'',
+      chapter_price: parseFloat(orig.novel_chapter_price??orig.chapter_price??0)||0,
+      chapter_publish:orig.novel_chapter_publish??orig.chapter_publish??true,
+      chapter_publish_datetime:orig.novel_chapter_publish_datetime??orig.chapter_publish_datetime??new Date().toISOString()
+    };
+    const r=await apiPut('https://api-writer.readrealm.co/writer/novels/chapters/chapterUpdate',payload);
+    if(r.ok){
+      log('ok','✓ บันทึก: '+title); closeModal('modal-edit');
+      const ch=publishedChapters.find(c=>String(c.novel_chapter_ID||c.chapter_ID||c.id)===String(editingRawId));
+      if(ch){ch.novel_chapter_title=title;ch.chapter_title=title;} renderManageList();
+    } else {const e=await r.json().catch(()=>({}));log('err',`บันทึกล้มเหลว: ${r.status} · ${e?.message||''}`);}
+  } catch(e){log('err','บันทึกล้มเหลว: '+e.message);}
+}
+
+// ─── Settings ─────────────────────────────────────────────
+function selectPrice(el,val){
+  document.querySelectorAll('#price-group .radio-opt').forEach(e=>e.classList.remove('checked'));
+  el.classList.add('checked');
+  priceMode=val;
+  document.getElementById('price-custom-wrap').classList.toggle('hidden', val!==null);
+  document.getElementById('price-pattern-wrap').classList.toggle('hidden', val!=='pattern');
+  if(val==='pattern') updatePatternPreview();
+}
+
+function updatePatternPreview(){
+  const n=parseInt(document.getElementById('pattern-paid-count').value)||10;
+  const m=parseInt(document.getElementById('pattern-free-count').value)||1;
+  const price=parseFloat(document.getElementById('pattern-price').value)||1;
+  const cycle=n+m;
+  const rows=[];
+  for(let i=0;i<Math.min(cycle*2,14);i++){
+    const pos=(i%cycle)+1;
+    const isFree=pos>n;
+    rows.push(`ตอนที่ ${i+1}: ${isFree?'<span style="color:var(--green)">ฟรี</span>':`<span style="color:var(--accent2)">${price} เหรียญ</span>`}`);
+  }
+  if(cycle*2>14) rows.push('<span style="color:var(--text-muted)">... วนซ้ำ</span>');
+  document.getElementById('pattern-preview').innerHTML=rows.join(' &nbsp;·&nbsp; ');
+}
+function selectPublish(el,val){publishMode=val;document.querySelectorAll('#publish-group .radio-opt').forEach(e=>e.classList.remove('checked'));el.classList.add('checked');document.getElementById('schedule-wrap').classList.toggle('hidden',val!=='schedule');}
+function getPrice(idx){
+  if(priceMode===0) return 0;
+  if(priceMode==='pattern'){
+    const n=parseInt(document.getElementById('pattern-paid-count').value)||10;
+    const m=parseInt(document.getElementById('pattern-free-count').value)||1;
+    const price=parseFloat(document.getElementById('pattern-price').value)||1;
+    const cycle=n+m;
+    const posInCycle=(idx%cycle); // 0-based
+    return posInCycle<n ? price : 0;
+  }
+  return parseFloat(document.getElementById('price-custom').value)||0;
+}
+function getPublishDatetime(idx=0){if(publishMode==='schedule'){const s=document.getElementById('schedule-start').value,iv=parseInt(document.getElementById('schedule-interval').value)||60;if(s){const d=new Date(s);d.setMinutes(d.getMinutes()+iv*idx);return d.toISOString();}}return new Date().toISOString();}
+function isPublish(){return publishMode!=='draft';}
+
+// ─── Upload ───────────────────────────────────────────────
+async function startUpload(){
+  if(isRunning)return;
+  const token=getToken(); if(!token){log('err','กรุณากรอก Token');return;}
+  if(!selectedNovelId){log('err','กรุณาเลือกนิยาย');return;}
+  if(mode==='single'){await uploadSingle(token);return;}
+
+  // Apply prefix if enabled (section 04 removed - skip)
+
+  const pending=chapters.filter(c=>c.status==='pending');
+  if(!pending.length){log('warn','ไม่มีตอนที่รอส่ง');return;}
+  isRunning=true; shouldStop=false;
+  document.getElementById('run-btn').disabled=true;
+  document.getElementById('stop-btn').style.display='flex';
+  document.getElementById('progress-wrap').style.display='block';
+  const delay=parseFloat(document.getElementById('delay-sec').value)||0;
+  const retry=parseInt(document.getElementById('retry-count').value)||0;
+  const note=document.getElementById('chapter-note').value;
+  let schedIdx=0,done=0,total=pending.length;
+  log('info',`เริ่ม upload ${total} ตอน · ${selectedNovelTitle}`);
+  for(let i=0;i<chapters.length;i++){
+    if(shouldStop){log('warn','หยุดโดยผู้ใช้');break;}
+    const ch=chapters[i]; if(ch.status!=='pending')continue;
+    setChapterStatus(ch.id,'uploading');
+    let success=false,attempt=0;
+    while(attempt<=retry&&!success){
+      if(attempt>0){log('warn',`Retry #${attempt}: ${ch.title}`);await sleep(2000);}
+      try{
+        const payload={chapter_ID:"0",novel_ID:selectedNovelId,chapter_title:ch.title,chapter_content:textToHtml(ch.content),chapter_note:note,chapter_price:getPrice(schedIdx),chapter_publish:isPublish(),chapter_publish_datetime:getPublishDatetime(schedIdx)};
+        const r=await apiPost('https://api-writer.readrealm.co/writer/novels/chapters/chapterCreate',payload);
+        const resp=await r.json().catch(()=>({}));
+        if(r.ok){success=true;setChapterStatus(ch.id,'done');done++;const chPrice=getPrice(schedIdx);schedIdx++;log('ok',`[${done}/${total}] ✓ ${ch.title}${chPrice>0?' · '+chPrice+' เหรียญ':' · ฟรี'}`);}
+        else{log('err',`[${i+1}] ✗ ${ch.title} → ${r.status}: ${resp?.message||JSON.stringify(resp)}`);}
+      }catch(e){log('err',`[${i+1}] ✗ ${ch.title} → ${e.message}`);}
+      attempt++;
+    }
+    if(!success)setChapterStatus(ch.id,'error');
+    updateProgress(i+1,chapters.length);
+    if(delay>0&&i<chapters.length-1&&!shouldStop)await sleep(delay*1000);
+  }
+  log('info',`เสร็จสิ้น · สำเร็จ ${chapters.filter(c=>c.status==='done').length}/${total}`);
+  isRunning=false; document.getElementById('run-btn').disabled=false; document.getElementById('stop-btn').style.display='none'; updateStats();
+}
+
+async function uploadSingle(token){
+  const title=document.getElementById('single-title').value.trim();
+  const content=document.getElementById('single-content').value.trim();
+  const note=document.getElementById('chapter-note').value;
+  if(!title){log('err','กรุณากรอกชื่อตอน');return;}
+  if(!content){log('err','กรุณากรอกเนื้อหา');return;}
+  isRunning=true; document.getElementById('run-btn').disabled=true; document.getElementById('progress-wrap').style.display='block';
+  log('info','กำลังส่ง: '+title);
+  try{
+    const payload={chapter_ID:"0",novel_ID:selectedNovelId,chapter_title:title,chapter_content:textToHtml(content),chapter_note:note,chapter_price:getPrice(0),chapter_publish:isPublish(),chapter_publish_datetime:getPublishDatetime(0)};
+    const r=await apiPost('https://api-writer.readrealm.co/writer/novels/chapters/chapterCreate',payload);
+    const resp=await r.json().catch(()=>({}));
+    if(r.ok){log('ok','✓ ส่งสำเร็จ: '+title);updateProgress(1,1);document.getElementById('single-title').value='';document.getElementById('single-content').value='';}
+    else{log('err',`✗ ล้มเหลว: ${r.status} · ${resp?.message||JSON.stringify(resp)}`);}
+  }catch(e){log('err','✗ '+e.message);}
+  isRunning=false; document.getElementById('run-btn').disabled=false;
+}
+
+function stopUpload(){shouldStop=true;}
+function setChapterStatus(id,status){const ch=chapters.find(c=>String(c.id)===String(id));if(ch)ch.status=status;const el=document.getElementById('status-'+id);if(el){el.className='ch-status '+status;el.textContent=statusLabel(status);}updateStats();}
+function updateProgress(done,total){document.getElementById('progress-bar').style.width=(done/total*100)+'%';}
+
+// ─── API helpers ─────────────────────────────────────────
+function apiGet(url){return fetch(url,{headers:{'authorization':'Bearer '+getToken(),'accept':'application/json','origin':'https://readrealm.co','referer':'https://readrealm.co/'}});}
+function apiPost(url,body){return fetch(url,{method:'POST',headers:{'authorization':'Bearer '+getToken(),'content-type':'application/json','accept':'application/json','origin':'https://readrealm.co','referer':'https://readrealm.co/'},body:JSON.stringify(body)});}
+function apiPut(url,body){return fetch(url,{method:'PUT',headers:{'authorization':'Bearer '+getToken(),'content-type':'application/json','accept':'application/json','origin':'https://readrealm.co','referer':'https://readrealm.co/'},body:JSON.stringify(body)});}
+
+// ─── Helpers ──────────────────────────────────────────────
+function textToHtml(text){
+  return text.split('\n').map(line=>{
+    const t=line.trim();
+    return t?`<p>${escHtml(t)}</p>`:'<p>&nbsp;</p>';
+  }).join('')||'<p></p>';
+}
+
+function htmlToPlain(html){
+  return html
+    .replace(/<p>&nbsp;<\/p>/gi,'\n')
+    .replace(/<\/p>/gi,'\n').replace(/<p>/gi,'')
+    .replace(/<br\s*\/?>/gi,'\n')
+    .replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&nbsp;/g,' ')
+    .replace(/<[^>]+>/g,'').replace(/\n$/,'');
+}
+
+function escHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function sleep(ms){return new Promise(r=>setTimeout(r,ms));}
+
+// ─── Modal ────────────────────────────────────────────────
+function openModal(id){document.getElementById(id).classList.remove('hidden');}
+function closeModal(id){document.getElementById(id).classList.add('hidden');}
+document.querySelectorAll('.modal-overlay').forEach(el=>el.addEventListener('click',e=>{if(e.target===el)el.classList.add('hidden');}));
+
+// ─── Log ──────────────────────────────────────────────────
+function log(type,msg){
+  const el=document.getElementById('log');
+  const time=new Date().toTimeString().slice(0,8);
+  const div=document.createElement('div'); div.className='log-line log-'+type;
+  div.innerHTML=`<span class="log-time">[${time}]</span><span class="log-msg">${escHtml(msg)}</span>`;
+  el.appendChild(div); el.scrollTop=el.scrollHeight;
+}
+
+// ─── Init ─────────────────────────────────────────────────
+(function(){
+  const d=new Date(); d.setHours(d.getHours()+1);
+  document.getElementById('schedule-start').value=d.toISOString().slice(0,16);
+  loadSavedToken();
+  initBookmarklet();
+  renderNtBridge();
+  log('info','ReadRealm Auto Poster v2.5 · พร้อมใช้งาน');
+  log('info','ใหม่: รองรับอัปโหลดจากไฟล์ EPUB');
+  if (isEmbedded){
+    document.getElementById('tab-nt').classList.remove('hidden');
+    log('info','เชื่อมต่อกับ NovelTrans — ใช้แท็บ 🔗 NovelTrans เพื่อดึงตอนที่แปลแล้ว');
+    window.parent.postMessage({ type:'RR_READY' }, '*');
+  }
+})();
+
+// ─── Drag & drop ──────────────────────────────────────────
+['drop-zone','drop-zone-delim','drop-zone-zip','drop-zone-epub'].forEach(id=>{
+  const el=document.getElementById(id); if(!el)return;
+  el.addEventListener('dragover',e=>{e.preventDefault();el.classList.add('dragging');});
+  el.addEventListener('dragleave',()=>el.classList.remove('dragging'));
+  el.addEventListener('drop',e=>{
+    e.preventDefault();el.classList.remove('dragging');
+    const files=e.dataTransfer.files;
+    if(id==='drop-zone')handleFiles(files);
+    else if(id==='drop-zone-zip')handleZip(files[0]);
+    else if(id==='drop-zone-epub')handleEpub(files[0]);
+    else handleDelimFile(files[0]);
+  });
+});
+</script>
+</body>
+</html>

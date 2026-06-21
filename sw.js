@@ -3,11 +3,12 @@
    - cache-first สำหรับไฟล์ static ของแอพ (same-origin GET) + อัปเดตเบื้องหลัง
    - ไม่ยุ่งกับการเรียก API (POST / cross-origin) — ปล่อยผ่านเครือข่ายตรง
    ** เพิ่มเลขเวอร์ชันทุกครั้งที่แก้ไฟล์ app shell เพื่อบังคับอัปเดต cache ** */
-const CACHE = 'noveltrans-v12-1';
+const CACHE = 'noveltrans-v12-2';
 
 const APP_SHELL = [
   './',
   './index.html',
+  './readrealm.html',
   './style.css',
   './manifest.webmanifest',
   './icon.svg',
@@ -19,6 +20,7 @@ const APP_SHELL = [
   './js/app.review-batch.js',
   './js/app.tools.js',
   './js/app.reader-presets.js',
+  './js/app.readrealm.js',
 ];
 
 self.addEventListener('install', (e) => {
