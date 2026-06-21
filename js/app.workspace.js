@@ -236,6 +236,13 @@ function renderWsSettings() {
   if (clOpt) clOpt.style.display = clOn ? 'block' : 'none';
   if (clRef) clRef.value = w.settings?.consistencySelfRef || 'auto';
   renderPresetSelect();
+  // Web import settings (ดึงนิยายจาก URL)
+  const impProxy = document.getElementById('wsImportProxy');
+  const impCsel  = document.getElementById('wsImportContentSelector');
+  const impLsel  = document.getElementById('wsImportLinkSelector');
+  if (impProxy) impProxy.value = w.settings?.importProxy || (typeof WT_DEFAULT_PROXY !== 'undefined' ? WT_DEFAULT_PROXY : '');
+  if (impCsel)  impCsel.value  = w.settings?.importContentSelector || '';
+  if (impLsel)  impLsel.value  = w.settings?.importLinkSelector || '';
   // Context Memory settings
   const ctx = wsGetContext(w);
   const ctxEnabledEl  = document.getElementById('wsCtxEnabled');
@@ -265,6 +272,9 @@ async function saveWsSettings() {
     consistencySelfRef: document.getElementById('wsConsistencySelfRef')?.value || 'auto',
     batchChunkMode: document.getElementById('wsBatchChunkMode')?.value || 'off',
     batchChunkSize: Math.max(1000, Math.min(20000, parseInt(document.getElementById('wsBatchChunkSize')?.value) || 3000)),
+    importProxy: document.getElementById('wsImportProxy')?.value.trim() || '',
+    importContentSelector: document.getElementById('wsImportContentSelector')?.value.trim() || '',
+    importLinkSelector: document.getElementById('wsImportLinkSelector')?.value.trim() || '',
   };
   const presetSel = document.getElementById('wsPresetSelect');
   if (presetSel) S.currentWs.presetId = presetSel.value || (S.currentWs.presets?.[0]?.id || '');

@@ -189,6 +189,7 @@
         <button class="btn btn-secondary btn-sm" onclick="openReaderResume()" title="เปิดโหมดอ่าน ต่อจากตำแหน่งล่าสุด">📖 อ่านต่อ</button>
         <button class="btn btn-secondary btn-sm" onclick="openEpubImport()">📗 Import EPUB</button>
         <input type="file" id="epubFileInput" accept=".epub" style="display:none" onchange="handleEpubImport(event)"/>
+        <button class="btn btn-secondary btn-sm" onclick="openWebImport()" title="ดึงเนื้อหานิยายจากลิ้งเว็บต้นฉบับ">🌐 ดึงจาก URL</button>
         <button class="btn btn-secondary btn-sm" onclick="openBatchChapters()">⚡ แปล Batch</button>
         <button class="btn btn-secondary btn-sm" onclick="openBulkRename()">✏ แก้ชื่อตอน</button>
         <button class="btn btn-ghost btn-sm" onclick="renumberAllChapters()" title="เรียงเลขตอนใหม่ตามลำดับปัจจุบัน">🔢 Re-number</button>
@@ -374,6 +375,27 @@
             </label>
           </div>
 
+          <!-- ── ดึงนิยายจาก URL (Web Import) ── -->
+          <div class="sf-group" style="border-top:1px solid var(--border);padding-top:10px;margin-top:2px">
+            <div class="sf-label" style="margin-bottom:6px">
+              🌐 ดึงนิยายจาก URL
+              <span style="font-size:0.70rem;color:var(--text-muted);font-weight:400"> — ตั้งค่า proxy/selector สำหรับปุ่ม "ดึงจาก URL" ในแท็บตอน</span>
+            </div>
+            <div style="margin-bottom:8px">
+              <div style="font-size:0.74rem;color:var(--text-secondary);margin-bottom:3px">CORS Proxy <span style="color:var(--text-muted)">(ใช้ <code>{url}</code> แทนตำแหน่ง URL เป้าหมาย)</span></div>
+              <input type="text" id="wsImportProxy" class="text-input" placeholder="https://api.allorigins.win/raw?url={url}"/>
+              <div style="font-size:0.68rem;color:var(--text-muted);margin-top:3px">เว็บแอปดึง HTML ข้ามโดเมนตรง ๆ ไม่ได้ (CORS) ต้องผ่าน proxy · ค่า default เป็น proxy สาธารณะ (อาจมี rate limit) — รันเองได้ถ้าต้องการความเสถียร</div>
+            </div>
+            <div style="margin-bottom:8px">
+              <div style="font-size:0.74rem;color:var(--text-secondary);margin-bottom:3px">CSS selector เนื้อหาตอน <span style="color:var(--text-muted)">(ไม่บังคับ)</span></div>
+              <input type="text" id="wsImportContentSelector" class="text-input" placeholder="เช่น .chapter-content (เว้นว่าง = ตรวจอัตโนมัติ)"/>
+            </div>
+            <div>
+              <div style="font-size:0.74rem;color:var(--text-secondary);margin-bottom:3px">CSS selector ลิงก์ตอน (หน้าสารบัญ) <span style="color:var(--text-muted)">(ไม่บังคับ)</span></div>
+              <input type="text" id="wsImportLinkSelector" class="text-input" placeholder="เช่น .chapter-list a (เว้นว่าง = ตรวจอัตโนมัติ)"/>
+            </div>
+          </div>
+
           <!-- ── Consistency Lock (ล็อกความสม่ำเสมอสรรพนาม/ระดับภาษา) ── -->
           <div class="sf-group" style="border-top:1px solid var(--border);padding-top:10px;margin-top:2px">
             <div class="sf-label" style="margin-bottom:6px">
@@ -501,6 +523,51 @@
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('modal-new-chapter')">ยกเลิก</button>
       <button class="btn btn-primary" onclick="addChapter()">เพิ่ม</button>
+    </div>
+  </div>
+</div>
+
+<!-- ดึงนิยายจาก URL -->
+<div class="modal-backdrop" id="modal-web-import">
+  <div class="modal modal-wide">
+    <div class="modal-header"><span>🌐 ดึงนิยายจาก URL</span><button class="icon-btn" onclick="closeModal('modal-web-import')">✕</button></div>
+    <div class="modal-body">
+      <div class="sf-group">
+        <div class="sf-label">URL หน้าเว็บต้นฉบับ *</div>
+        <input id="wtUrl" type="text" class="text-input" placeholder="https://example.com/novel/... (หน้าสารบัญ หรือ หน้าตอน)"/>
+      </div>
+      <div class="sf-group">
+        <div class="sf-label">โหมด</div>
+        <div style="display:flex;gap:8px">
+          <button type="button" class="btn btn-ghost btn-sm" id="wtModeToc" onclick="wtSetMode('toc')">📑 หน้าสารบัญ (หลายตอน)</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="wtModeSingle" onclick="wtSetMode('single')">📄 ตอนเดียว</button>
+        </div>
+      </div>
+      <details style="margin-bottom:10px">
+        <summary style="cursor:pointer;font-size:0.8rem;color:var(--text-secondary)">⚙ ตัวเลือกขั้นสูง (proxy / CSS selector)</summary>
+        <div style="padding:8px 2px 2px">
+          <div style="margin-bottom:8px">
+            <div style="font-size:0.74rem;color:var(--text-secondary);margin-bottom:3px">CORS Proxy <span style="color:var(--text-muted)">(ใช้ <code>{url}</code>)</span></div>
+            <input type="text" id="wtProxy" class="text-input"/>
+          </div>
+          <div style="margin-bottom:8px">
+            <div style="font-size:0.74rem;color:var(--text-secondary);margin-bottom:3px">CSS selector เนื้อหาตอน (ไม่บังคับ)</div>
+            <input type="text" id="wtContentSel" class="text-input" placeholder="เช่น .chapter-content"/>
+          </div>
+          <div id="wtLinkSelWrap">
+            <div style="font-size:0.74rem;color:var(--text-secondary);margin-bottom:3px">CSS selector ลิงก์ตอน (ไม่บังคับ)</div>
+            <input type="text" id="wtLinkSel" class="text-input" placeholder="เช่น .chapter-list a"/>
+          </div>
+          <div style="font-size:0.68rem;color:var(--text-muted);margin-top:4px">หมายเหตุ: บางเว็บเรนเดอร์ด้วย JavaScript (SPA) proxy จะดึงได้แค่ HTML ดิบ อาจไม่มีเนื้อหา</div>
+        </div>
+      </details>
+      <div style="text-align:right;margin-bottom:8px">
+        <button class="btn btn-secondary btn-sm" onclick="wtPreview()">🔍 ดึงข้อมูล</button>
+      </div>
+      <div id="wtPreview"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-web-import')">ปิด</button>
     </div>
   </div>
 </div>
@@ -1466,6 +1533,7 @@
 <script src="js/app.review-batch.js"></script>
 <script src="js/app.tools.js"></script>
 <script src="js/app.reader-presets.js"></script>
+<script src="js/app.web-import.js"></script>
 <!-- PWA: register service worker (เปิดแบบ http(s):// เท่านั้น — file:// จะไม่ทำงาน) -->
 <script>
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
