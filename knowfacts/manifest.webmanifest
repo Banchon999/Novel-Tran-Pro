@@ -1,0 +1,23 @@
+{
+  "name": "KnowFacts Factory — ช่องรู้ไหม?",
+  "short_name": "KnowFacts",
+  "description": "โรงงานผลิตคลิป Shorts สำหรับช่อง “รู้ไหม?” — หา Fact, ให้คะแนนไวรัล, เขียนสคริปต์, แตกฉาก, TTS, ตัดต่อ ด้วย AI",
+  "lang": "th",
+  "dir": "ltr",
+  "start_url": "./index.html",
+  "scope": "./",
+  "id": "knowfacts-factory",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#0c1018",
+  "theme_color": "#0c1018",
+  "categories": ["productivity", "video", "utilities"],
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

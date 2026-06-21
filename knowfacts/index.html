@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"/>
+  <title>KnowFacts Factory — รู้ไหม?</title>
+  <link rel="manifest" href="manifest.webmanifest"/>
+  <meta name="theme-color" content="#0c1018"/>
+  <meta name="mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <meta name="apple-mobile-web-app-title" content="KnowFacts"/>
+  <link rel="icon" type="image/svg+xml" href="icon.svg"/>
+  <link rel="apple-touch-icon" href="icon.svg"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Noto+Sans+Thai:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+<div class="bg-layer"></div>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-icon">💡</span>
+    <div><div class="brand-title">KnowFacts Factory</div><div class="brand-sub">ช่อง “รู้ไหม?” · Shorts Pipeline</div></div>
+  </div>
+  <div class="topbar-right">
+    <span class="cost-mini" id="costMini">$0.00</span>
+    <button class="btn xs danger" onclick="stopAll()">⏹ หยุด</button>
+  </div>
+</header>
+
+<nav class="nav">
+  <button class="navbtn active" data-view="board"    onclick="setView('board')">🏭 Factory</button>
+  <button class="navbtn"        data-view="collect"  onclick="setView('collect')">💡 หา Fact</button>
+  <button class="navbtn"        data-view="score"    onclick="setView('score')">🔥 คะแนน</button>
+  <button class="navbtn"        data-view="schedule" onclick="setView('schedule')">📅 ผลิต</button>
+  <button class="navbtn"        data-view="settings" onclick="setView('settings')">⚙ ตั้งค่า</button>
+</nav>
+
+<main id="main"></main>
+
+<div class="modal-back" id="modalBack" onclick="if(event.target===this)closeModal()">
+  <div class="modal" id="modalBody"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="js/kf.providers.js"></script>
+<script src="js/kf.core.js"></script>
+<script src="js/kf.app.js"></script>
+</body>
+</html>
