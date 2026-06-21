@@ -1074,3 +1074,18 @@ mark.glossary-term { background: rgba(201,168,76,0.2); border-bottom: 1px solid 
   font-size: 0.85rem;
 }
 .ch-read-btn:hover { border-color: var(--gold); }
+
+/* ── AI Edit Selection ── */
+.ae-box {
+  background: var(--bg-deep);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  font-size: 0.85rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  max-height: 180px;
+  overflow-y: auto;
+}
+.ae-selected { color: var(--text-muted); border-left: 3px solid var(--accent); }
+.ae-result   { color: var(--text-main);  border-left: 3px solid #4caf50; }

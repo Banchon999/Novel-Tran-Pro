@@ -226,6 +226,7 @@
           <button class="btn btn-sm" id="reModeEditBtn" onclick="reSetMode('edit')">✏ แก้ไข</button>
         </div>
         <button class="btn btn-secondary btn-sm" id="reTranslateBtn" onclick="reTranslateChapter()" title="แปลตอนนี้">⚡ แปลตอนนี้</button>
+        <button class="btn btn-secondary btn-sm" id="reAiEditBtn" onclick="openAiEdit('reEditArea')" style="display:none" title="เลือกข้อความก่อน แล้วกดเพื่อให้ AI แก้ไข">✨ AI แก้ไข</button>
         <span id="reStatus" class="count-label"></span>
       </div>
       <!-- Find & Replace bar -->
@@ -526,6 +527,7 @@
       <button class="btn btn-ghost btn-sm" onclick="openReaderFromModal()">📖 อ่าน</button>
       <button class="btn btn-ghost btn-sm" onclick="openSplitChapter()">✂ Split</button>
       <button class="btn btn-ghost btn-sm" onclick="openMergeChapter()">🔗 Merge</button>
+      <button class="btn btn-secondary btn-sm" onclick="openAiEdit('viewChTranslation')" title="เลือกข้อความในคำแปลก่อน แล้วกดเพื่อให้ AI แก้ไข">✨ AI แก้ไข</button>
       <button class="btn btn-secondary" onclick="loadChapterToTranslate()">⚡ โหลดแปล</button>
       <button class="btn btn-ghost" onclick="closeModal('modal-view-chapter')">ยกเลิก</button>
       <button class="btn btn-primary" onclick="saveChapter()">💾 บันทึก</button>
@@ -1474,5 +1476,31 @@
     });
   }
 </script>
+
+<!-- AI Edit Selection Modal -->
+<div class="modal-backdrop" id="modal-ai-edit" style="display:none">
+  <div class="modal" style="max-width:600px">
+    <div class="modal-header">
+      <span>✨ AI แก้ไขข้อความที่เลือก</span>
+      <button class="icon-btn" onclick="closeAiEdit()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="sf-label">ข้อความที่เลือก</div>
+      <div id="aeSelectedDisplay" class="ae-box ae-selected"></div>
+      <div class="sf-label" style="margin-top:12px">คำสั่งสำหรับ AI</div>
+      <textarea id="aeInstruction" class="editor-ta" rows="3"
+        placeholder="เช่น: แปลงเป็นภาษาทางการ, แก้คำสรรพนามชายให้เป็นหญิง, เขียนใหม่ให้ดุดันขึ้น, ย่อให้กระชับ..."></textarea>
+      <div id="aeResultSection" style="display:none;margin-top:12px">
+        <div class="sf-label">ผลลัพธ์จาก AI</div>
+        <div id="aeResultDisplay" class="ae-box ae-result"></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeAiEdit()">ยกเลิก</button>
+      <button id="aeApplyBtn" class="btn btn-secondary" onclick="applyAiEdit()" style="display:none">✅ ใช้ผลลัพธ์</button>
+      <button id="aeSubmitBtn" class="btn btn-primary" onclick="submitAiEdit()">✨ แก้ไข</button>
+    </div>
+  </div>
+</div>
 </body>
 </html>

@@ -309,6 +309,8 @@ function reSetMode(mode) {
     if (ch && cur !== (ch.translation || '') && !confirm('มีการแก้ไขที่ยังไม่บันทึก — ทิ้งการแก้ไข?')) return;
   }
   reState.mode = mode;
+  const aiEditBtn = document.getElementById('reAiEditBtn');
+  if (aiEditBtn) aiEditBtn.style.display = mode === 'edit' ? '' : 'none';
   reLoadChapter(reState.chapterId);
 }
 

@@ -1651,3 +1651,100 @@ ${sheetRows}
     return;
   }
 }
+
+// ── AI Edit Selection ──────────────────────────────────────────────────────
+let _aeSourceEl = null;
+let _aeStart    = 0;
+let _aeEnd      = 0;
+let _aeResult   = '';
+let _aeAbort    = null;
+
+function openAiEdit(textareaId) {
+  const ta = document.getElementById(textareaId);
+  if (!ta) return;
+  const start = ta.selectionStart;
+  const end   = ta.selectionEnd;
+  const sel   = ta.value.substring(start, end).trim();
+
+  if (!sel) {
+    showToast('กรุณาเลือก (ไฮไลต์) ข้อความที่ต้องการแก้ไขก่อน', 'warn');
+    return;
+  }
+
+  _aeSourceEl = ta;
+  _aeStart    = start;
+  _aeEnd      = end;
+  _aeResult   = '';
+
+  document.getElementById('aeSelectedDisplay').textContent    = sel;
+  document.getElementById('aeInstruction').value              = '';
+  document.getElementById('aeResultSection').style.display    = 'none';
+  document.getElementById('aeResultDisplay').textContent      = '';
+  document.getElementById('aeApplyBtn').style.display         = 'none';
+  document.getElementById('aeSubmitBtn').disabled             = false;
+  document.getElementById('aeSubmitBtn').textContent          = '✨ แก้ไข';
+
+  document.getElementById('modal-ai-edit').style.display = 'flex';
+  setTimeout(() => document.getElementById('aeInstruction').focus(), 50);
+}
+
+function closeAiEdit() {
+  if (_aeAbort) { _aeAbort.abort(); _aeAbort = null; }
+  document.getElementById('modal-ai-edit').style.display = 'none';
+}
+
+async function submitAiEdit() {
+  const instruction = document.getElementById('aeInstruction').value.trim();
+  if (!instruction) { showToast('กรุณาใส่คำสั่งสำหรับ AI', 'warn'); return; }
+
+  if (_aeAbort) _aeAbort.abort();
+  _aeAbort = new AbortController();
+
+  const submitBtn = document.getElementById('aeSubmitBtn');
+  submitBtn.disabled    = true;
+  submitBtn.textContent = '⏳ กำลังแก้ไข...';
+  document.getElementById('aeApplyBtn').style.display      = 'none';
+  document.getElementById('aeResultSection').style.display = 'block';
+  document.getElementById('aeResultDisplay').textContent   = '';
+  _aeResult = '';
+
+  const selectedText = document.getElementById('aeSelectedDisplay').textContent;
+  const systemPrompt = 'You are a professional Thai webnovel editor. Edit the provided Thai text strictly according to the user\'s instruction. Return ONLY the edited text — no explanations, no markdown, no surrounding quotes.';
+  const userMessage  = `ข้อความต้นฉบับ:\n${selectedText}\n\nคำสั่ง: ${instruction}`;
+  const model = S.currentWs?.settings?.translateModel
+    || document.getElementById('translateModel')?.value
+    || 'google/gemini-2.5-flash';
+
+  try {
+    await aiStream(
+      { model, messages: [{ role: 'user', content: userMessage }], temperature: 0.7, max_tokens: 2000 },
+      (chunk) => {
+        _aeResult += chunk;
+        document.getElementById('aeResultDisplay').textContent = _aeResult;
+      },
+      () => {},
+      _aeAbort.signal
+    );
+    _aeResult = _aeResult.trim();
+    document.getElementById('aeResultDisplay').textContent = _aeResult;
+    document.getElementById('aeApplyBtn').style.display = '';
+  } catch (err) {
+    if (err.name !== 'AbortError') {
+      document.getElementById('aeResultDisplay').textContent = '⚠ ' + (err.message || 'เกิดข้อผิดพลาด');
+    }
+  } finally {
+    submitBtn.disabled    = false;
+    submitBtn.textContent = '✨ แก้ไขใหม่';
+    _aeAbort = null;
+  }
+}
+
+function applyAiEdit() {
+  if (!_aeSourceEl || !_aeResult) return;
+  const full    = _aeSourceEl.value;
+  const newText = full.substring(0, _aeStart) + _aeResult + full.substring(_aeEnd);
+  _aeSourceEl.value = newText;
+  _aeSourceEl.dispatchEvent(new Event('input', { bubbles: true }));
+  closeAiEdit();
+  showToast('✅ แก้ไขข้อความเรียบร้อย', 'ok');
+}
