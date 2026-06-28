@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"/>
-  <title>NovelTrans v10 Pro</title>
+  <title>NovelTrans v12 Pro</title>
   <!-- PWA -->
   <link rel="manifest" href="manifest.webmanifest"/>
   <meta name="theme-color" content="#0c0800"/>
@@ -29,7 +29,7 @@
       <span class="sb-icon">⚔</span>
       <div>
         <div class="sb-title">NovelTrans</div>
-        <div class="sb-sub">v10 Pro · Multi File</div>
+        <div class="sb-sub">v12 Pro · Multi File</div>
       </div>
     </div>
     <button class="icon-btn" onclick="closeSidebar()">✕</button>
@@ -65,7 +65,7 @@
       <div class="header-brand">
         <span class="header-icon">⚔</span>
         <span class="header-title">NovelTrans</span>
-        <span class="header-ver">v10 Pro</span>
+        <span class="header-ver">v12 Pro</span>
       </div>
     </div>
     <div class="header-right">
@@ -80,7 +80,7 @@
 
   <div id="noWsMsg" class="no-ws-msg">
     <div class="no-ws-icon">⚔</div>
-    <div class="no-ws-title">NovelTrans v10 Pro</div>
+    <div class="no-ws-title">NovelTrans v12 Pro</div>
     <div class="no-ws-sub">สร้างหรือเลือก Workspace เพื่อเริ่มแปล</div>
     <button class="btn btn-primary" onclick="openModal('modal-new-ws')">＋ สร้าง Workspace ใหม่</button>
     <button class="btn btn-ghost" style="margin-top:8px" onclick="openImportWs()">📥 Import Workspace</button>
@@ -105,7 +105,7 @@
             <div class="pane-actions">
               <button class="icon-btn-sm" onclick="detectGlossary()" title="ตรวจจับคำศัพท์">🔍</button>
               <button class="icon-btn-sm" onclick="cleanSourceText()" title="ลบ Base64/ขยะออก">🧹</button>
-              <button class="icon-btn-sm" onclick="clearSource()">✕</button>
+              <button class="icon-btn-sm" onclick="clearSource()" title="ล้างต้นฉบับ">✕</button>
             </div>
           </div>
           <div id="sourceHighlight" class="source-highlight" style="display:none" onclick="hideHighlight()"></div>
@@ -125,8 +125,8 @@
             <div class="pane-actions">
               <button class="icon-btn-sm" onclick="addLineBreaksOutput()" title="เพิ่ม 1 บรรทัดว่างระหว่างทุกบรรทัด">📐</button>
               <button class="icon-btn-sm" onclick="addOneLineOutput()" title="Add 1 Line — เพิ่มบรรทัดว่างก่อนย่อหน้าสุดท้าย">📏</button>
-              <button class="icon-btn-sm" onclick="copyTranslation()">⎘</button>
-              <button class="icon-btn-sm" onclick="clearTranslation()">✕</button>
+              <button class="icon-btn-sm" onclick="copyTranslation()" title="คัดลอกคำแปล">⎘</button>
+              <button class="icon-btn-sm" onclick="clearTranslation()" title="ล้างคำแปล">✕</button>
             </div>
           </div>
           <div id="translationOutput" class="editor-output">
