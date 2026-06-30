@@ -934,6 +934,19 @@ mark.glossary-term { background: rgba(201,168,76,0.2); border-bottom: 1px solid 
 #reGlossHlBtn.active { background: var(--gold); color: #1a1305; }
 #reRetranslateBtn:disabled { opacity: 0.5; cursor: default; }
 
+/* ปุ่ม "✎ แก้" ต่อท้ายแต่ละย่อหน้าในโหมดอ่าน */
+.re-content .re-para { position: relative; margin: 0 0 1em; }
+.re-content .re-para > p { display: inline; margin: 0; }
+.re-chunk-edit {
+  margin-left: 8px; padding: 1px 7px; font-size: 0.68rem; line-height: 1.5;
+  border: 1px solid var(--r-border, var(--border)); border-radius: 5px;
+  background: transparent; color: var(--r-accent); cursor: pointer;
+  vertical-align: middle; white-space: nowrap; opacity: 0.5;
+  user-select: none; -webkit-user-select: none;
+}
+.re-chunk-edit:hover { opacity: 1; background: rgba(0,0,0,0.06); }
+@media (hover: none) { .re-chunk-edit { opacity: 0.7; } }
+
 /* แผงพรีวิว "แปลส่วนที่เลือกใหม่" */
 .rt-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 @media (max-width: 640px) { .rt-grid { grid-template-columns: 1fr; } }

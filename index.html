@@ -540,6 +540,9 @@
   <div class="modal modal-wide">
     <div class="modal-header"><span>✨ แปลส่วนที่เลือกใหม่</span><button class="icon-btn" onclick="reCancelRetranslation()">✕</button></div>
     <div class="modal-body">
+      <div class="sf-label">คำสั่งให้ AI (แก้ได้ก่อนส่ง)</div>
+      <textarea id="rtPrompt" class="editor-ta" rows="3" style="width:100%" placeholder="เช่น ใช้ภาษาทางการขึ้น, ตัวละครนี้เป็นผู้หญิง, แปลให้กระชับ..."></textarea>
+      <div style="font-size:0.7rem;color:var(--text-muted);margin:4px 0 8px">ระบบจะแนบ ต้นฉบับทั้งตอน + คลังศัพท์ + บริบทรอบข้าง ให้อัตโนมัติ</div>
       <div class="rt-grid">
         <div class="rt-col">
           <div class="sf-label">คำแปลเดิม (ส่วนที่เลือก)</div>
@@ -553,9 +556,9 @@
       <div id="rtStatus" class="count-label" style="margin-top:8px"></div>
     </div>
     <div class="modal-footer">
-      <button class="btn btn-ghost btn-sm" id="rtStopBtn" onclick="reStopRetranslate()" style="margin-right:auto">⬛ หยุด</button>
-      <button class="btn btn-ghost btn-sm" id="rtRetryBtn" onclick="reRetryRetranslation()" disabled>↻ แปลใหม่อีกครั้ง</button>
+      <button class="btn btn-ghost btn-sm" id="rtStopBtn" onclick="reStopRetranslate()" style="margin-right:auto;display:none">⬛ หยุด</button>
       <button class="btn btn-ghost" onclick="reCancelRetranslation()">✕ ปฏิเสธ</button>
+      <button class="btn btn-secondary" id="rtSendBtn" onclick="reSendRetranslate()">▶ ส่งแปล</button>
       <button class="btn btn-primary" id="rtApplyBtn" onclick="reApplyRetranslation()" disabled>✓ รับ (แทนที่)</button>
     </div>
   </div>
