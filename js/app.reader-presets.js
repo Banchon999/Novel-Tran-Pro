@@ -215,7 +215,7 @@ async function addMissingSeedPresets() {
 // ─── Read / Edit Tab (แท็บอ่าน+แก้ไขในตัว) ───────
 // ═══════════════════════════════════════════════
 // แท็บอ่านพร้อมเครื่องมือแก้ไข: แก้ข้อความ inline + ค้นหา/แทนที่ในตอน
-const reState = { chapterId: null, mode: 'read' };
+const reState = { chapterId: null, mode: 'read', _selRange: null };
 
 function renderReadTab() {
   const ws = S.currentWs;
@@ -302,6 +302,7 @@ function reLoadChapter(id) {
 
   reUpdateCharStats();
   reHighlightCount();
+  reState._selRange = null; // เนื้อหา re-render แล้ว offset เดิมอาจไม่ตรง — เริ่มจับ selection ใหม่
   reUpdateRetranslateBtn();
 }
 
@@ -558,12 +559,16 @@ function reGetSelectionRange() {
 }
 
 // อัปเดตปุ่ม "✨ แปลส่วนที่เลือกใหม่" (enable เมื่อมี selection ในโหมดอ่าน)
+// บนมือถือ: การแตะปุ่มมักล้าง selection ก่อน onclick จะอ่านค่าได้ → จำช่วงที่เลือกล่าสุดไว้
+// (reState._selRange) แล้วใช้ค่านั้นเป็น fallback เพื่อให้กดปุ่มได้ชัวร์
 function reUpdateRetranslateBtn() {
   const btn = document.getElementById('reRetranslateBtn');
   if (!btn) return;
-  const r = reGetSelectionRange();
+  const live = reGetSelectionRange();
+  if (live) reState._selRange = live;
+  const r = reState._selRange;
   const ch = S.currentWs?.chapters?.find(c => c.id === reState.chapterId);
-  const ok = !!(r && ch && ch.translation && ch.sourceText);
+  const ok = !!(r && reState.mode === 'read' && ch && ch.translation && ch.sourceText);
   btn.disabled = !ok;
   btn.textContent = ok ? `✨ แปลส่วนที่เลือกใหม่ (${(r.end - r.start).toLocaleString()})` : '✨ แปลส่วนที่เลือกใหม่';
 }
@@ -573,7 +578,7 @@ function reRetranslateSelection() {
   const ch = S.currentWs?.chapters?.find(c => c.id === reState.chapterId);
   if (!ch || !ch.translation) { showToast('ตอนนี้ยังไม่มีคำแปล', 'error'); return; }
   if (!ch.sourceText?.trim()) { showToast('ตอนนี้ไม่มีต้นฉบับให้อ้างอิง', 'error'); return; }
-  const r = reGetSelectionRange();
+  const r = reGetSelectionRange() || reState._selRange;
   if (!r) { showToast('ลากเลือกข้อความที่จะแปลใหม่ก่อน', 'error'); return; }
   const original = (ch.translation || '').slice(r.start, r.end);
   if (!original.trim()) { showToast('ส่วนที่เลือกว่างเปล่า', 'error'); return; }
@@ -692,6 +697,7 @@ function reCancelRetranslation() {
   const rt = reState.retrans;
   if (rt?.ctrl) { try { rt.ctrl.abort(); } catch {} }
   reState.retrans = null;
+  reState._selRange = null;
   closeModal('modal-retranslate');
 }
 
