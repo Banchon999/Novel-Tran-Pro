@@ -930,6 +930,25 @@ mark.glossary-term { background: rgba(201,168,76,0.2); border-bottom: 1px solid 
 .re-empty { color: var(--text-muted); text-align: center; padding: 40px 10px; }
 .re-edit-area { flex: 1; width: 100%; border: none; border-radius: 0; resize: none; padding: 18px clamp(14px, 5vw, 60px); font-size: 1rem; line-height: 1.8; }
 
+/* ไฮไลต์คำแปลที่ตรงกับ Glossary ในโหมดอ่าน */
+#reGlossHlBtn.active { background: var(--gold); color: #1a1305; }
+.re-content mark.re-gloss {
+  background: transparent; color: inherit; padding: 0 1px; border-radius: 3px;
+  box-shadow: inset 0 -0.6em 0 color-mix(in srgb, currentColor 14%, transparent);
+  border-bottom: 2px solid currentColor; cursor: help;
+}
+.re-content mark.re-gloss.tag-character { color: #4a86c5; }
+.re-content mark.re-gloss.tag-title     { color: #9a7d1f; }
+.re-content mark.re-gloss.tag-term      { color: #5f8a3f; }
+.re-content mark.re-gloss.tag-rank      { color: #b85636; }
+.re-content mark.re-gloss.tag-honorific { color: #8456c5; }
+.re-content mark.re-gloss.tag-place     { color: #2f9a82; }
+.re-content mark.re-gloss.tag-skill     { color: #c5772f; }
+.re-content mark.re-gloss.tag-item      { color: #4a86c5; }
+.re-content mark.re-gloss.tag-clan      { color: #a8901f; }
+.re-content mark.re-gloss.tag-monster   { color: #b83636; }
+.re-content mark.re-gloss.tag-custom    { color: var(--r-accent); }
+
 .reader-topbar, .reader-bottombar {
   display: flex;
   align-items: center;

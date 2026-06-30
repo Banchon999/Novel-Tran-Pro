@@ -262,6 +262,8 @@ function reLoadChapter(id) {
   const editBtn = document.getElementById('reModeEditBtn');
   if (readBtn) readBtn.classList.toggle('active', reState.mode === 'read');
   if (editBtn) editBtn.classList.toggle('active', reState.mode === 'edit');
+  const glBtn = document.getElementById('reGlossHlBtn');
+  if (glBtn) glBtn.classList.toggle('active', reGlossHlEnabled());
 
   const content  = document.getElementById('reContent');
   const editArea = document.getElementById('reEditArea');
@@ -283,14 +285,78 @@ function reLoadChapter(id) {
     content.style.display = 'block';
     if (saveBtn) saveBtn.style.display = 'none';
     if (ch.translation && ch.translation.trim()) {
-      const paras = ch.translation.split(/\n/).map(p => p.trim() ? `<p>${esc(p)}</p>` : '<br>').join('');
-      content.innerHTML = `<h2 class="re-title">${esc(ch.title || '')}</h2>${paras}`;
+      content.innerHTML = reRenderReadContent(ch, reGlossHlEnabled() ? reBuildGlossRegex() : null);
     } else {
       content.innerHTML = `<h2 class="re-title">${esc(ch.title || '')}</h2><div class="re-empty">ตอนนี้ยังไม่ได้แปล — กด <strong>⚡ แปลตอนนี้</strong> ด้านบน</div>`;
     }
   }
+
+  // ปรับ scroll ของโหมดใหม่ให้ตรงกับตำแหน่งที่อ่านค้างไว้ (สลับ อ่าน↔แก้ไข ให้ chunk ตรงกัน)
+  if (reState._pendingAnchor != null) {
+    const off = reState._pendingAnchor;
+    reState._pendingAnchor = null;
+    requestAnimationFrame(() => {
+      if (reState.mode === 'edit') reApplyAnchorEdit(off); else reApplyAnchorRead(off);
+    });
+  }
+
   reUpdateCharStats();
   reHighlightCount();
+}
+
+// ─── สร้าง HTML โหมดอ่าน (เก็บ offset ตัวอักษรไว้ที่ data-coff เพื่อ sync ตำแหน่งกับโหมดแก้ไข) ───
+function reRenderReadContent(ch, gloss) {
+  const lines = (ch.translation || '').split('\n');
+  let off = 0;
+  const body = lines.map(line => {
+    const start = off;
+    off += line.length + 1; // +1 = ตัวขึ้นบรรทัด \n
+    if (!line.trim()) return '<br>';
+    let inner = esc(line);
+    if (gloss) inner = reApplyGlossHighlight(inner, gloss);
+    return `<p data-coff="${start}">${inner}</p>`;
+  }).join('');
+  return `<h2 class="re-title">${esc(ch.title || '')}</h2>${body}`;
+}
+
+// ─── Glossary highlight (ไฮไลต์คำแปลที่ตรงกับคลังศัพท์) ───
+function reGlossHlEnabled() { return !!(S.currentWs?.readerSettings?.glossaryHl); }
+
+function reToggleGlossHl() {
+  if (!S.currentWs) return;
+  S.currentWs.readerSettings = { ...(S.currentWs.readerSettings || {}), glossaryHl: !reGlossHlEnabled() };
+  lsSaveWorkspace(S.currentWs).catch(() => {});
+  reLoadChapter(reState.chapterId);
+  showToast(reGlossHlEnabled() ? 'เปิดไฮไลต์คำศัพท์ ✓' : 'ปิดไฮไลต์คำศัพท์', '');
+}
+
+// เตรียม regex + map (คำแปลไทย → entry) สำหรับไฮไลต์ — เรียงยาวไปสั้นกัน match ซ้อน
+function reBuildGlossRegex() {
+  const data = S.glossaryData || [];
+  const map = new Map();      // key = คำไทยที่ esc แล้ว → entry (ใช้หา type/ต้นฉบับตอนแทนที่)
+  const terms = [];
+  for (const g of data) {
+    const t = (g.thai || '').trim();
+    if (!t) continue;
+    const e = esc(t);
+    if (!map.has(e)) { map.set(e, g); terms.push(e); }
+  }
+  if (!terms.length) return null;
+  terms.sort((a, b) => b.length - a.length);
+  const pattern = terms.map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+  return { re: new RegExp(pattern, 'g'), map };
+}
+
+// แทรก <mark> ลงในข้อความที่ esc แล้ว (haystack ปลอดภัยจาก HTML แล้ว)
+function reApplyGlossHighlight(escapedText, gloss) {
+  if (!gloss) return escapedText;
+  return escapedText.replace(gloss.re, m => {
+    const g = gloss.map.get(m);
+    const cls = getTagClass(g?.type || 'term');
+    const typeLabel = g?.type ? (PRESET_TYPES[g.type] || g.type) : '';
+    const title = esc(`${g?.korean || ''}${typeLabel ? ' · ' + typeLabel : ''}`).replace(/"/g, '&quot;');
+    return `<mark class="re-gloss ${cls}" title="${title}">${m}</mark>`;
+  });
 }
 
 function reNav(dir) {
@@ -302,14 +368,107 @@ function reNav(dir) {
 }
 
 function reSetMode(mode) {
+  if (mode === reState.mode) return;
   // ถ้ากำลังแก้ไขแล้วมีข้อความค้าง ให้เตือนบันทึกก่อนสลับไปอ่าน
   if (reState.mode === 'edit' && mode === 'read') {
     const ch = S.currentWs?.chapters?.find(c => c.id === reState.chapterId);
     const cur = document.getElementById('reEditArea')?.value ?? '';
     if (ch && cur !== (ch.translation || '') && !confirm('มีการแก้ไขที่ยังไม่บันทึก — ทิ้งการแก้ไข?')) return;
   }
+  // จดตำแหน่งที่อ่านค้าง (offset ตัวอักษรบนสุดของจอ) จากโหมดเดิม แล้วนำไปใช้กับโหมดใหม่
+  reState._pendingAnchor = (reState.mode === 'edit') ? reCaptureAnchorEdit() : reCaptureAnchorRead();
   reState.mode = mode;
   reLoadChapter(reState.chapterId);
+}
+
+// ─── Sync ตำแหน่ง scroll ระหว่างโหมดอ่าน ↔ แก้ไข (อิง offset ตัวอักษร) ───
+function _reLineStarts(text) {
+  const starts = [0];
+  for (let i = 0; i < text.length; i++) if (text[i] === '\n') starts.push(i + 1);
+  return starts;
+}
+function _reOffsetToLine(starts, off) {
+  let lo = 0, hi = starts.length - 1, ans = 0;
+  while (lo <= hi) { const mid = (lo + hi) >> 1; if (starts[mid] <= off) { ans = mid; lo = mid + 1; } else hi = mid - 1; }
+  return ans;
+}
+
+// วัดตำแหน่งพิกเซลของจุดเริ่มแต่ละบรรทัดใน textarea ด้วย mirror div (รองรับ word-wrap)
+function _reTextareaLineTops(ta) {
+  const lines = (ta.value || '').split('\n');
+  const cs = getComputedStyle(ta);
+  const mirror = document.createElement('div');
+  ['fontFamily','fontSize','fontWeight','fontStyle','fontVariant','lineHeight','letterSpacing',
+   'textTransform','textIndent','wordSpacing','paddingTop','paddingRight','paddingBottom','paddingLeft','tabSize']
+    .forEach(p => { mirror.style[p] = cs[p]; });
+  // คุม box ให้เท่ากับพื้นที่เนื้อหาของ textarea เป๊ะ (clientWidth = ขอบเขตเนื้อหา+padding ไม่รวม border/scrollbar)
+  mirror.style.boxSizing = 'border-box';
+  mirror.style.borderWidth = '0';
+  mirror.style.position = 'absolute';
+  mirror.style.visibility = 'hidden';
+  mirror.style.left = '-9999px';
+  mirror.style.top = '0';
+  mirror.style.height = 'auto';
+  mirror.style.width = ta.clientWidth + 'px';
+  mirror.style.whiteSpace = 'pre-wrap';
+  mirror.style.overflowWrap = 'break-word';
+  mirror.style.wordWrap = 'break-word';
+  const markers = [];
+  lines.forEach((line, i) => {
+    const m = document.createElement('span');
+    m.textContent = '\u200B';
+    mirror.appendChild(m);
+    markers.push(m);
+    mirror.appendChild(document.createTextNode(line + (i < lines.length - 1 ? '\n' : '')));
+  });
+  document.body.appendChild(mirror);
+  const base = markers.length ? markers[0].offsetTop : 0;
+  const tops = markers.map(m => m.offsetTop - base);
+  document.body.removeChild(mirror);
+  return tops;
+}
+
+function reCaptureAnchorRead() {
+  const sc = document.getElementById('reContent');
+  if (!sc) return 0;
+  const scTop = sc.getBoundingClientRect().top;
+  let best = 0;
+  for (const p of sc.querySelectorAll('p[data-coff]')) {
+    if (p.getBoundingClientRect().top - scTop <= 8) best = +p.dataset.coff || 0;
+    else break;
+  }
+  return best;
+}
+
+function reApplyAnchorRead(off) {
+  const sc = document.getElementById('reContent');
+  if (!sc) return;
+  const scTop = sc.getBoundingClientRect().top;
+  let target = null;
+  for (const p of sc.querySelectorAll('p[data-coff]')) {
+    if ((+p.dataset.coff || 0) <= off) target = p; else break;
+  }
+  if (target) sc.scrollTop += target.getBoundingClientRect().top - scTop;
+}
+
+function reCaptureAnchorEdit() {
+  const ta = document.getElementById('reEditArea');
+  if (!ta) return 0;
+  const tops = _reTextareaLineTops(ta);
+  const top = ta.scrollTop;
+  let line = 0;
+  for (let i = 0; i < tops.length; i++) { if (tops[i] <= top + 2) line = i; else break; }
+  const starts = _reLineStarts(ta.value || '');
+  return starts[Math.min(line, starts.length - 1)] || 0;
+}
+
+function reApplyAnchorEdit(off) {
+  const ta = document.getElementById('reEditArea');
+  if (!ta) return;
+  const starts = _reLineStarts(ta.value || '');
+  const line = _reOffsetToLine(starts, off);
+  const tops = _reTextareaLineTops(ta);
+  ta.scrollTop = tops[Math.min(line, tops.length - 1)] || 0;
 }
 
 function reUpdateCharStats() {
