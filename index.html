@@ -227,6 +227,7 @@
         </div>
         <button class="btn btn-secondary btn-sm" id="reTranslateBtn" onclick="reTranslateChapter()" title="แปลตอนนี้">⚡ แปลตอนนี้</button>
         <button class="btn btn-sm" id="reGlossHlBtn" onclick="reToggleGlossHl()" title="ไฮไลต์คำแปลที่ตรงกับคลังศัพท์ (Glossary)">🖍 ไฮไลต์ศัพท์</button>
+        <button class="btn btn-sm" id="reRetranslateBtn" onclick="reRetranslateSelection()" disabled title="ลากเลือกข้อความในโหมดอ่าน แล้วให้ AI แปลเฉพาะส่วนนั้นใหม่">✨ แปลส่วนที่เลือกใหม่</button>
         <span id="reStatus" class="count-label"></span>
       </div>
       <!-- Find & Replace bar -->
@@ -530,6 +531,32 @@
       <button class="btn btn-secondary" onclick="loadChapterToTranslate()">⚡ โหลดแปล</button>
       <button class="btn btn-ghost" onclick="closeModal('modal-view-chapter')">ยกเลิก</button>
       <button class="btn btn-primary" onclick="saveChapter()">💾 บันทึก</button>
+    </div>
+  </div>
+</div>
+
+<!-- Re-translate selected passage preview -->
+<div class="modal-backdrop" id="modal-retranslate" style="z-index:400">
+  <div class="modal modal-wide">
+    <div class="modal-header"><span>✨ แปลส่วนที่เลือกใหม่</span><button class="icon-btn" onclick="reCancelRetranslation()">✕</button></div>
+    <div class="modal-body">
+      <div class="rt-grid">
+        <div class="rt-col">
+          <div class="sf-label">คำแปลเดิม (ส่วนที่เลือก)</div>
+          <div id="rtOriginal" class="rt-box rt-old"></div>
+        </div>
+        <div class="rt-col">
+          <div class="sf-label">คำแปลใหม่</div>
+          <div id="rtResult" class="rt-box rt-new"></div>
+        </div>
+      </div>
+      <div id="rtStatus" class="count-label" style="margin-top:8px"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost btn-sm" id="rtStopBtn" onclick="reStopRetranslate()" style="margin-right:auto">⬛ หยุด</button>
+      <button class="btn btn-ghost btn-sm" id="rtRetryBtn" onclick="reRetryRetranslation()" disabled>↻ แปลใหม่อีกครั้ง</button>
+      <button class="btn btn-ghost" onclick="reCancelRetranslation()">✕ ปฏิเสธ</button>
+      <button class="btn btn-primary" id="rtApplyBtn" onclick="reApplyRetranslation()" disabled>✓ รับ (แทนที่)</button>
     </div>
   </div>
 </div>

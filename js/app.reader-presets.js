@@ -302,6 +302,7 @@ function reLoadChapter(id) {
 
   reUpdateCharStats();
   reHighlightCount();
+  reUpdateRetranslateBtn();
 }
 
 // ─── สร้าง HTML โหมดอ่าน (เก็บ offset ตัวอักษรไว้ที่ data-coff เพื่อ sync ตำแหน่งกับโหมดแก้ไข) ───
@@ -470,6 +471,255 @@ function reApplyAnchorEdit(off) {
   const tops = _reTextareaLineTops(ta);
   ta.scrollTop = tops[Math.min(line, tops.length - 1)] || 0;
 }
+
+// ═══════════════════════════════════════════════
+// ─── แปลคำแปลเฉพาะส่วนที่เลือกใหม่ (Re-translate selection) ──
+// ═══════════════════════════════════════════════
+// เลือกข้อความช่วงที่แปลไม่ดีในโหมดอ่าน → AI แปลเฉพาะส่วนนั้นใหม่ (อ้างอิงต้นฉบับทั้งตอน)
+// แล้วพรีวิวก่อนแทนที่ — ไม่ต้องแปลใหม่ทั้งตอน ไม่พึ่งเส้นแบ่ง chunk เดิม
+
+const RETRANSLATE_PASSAGE_PROMPT = `You are revising part of an existing Korean→Thai webnovel translation.
+
+The FULL Korean source is provided for reference. Re-translate ONLY the marked passage into natural, fluent Thai that fits seamlessly between the surrounding Thai text. Locate the matching part of the Korean source yourself. Follow the glossary exactly and keep pronouns, register, and narrative voice consistent with the surrounding translation.
+
+Output ONLY the improved Thai for the passage — no explanations, no quotes, no labels.
+{consistency}
+GLOSSARY:
+{glossary}
+
+FULL KOREAN SOURCE (reference):
+{source}
+
+──────────
+Thai translation BEFORE the passage:
+…{before}
+
+PASSAGE TO RE-TRANSLATE (current Thai — improve this):
+{passage}
+
+Thai translation AFTER the passage:
+{after}…
+──────────
+
+Improved Thai for the passage only:`;
+
+// หา <p data-coff> ที่ครอบ node (text node → parent)
+function _reClosestPara(node) {
+  let el = (node && node.nodeType === 3) ? node.parentNode : node;
+  while (el && el !== document) {
+    if (el.tagName === 'P' && el.dataset && el.dataset.coff != null) return el;
+    el = el.parentNode;
+  }
+  return null;
+}
+
+// แปลงปลาย selection (node, offset) → offset ตัวอักษรใน ch.translation
+function _reNodeOffsetToChar(sc, node, offset) {
+  const p = _reClosestPara(node);
+  if (p) {
+    const r = document.createRange();
+    r.setStart(p, 0);
+    try { r.setEnd(node, offset); } catch { return +p.dataset.coff || 0; }
+    return (+p.dataset.coff || 0) + r.toString().length;
+  }
+  // ปลายตกบน container เอง (เช่นระหว่าง <p> หรือบน <br>) → อิง <p> ใกล้สุด
+  if (node === sc) {
+    const kids = node.childNodes;
+    if (offset < kids.length) {
+      const k = kids[offset];
+      if (k && k.tagName === 'P' && k.dataset?.coff != null) return +k.dataset.coff;
+    }
+    for (let i = Math.min(offset, kids.length) - 1; i >= 0; i--) {
+      const pk = kids[i];
+      if (pk.tagName === 'P' && pk.dataset?.coff != null) return (+pk.dataset.coff) + pk.textContent.length;
+    }
+    for (let i = offset; i < kids.length; i++) {
+      const nk = kids[i];
+      if (nk.tagName === 'P' && nk.dataset?.coff != null) return +nk.dataset.coff;
+    }
+  }
+  return null;
+}
+
+// ช่วงตัวอักษรของ selection ปัจจุบันใน ch.translation (เฉพาะโหมดอ่าน + อยู่ใน #reContent)
+function reGetSelectionRange() {
+  if (reState.mode !== 'read') return null;
+  const sc = document.getElementById('reContent');
+  const sel = window.getSelection();
+  if (!sc || !sel || sel.rangeCount === 0 || sel.isCollapsed) return null;
+  const range = sel.getRangeAt(0);
+  if (!sc.contains(range.startContainer) || !sc.contains(range.endContainer)) return null;
+  const a = _reNodeOffsetToChar(sc, range.startContainer, range.startOffset);
+  const b = _reNodeOffsetToChar(sc, range.endContainer, range.endOffset);
+  if (a == null || b == null) return null;
+  const start = Math.min(a, b), end = Math.max(a, b);
+  if (end <= start) return null;
+  return { start, end };
+}
+
+// อัปเดตปุ่ม "✨ แปลส่วนที่เลือกใหม่" (enable เมื่อมี selection ในโหมดอ่าน)
+function reUpdateRetranslateBtn() {
+  const btn = document.getElementById('reRetranslateBtn');
+  if (!btn) return;
+  const r = reGetSelectionRange();
+  const ch = S.currentWs?.chapters?.find(c => c.id === reState.chapterId);
+  const ok = !!(r && ch && ch.translation && ch.sourceText);
+  btn.disabled = !ok;
+  btn.textContent = ok ? `✨ แปลส่วนที่เลือกใหม่ (${(r.end - r.start).toLocaleString()})` : '✨ แปลส่วนที่เลือกใหม่';
+}
+
+function reRetranslateSelection() {
+  if (reState.mode !== 'read') { showToast('สลับไปโหมด 📖 อ่าน แล้วลากเลือกข้อความก่อน', 'error'); return; }
+  const ch = S.currentWs?.chapters?.find(c => c.id === reState.chapterId);
+  if (!ch || !ch.translation) { showToast('ตอนนี้ยังไม่มีคำแปล', 'error'); return; }
+  if (!ch.sourceText?.trim()) { showToast('ตอนนี้ไม่มีต้นฉบับให้อ้างอิง', 'error'); return; }
+  const r = reGetSelectionRange();
+  if (!r) { showToast('ลากเลือกข้อความที่จะแปลใหม่ก่อน', 'error'); return; }
+  const original = (ch.translation || '').slice(r.start, r.end);
+  if (!original.trim()) { showToast('ส่วนที่เลือกว่างเปล่า', 'error'); return; }
+  if (!getApiKey()) { showToast('ยังไม่ได้ตั้ง API Key — ไปที่ ⚙ ตั้งค่า', 'error'); return; }
+  if (S.translating) { showToast('มีงานแปลอื่นทำงานอยู่ — รอสักครู่', 'error'); return; }
+
+  reState.retrans = {
+    chapterId: ch.id, start: r.start, end: r.end, original, newText: '', ctrl: null,
+    model: S.currentWs.settings?.translateModel || document.getElementById('translateModel')?.value || 'google/gemini-2.5-flash',
+  };
+  const origEl = document.getElementById('rtOriginal');
+  const resEl  = document.getElementById('rtResult');
+  if (origEl) origEl.textContent = original;
+  if (resEl)  resEl.textContent = '';
+  openModal('modal-retranslate');
+  _reRunRetranslate();
+}
+
+async function _reRunRetranslate() {
+  const rt = reState.retrans;
+  if (!rt) return;
+  const ws = S.currentWs;
+  const ch = ws?.chapters?.find(c => c.id === rt.chapterId);
+  if (!ch) return;
+
+  const resEl    = document.getElementById('rtResult');
+  const statusEl = document.getElementById('rtStatus');
+  const applyBtn = document.getElementById('rtApplyBtn');
+  const retryBtn = document.getElementById('rtRetryBtn');
+  const stopBtn  = document.getElementById('rtStopBtn');
+  if (resEl) resEl.textContent = '';
+  if (applyBtn) applyBtn.disabled = true;
+  if (retryBtn) retryBtn.disabled = true;
+  if (stopBtn)  stopBtn.style.display = '';
+  if (statusEl) statusEl.textContent = '⏳ กำลังแปลส่วนที่เลือกใหม่...';
+
+  // glossary เฉพาะคำที่อยู่ในต้นฉบับตอนนี้
+  const smartGloss = getSmartGlossary(ch.sourceText, S.glossaryData);
+  const glossObj = smartGloss.reduce((a, g) => { a[g.korean] = { thai: g.thai, type: g.type, note: g.note, gender: g.gender }; return a; }, {});
+  const glossaryStr = buildGlossaryStr(glossObj);
+
+  const t = ch.translation || '';
+  const ctxLen = Math.max(200, getPrevCtxChars() * 2);
+  const before = t.slice(Math.max(0, rt.start - ctxLen), rt.start);
+  const after  = t.slice(rt.end, rt.end + ctxLen);
+  const consistency = ws?.settings?.consistencyLock
+    ? '\n' + buildConsistencyBlock(ws.settings.consistencySelfRef) + '\n'
+    : '';
+
+  const prompt = RETRANSLATE_PASSAGE_PROMPT
+    .replace('{consistency}', consistency)
+    .replace('{glossary}', glossaryStr || '(ไม่มี)')
+    .replace('{source}', prepareSourceForTranslation(ch.sourceText) || ch.sourceText || '')
+    .replace('{before}', before || '(เริ่มต้นตอน)')
+    .replace('{passage}', rt.original)
+    .replace('{after}', after || '(จบตอน)');
+
+  const temperature = getActivePreset(ws)?.temperature ?? 0.6;
+  const maxTok = Math.max(2000, Math.ceil(rt.original.length * 3));
+
+  setTranslating(true);
+  rt.newText = '';
+  rt.ctrl = new AbortController();
+  const timer = setTimeout(() => { try { rt.ctrl.abort(); } catch {} }, getTimeoutMs('chunk'));
+  let inTok = 0, outTok = 0;
+  try {
+    const out = await aiStream(
+      { model: rt.model, temperature, max_tokens: maxTok, messages: [{ role: 'user', content: prompt }] },
+      d => { rt.newText += d; if (resEl) resEl.textContent = rt.newText; },
+      (i, o) => { inTok = i; outTok = o; },
+      rt.ctrl.signal
+    );
+    rt.newText = (out || rt.newText || '').trim();
+    if (resEl) resEl.textContent = rt.newText;
+    if (statusEl) statusEl.textContent = rt.newText ? '✓ เสร็จ — ตรวจแล้วกด "✓ รับ"' : '⚠ ได้ผลลัพธ์ว่าง';
+    if (applyBtn) applyBtn.disabled = !rt.newText;
+  } catch (e) {
+    if (e.name === 'AbortError') { if (statusEl) statusEl.textContent = '⬛ หยุดแล้ว'; }
+    else { if (statusEl) statusEl.textContent = '✗ ผิดพลาด: ' + (e.message || e); }
+  } finally {
+    clearTimeout(timer);
+    if (inTok || outTok) addCosts(inTok, outTok, rt.model);
+    setTranslating(false);
+    rt.ctrl = null;
+    if (retryBtn) retryBtn.disabled = false;
+    if (stopBtn)  stopBtn.style.display = 'none';
+  }
+}
+
+async function reApplyRetranslation() {
+  const rt = reState.retrans;
+  if (!rt || !rt.newText) return;
+  const ws = S.currentWs;
+  const ch = ws?.chapters?.find(c => c.id === rt.chapterId);
+  if (!ch) { closeModal('modal-retranslate'); return; }
+  const t = ch.translation || '';
+  // กัน index เพี้ยน: ถ้าคำแปลเปลี่ยนไประหว่างนั้น ช่วงเดิมต้องยังตรง
+  if (t.slice(rt.start, rt.end) !== rt.original) {
+    showToast('คำแปลเปลี่ยนไปแล้ว — ลองเลือกใหม่อีกครั้ง', 'error');
+    closeModal('modal-retranslate'); reState.retrans = null; return;
+  }
+  ch.translation = t.slice(0, rt.start) + rt.newText + t.slice(rt.end);
+  ch.wordCount = ch.translation.length;
+  ch.updatedAt = Date.now();
+  if (ch.translation.trim() && ch.status !== 'translated') ch.status = 'translated';
+  await lsSaveWorkspace(ws);
+  closeModal('modal-retranslate');
+  reState.retrans = null;
+  reLoadChapter(reState.chapterId);
+  reUpdateRetranslateBtn();
+  if (S.currentTab === 'chapters') renderChapters();
+  showToast('แทนที่คำแปลส่วนที่เลือกแล้ว ✓', 'success');
+}
+
+function reCancelRetranslation() {
+  const rt = reState.retrans;
+  if (rt?.ctrl) { try { rt.ctrl.abort(); } catch {} }
+  reState.retrans = null;
+  closeModal('modal-retranslate');
+}
+
+function reRetryRetranslation() {
+  if (S.translating) { showToast('มีงานแปลอื่นทำงานอยู่ — รอสักครู่', 'error'); return; }
+  if (!reState.retrans) return;
+  _reRunRetranslate();
+}
+
+function reStopRetranslate() {
+  const rt = reState.retrans;
+  if (rt?.ctrl) { try { rt.ctrl.abort(); } catch {} }
+}
+
+// ติดตั้งตัวฟัง selection → อัปเดตปุ่มแปลส่วนที่เลือก
+(function reSelectionInit() {
+  let raf = 0;
+  const update = () => {
+    if (raf) return;
+    raf = requestAnimationFrame(() => {
+      raf = 0;
+      if (S.currentTab === 'read' && reState.mode === 'read') reUpdateRetranslateBtn();
+    });
+  };
+  document.addEventListener('selectionchange', update);
+  const sc = document.getElementById('reContent');
+  if (sc) { sc.addEventListener('mouseup', update); sc.addEventListener('touchend', update); }
+})();
 
 function reUpdateCharStats() {
   const el = document.getElementById('reCharStats');
