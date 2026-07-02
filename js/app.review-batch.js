@@ -963,7 +963,11 @@ async function startBatchChapters() {
     const prev = findPrevTranslated(ch);
     if (!prev) return '';
     const cached = _summaryCache[prev.id];
-    if (!cached) return '';
+    if (!cached) {
+      // safety net: ตอนก่อนหน้าแปลแล้วแต่ไม่มี summary ใน cache → ใช้ท้ายตอนแทน (ไม่ทิ้ง context)
+      const tail = prev.translation.trim().slice(-Math.round(getPrevCtxChars() * 1.5));
+      return tail ? `PREVIOUS CHAPTER CONTEXT (ตอน #${prev.chapterNum||'?'} "${prev.title}") — ท้ายตอน:\n${tail}\n` : '';
+    }
     if (cached.startsWith('__fallback__')) {
       return `PREVIOUS CHAPTER CONTEXT (ตอน #${prev.chapterNum||'?'} "${prev.title}") — ท้ายตอน:\n${cached.slice(12)}\n`;
     }
@@ -1032,6 +1036,35 @@ async function startBatchChapters() {
       ch.translation = fullText; ch.status = 'translated'; ch.wordCount = fullText.length; ch.updatedAt = Date.now();
       await lsSaveWorkspace(S.currentWs);
       addLog(log, `✓ #${ch.chapterNum||'?'} "${ch.title}" — ${fullText.length.toLocaleString()} ตัวอักษร`, 'success');
+
+      // ── สรุปตอนที่เพิ่งแปลเสร็จทันที เพื่อให้ตอนถัดไปใน batch ได้ context ต่อเนื่อง ──
+      // (เฟส 1 สรุปได้เฉพาะตอนที่แปลก่อนเริ่ม batch — ตอนที่แปลใหม่ใน loop ต้องสรุปที่นี่)
+      const ctxMem = wsGetContext(S.currentWs);
+      const nextCh = selectedChapters[i + 1];
+      const needForNext = usePrevContext && nextCh && findPrevTranslated(nextCh)?.id === ch.id;
+      if (fullText && (needForNext || ctxMem?.enabled)) {
+        try {
+          const sres = await callOpenRouter({
+            model,
+            messages: [{ role: 'user', content: buildSummaryPrompt(ch) }],
+            temperature: 0.1,
+            max_tokens: 300,
+          });
+          const sum = sres.choices?.[0]?.message?.content?.trim() || '';
+          if (sum) {
+            _summaryCache[ch.id] = sum;
+            if (needForNext) addLog(log, `  ↳ 📝 สรุปบริบทส่งต่อตอนถัดไป ✓`, 'cached');
+            // ป้อน Context Memory ด้วย summary เดียวกัน (ไม่เรียก AI ซ้ำ)
+            if (ctxMem?.enabled) {
+              try { await ctxAddSummaryText(S.currentWs, ch.id, ch.chapterNum, ch.title, sum); } catch {}
+            }
+          } else {
+            _summaryCache[ch.id] = '__fallback__' + fullText.trim().slice(-Math.round(getPrevCtxChars() * 1.5));
+          }
+        } catch {
+          _summaryCache[ch.id] = '__fallback__' + fullText.trim().slice(-Math.round(getPrevCtxChars() * 1.5));
+        }
+      }
     } catch (err) {
       if (err.name === 'AbortError') {
         addLog(log, `⬛ หยุดที่ตอน #${ch.chapterNum||'?'} "${ch.title}"`, 'error');
