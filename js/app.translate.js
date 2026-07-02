@@ -981,6 +981,13 @@ async function ctxAddSummary(ws, chId, chapterNum, title, translatedText) {
 
   const summary = await ctxGenerateSummary(translatedText, ws);
   if (!summary) return;
+  await ctxAddSummaryText(ws, chId, chapterNum, title, summary);
+}
+
+// เพิ่ม summary ที่สรุปมาแล้ว (ไม่เรียก AI ซ้ำ) — ใช้โดย batch ซึ่งสรุปตอนไว้เพื่อ prev-context อยู่แล้ว
+async function ctxAddSummaryText(ws, chId, chapterNum, title, summary) {
+  const ctx = wsGetContext(ws);
+  if (!ctx || !ctx.enabled || !summary?.trim()) return;
 
   // Remove old entry for same chapter
   ctx.summaries = ctx.summaries.filter(s => s.chId !== chId);
