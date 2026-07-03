@@ -1374,6 +1374,10 @@
           <code style="background:var(--surface-2);padding:1px 4px;border-radius:2px">{style_note}</code>
           <code style="background:var(--surface-2);padding:1px 4px;border-radius:2px">{mtl_draft}</code> (โหมดแก้ MTL)
         </div>
+        <div style="display:flex;gap:6px;margin-top:6px;align-items:center">
+          <select id="pe-addon-select" class="mini-select" style="flex:1" title="บล็อกกฎแนวย่อย — แทรกต่อท้าย GENRE STYLE MODULE ของ preset แม่"></select>
+          <button class="btn btn-ghost btn-sm" onclick="peInsertAddon()" title="แทรกบล็อก Sub-genre Add-on ก่อนหัวข้อ MANDATORY RULES แล้วบันทึกเป็น preset ใหม่ได้">➕ แทรก Add-on</button>
+        </div>
       </div>
       <div class="sf-group">
         <div class="sf-label">Temperature <span id="pe-temp-val">0.6</span></div>
@@ -1388,7 +1392,7 @@
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" id="pe-delete-btn" style="display:none;color:var(--crimson-light)" onclick="deletePreset()">🗑 ลบ</button>
-      <button class="btn btn-ghost btn-sm" onclick="addMissingSeedPresets()" title="เพิ่มชุด Preset ตัวอย่าง 6 แบบ (เฉพาะที่ยังไม่มี)">✨ เพิ่มชุดตัวอย่าง</button>
+      <button class="btn btn-ghost btn-sm" onclick="addMissingSeedPresets()" title="เพิ่มชุด Preset ตัวอย่าง 3 แนว: Modern / Medieval / จีนโบราณ (เฉพาะที่ยังไม่มี)">✨ เพิ่มชุดตัวอย่าง</button>
       <button class="btn btn-ghost" onclick="closeModal('modal-preset-editor')">ปิด</button>
       <button class="btn btn-primary" onclick="savePreset()">💾 บันทึก</button>
     </div>
