@@ -125,8 +125,38 @@ function pePopulateSelect(selectId) {
 function openPresetEditor() {
   if (!S.currentWs) return;
   pePopulateSelect(S.currentWs.presetId);
+  pePopulateAddonSelect();
   loadPresetForEdit();
   openModal('modal-preset-editor');
+}
+
+// เติม dropdown Sub-genre Add-on (จัดกลุ่มตาม preset แม่)
+function pePopulateAddonSelect() {
+  const sel = document.getElementById('pe-addon-select');
+  if (!sel || typeof SUBGENRE_ADDONS === 'undefined') return;
+  const groups = {};
+  SUBGENRE_ADDONS.forEach((a, i) => { (groups[a.parent] ||= []).push(`<option value="${i}">${a.id}. ${esc(a.name)}</option>`); });
+  sel.innerHTML = '<option value="">— Sub-genre Add-on (แนวย่อย) —</option>' +
+    Object.entries(groups).map(([g, opts]) => `<optgroup label="แม่: ${esc(g)}">${opts.join('')}</optgroup>`).join('');
+}
+
+// แทรกบล็อก add-on เข้า System Prompt — วางก่อนหัวข้อ MANDATORY RULES (ตามกติกา SUB-GENRE OVERRIDE > GENRE STYLE MODULE > CORE)
+// ถ้า prompt ไม่มีหัวข้อนั้น (prompt ที่ผู้ใช้เขียนเอง) จะแทรกที่ตำแหน่ง cursor แทน
+function peInsertAddon() {
+  const sel = document.getElementById('pe-addon-select');
+  const ta  = document.getElementById('pe-prompt-text');
+  if (!sel || !ta || sel.value === '' || typeof SUBGENRE_ADDONS === 'undefined') return;
+  const addon = SUBGENRE_ADDONS[parseInt(sel.value)];
+  if (!addon) return;
+  if (ta.value.includes(addon.block.split('\n')[0])) { showToast('มี Add-on นี้ใน prompt อยู่แล้ว', ''); return; }
+  const m = ta.value.match(/━+\nMANDATORY RULES/);
+  if (m) {
+    ta.value = ta.value.slice(0, m.index) + addon.block + '\n\n' + ta.value.slice(m.index);
+  } else {
+    const pos = ta.selectionStart ?? ta.value.length;
+    ta.value = ta.value.slice(0, pos) + '\n' + addon.block + '\n' + ta.value.slice(pos);
+  }
+  showToast(`แทรก Add-on "${addon.name}" แล้ว — อย่าลืมกด 💾 บันทึก`, 'success');
 }
 
 function loadPresetForEdit() {
@@ -196,7 +226,7 @@ async function deletePreset() {
   showToast('ลบ Preset แล้ว', '');
 }
 
-// เพิ่มชุด Preset ตัวอย่าง 6 แบบ (เฉพาะที่ยังไม่มี) — สำหรับ workspace เดิม
+// เพิ่มชุด Preset ตัวอย่าง 3 แนว (เฉพาะที่ยังไม่มี) — สำหรับ workspace เดิม
 async function addMissingSeedPresets() {
   if (!S.currentWs) return;
   if (!Array.isArray(S.currentWs.presets)) S.currentWs.presets = [];
