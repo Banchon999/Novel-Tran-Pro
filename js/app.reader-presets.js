@@ -12,7 +12,7 @@ async function translateChapterCore(ch, {
 } = {}) {
   const ws = S.currentWs;
   const presetBase = (ws.presets || []).find(p => p.id === presetId) || getActivePreset(ws);
-  const systemPrompt = applyConsistencyLock(presetBase.systemPrompt, ws);
+  const systemPrompt = applyParticleRules(applyConsistencyLock(presetBase.systemPrompt, ws));
   const temperature  = presetBase.temperature;
   const useModel = model || ws.settings?.translateModel || document.getElementById('translateModel')?.value || 'google/gemini-2.5-flash';
 
@@ -35,7 +35,7 @@ async function translateChapterCore(ch, {
     if (signal.aborted) _ctrl.abort();
     else signal.addEventListener('abort', _onAbort, { once: true });
   }
-  const _timer = setTimeout(() => _ctrl.abort(), getTimeoutMs('full'));
+  const _timer = startAbortTimer(_ctrl, getTimeoutMs('full'));
 
   let inTok = 0, outTok = 0;
   let fullText = '';
@@ -46,8 +46,12 @@ async function translateChapterCore(ch, {
       function(i, o) { inTok = i; outTok = o; },
       _ctrl.signal
     );
+  } catch (e) {
+    // หมดเวลา → error ปกติ (ให้ prefetch ลองใหม่ / แจ้งผู้ใช้) — ไม่ปนกับการกดยกเลิก
+    if (e.name === 'AbortError' && _timer.timedOut) throw new Error(timeoutMessage(_timer.ms));
+    throw e;
   } finally {
-    clearTimeout(_timer);
+    clearTimeout(_timer.id);
     if (signal) signal.removeEventListener('abort', _onAbort);
     if (inTok || outTok) addCosts(inTok, outTok, useModel);
   }
@@ -557,6 +561,7 @@ async function reTranslateChapter() {
       onDelta: d => { if (live) { live.textContent += d; } },
     });
     showToast('แปลตอนนี้เสร็จ ✓', 'success');
+    particleQuickCheck(ch.translation);
     if (S.currentTab === 'chapters') renderChapters();
   } catch (e) {
     showToast('แปลไม่สำเร็จ: ' + (e.message || e), 'error');
@@ -853,6 +858,7 @@ async function readerTranslateCurrent() {
     });
     readerRenderChapter(ch);
     if (S.currentTab === 'chapters') renderChapters();
+    particleQuickCheck(ch.translation);
   } catch (err) {
     if (err.name !== 'AbortError') showToast(`แปลไม่สำเร็จ: ${err.message}`, 'error');
     readerRenderChapter(ch);
@@ -887,32 +893,52 @@ function readerCancelCurrentTranslate() {
 })();
 
 // ═══════════════════════════════════════════════
-// ─── Pronoun / Gender Consistency Check ─────────
+// ─── Pronoun / Gender + ครับ/ค่ะ Consistency Check ───
 // ═══════════════════════════════════════════════
-// สแกน local ล้วนๆ (ไม่เรียก AI ไม่มีค่าใช้จ่าย): นับสรรพนามบุรุษที่ 3
-// ในหน้าต่าง ±120 ตัวอักษรรอบชื่อตัวละคร แล้วเทียบกับเพศใน Glossary
+// สแกน local ล้วนๆ (ไม่เรียก AI ไม่มีค่าใช้จ่าย) — เป็นการเดาเบื้องต้น ควรเปิดดูบริบทจริงก่อนแก้
 
 const _PRONOUN_MALE   = ['เขา'];
 const _PRONOUN_FEMALE = ['เธอ', 'นาง', 'หล่อน'];
+// คำประสมที่มีตัวอักษรของสรรพนามอยู่ข้างใน แต่ไม่ใช่สรรพนาม (ภูเขา, นางฟ้า ฯลฯ) — ปิดทับก่อนนับ
+const _PRONOUN_COMPOUNDS = [
+  'ภูเขา', 'หุบเขา', 'เขาวงกต', 'ยอดเขา', 'เทือกเขา', 'เชิงเขา', 'ไหล่เขา', 'ตีนเขา', 'แนวเขา', 'ซอกเขา', 'เขาสัตว์', 'ภูผาเขา',
+  'นางฟ้า', 'นางสาว', 'นางกำนัล', 'นางเอก', 'นางร้าย', 'นางพญา', 'นางสนม', 'นางใน', 'นางงาม', 'นางพยาบาล', 'นางแบบ', 'นางเงือก', 'นางนวล', 'นางรำ', 'นางแมว', 'นางสิงห์', 'นางมาร', 'นางไม้',
+];
+
+// แทนที่คำที่กำหนดด้วยช่องว่างความยาวเท่าเดิม (ตำแหน่งตัวอักษรไม่เลื่อน)
+function _maskWords(text, words) {
+  let out = text;
+  for (const w of words) if (w && out.includes(w)) out = out.split(w).join(' '.repeat(w.length));
+  return out;
+}
+
+function _allIndexes(text, word, limit = 5000) {
+  const pos = [];
+  let idx = text.indexOf(word);
+  while (idx !== -1 && pos.length < limit) { pos.push(idx); idx = text.indexOf(word, idx + word.length); }
+  return pos;
+}
 
 function pronounScanChapter(ch, characters) {
   const text = ch.translation || '';
   if (!text.trim()) return [];
+  const base = _maskWords(text, _PRONOUN_COMPOUNDS);
   const issues = [];
   for (const g of characters) {
     const name = g.thai;
     // หาตำแหน่งชื่อทั้งหมด (จำกัด 200 จุดกันตอนยาวผิดปกติ)
-    const pos = [];
-    let idx = text.indexOf(name);
-    while (idx !== -1 && pos.length < 200) { pos.push(idx); idx = text.indexOf(name, idx + name.length); }
+    const pos = _allIndexes(text, name, 200);
     if (!pos.length) continue;
+    // ปิดชื่อตัวเองด้วย กันสรรพนามที่อยู่ "ในชื่อ" ถูกนับ
+    const masked = _maskWords(base, [name]);
+    const malePos   = _PRONOUN_MALE.flatMap(w => _allIndexes(masked, w));
+    const femalePos = _PRONOUN_FEMALE.flatMap(w => _allIndexes(masked, w));
 
-    let male = 0, female = 0;
-    for (const p of pos) {
-      const win = text.slice(Math.max(0, p - 120), p + name.length + 120);
-      for (const w of _PRONOUN_MALE)   male   += win.split(w).length - 1;
-      for (const w of _PRONOUN_FEMALE) female += win.split(w).length - 1;
-    }
+    // นับแต่ละตำแหน่งครั้งเดียว แม้หน้าต่างรอบชื่อจะซ้อนกัน
+    const inAnyWindow = (q) => pos.some(p => q >= p - 120 && q < p + name.length + 120);
+    const male   = malePos.filter(inAnyWindow).length;
+    const female = femalePos.filter(inAnyWindow).length;
+
     const expectMale = g.gender === 'male';
     const wrong = expectMale ? female : male;
     const right = expectMale ? male : female;
@@ -923,8 +949,8 @@ function pronounScanChapter(ch, characters) {
       const wrongWords = expectMale ? _PRONOUN_FEMALE : _PRONOUN_MALE;
       for (const p of pos) {
         if (samples.length >= 2) break;
-        const win = text.slice(Math.max(0, p - 120), p + name.length + 120);
-        if (wrongWords.some(w => win.includes(w))) samples.push('…' + win.trim().slice(0, 160) + '…');
+        const s0 = Math.max(0, p - 120), s1 = p + name.length + 120;
+        if (wrongWords.some(w => masked.slice(s0, s1).includes(w))) samples.push('…' + text.slice(s0, s1).trim().slice(0, 160) + '…');
       }
       issues.push({ name, gender: g.gender, wrong, right, samples });
     }
@@ -932,36 +958,174 @@ function pronounScanChapter(ch, characters) {
   return issues;
 }
 
+// ── ครับ/ค่ะ ──
+const _QUOTE_RE = /[“"「『‘]([^“”"「」『』‘’\n]{1,600})[”"」』’]/g;
+const _PARTICLE_END = '(?=$|[\\s!?.…,~ๆ\\-—)])';
+const _MALE_PARTICLE_RE   = new RegExp('(ครับ(?:ผม)?|ขอรับ|\\u0000M\\u0000)' + _PARTICLE_END, 'g');
+const _FEMALE_PARTICLE_RE = new RegExp('(เจ้าค่ะ|ค่ะ|คะ|เพคะ)' + _PARTICLE_END, 'g');
+// ผม = "เส้นผม" ได้ด้วย — ปิดคำที่เกี่ยวกับผม (hair) ก่อนเช็คสรรพนามตัวเอง
+const _HAIR_WORDS = ['เส้นผม', 'ทรงผม', 'สระผม', 'หวีผม', 'ผมเผ้า', 'ผมยาว', 'ผมสั้น', 'ผมสี', 'ปอยผม', 'มัดผม', 'ผมหงอก', 'ผมดำ', 'ผมทอง', 'ผมขาว', 'ผมแดง', 'ผมเงิน', 'ไรผม', 'โคนผม', 'ปลายผม', 'เกล้าผม', 'ถักผม'];
+const _SPEECH_VERBS = ['กล่าว', 'พูด', 'ตอบ', 'ถาม', 'เอ่ย', 'ตะโกน', 'กระซิบ', 'บอก', 'ร้อง', 'พึมพำ', 'ตะคอก', 'ว่า', 'แย้ง', 'สั่ง', 'อธิบาย'];
+const _GENDER_TH = { male: 'ชาย', female: 'หญิง' };
+
+// นับคำลงท้ายแต่ละเพศในบทพูด 1 ประโยค (พ่ะย่ะค่ะ = ราชาศัพท์ของผู้ชาย ต้องแปลงก่อนนับ ค่ะ)
+function _particleCounts(quote) {
+  const t = quote.replace(/พ่ะย่ะค่ะ|พะยะค่ะ/g, '\u0000M\u0000');
+  return {
+    male:   (t.match(_MALE_PARTICLE_RE)   || []).length,
+    female: (t.match(_FEMALE_PARTICLE_RE) || []).length,
+  };
+}
+
+// หาผู้พูดจากแท็กบทพูดที่ติดกับเครื่องหมายคำพูด เช่น  ลีน่ากล่าว “…”  หรือ  “…” ลีน่าตอบ
+function _findSpeaker(text, qStart, qEnd, characters) {
+  const before = text.slice(Math.max(0, qStart - 80), qStart);
+  const after  = text.slice(qEnd, qEnd + 80);
+  const lineBefore = before.slice(before.lastIndexOf('\n') + 1);
+  const lineAfter  = after.split('\n')[0];
+  let best = null;
+  for (const g of characters) {
+    // ชื่อก่อนเครื่องหมายคำพูด: ระหว่างชื่อกับ quote ต้องมีคำกริยาพูด และไม่มี quote อื่นคั่น
+    const bi = lineBefore.lastIndexOf(g.thai);
+    if (bi !== -1) {
+      const gap = lineBefore.slice(bi + g.thai.length);
+      const dist = gap.length;
+      if (dist <= 40 && !/[“”"「」『』]/.test(gap) && _SPEECH_VERBS.some(v => gap.includes(v))
+          && (!best || dist < best.dist || (dist === best.dist && g.thai.length > best.g.thai.length))) best = { g, dist };
+    }
+    // ชื่อหลังเครื่องหมายคำพูด: อยู่ใกล้ (≤30) และตามด้วยคำกริยาพูด
+    const ai = lineAfter.indexOf(g.thai);
+    if (ai !== -1 && ai <= 30 && !/[“”"「」『』]/.test(lineAfter.slice(0, ai))) {
+      const tail = lineAfter.slice(ai + g.thai.length, ai + g.thai.length + 20);
+      if (_SPEECH_VERBS.some(v => tail.includes(v))
+          && (!best || ai < best.dist || (ai === best.dist && g.thai.length > best.g.thai.length))) best = { g, dist: ai };
+    }
+  }
+  return best ? best.g : null;
+}
+
+// คืนรายการจุดน่าสงสัย: level 'high' = ขัดกันเองในบทพูดเดียว (แม่นมาก) · 'mid' = ขัดกับเพศผู้พูดใน glossary
+function particleScanText(text, characters = []) {
+  if (!text || !text.trim()) return [];
+  const issues = [];
+  _QUOTE_RE.lastIndex = 0;
+  let m;
+  while ((m = _QUOTE_RE.exec(text)) && issues.length < 500) {
+    const quote = m[1];
+    const pc = _particleCounts(quote);
+    if (!pc.male && !pc.female) continue;
+    const base = { quote, index: m.index };
+
+    if (pc.male && pc.female) {
+      issues.push({ ...base, level: 'high', reason: 'ใช้ทั้ง "ครับ" และ "ค่ะ/คะ" ในบทพูดเดียว' });
+      continue;
+    }
+    const q = _maskWords(quote, _HAIR_WORDS);
+    const maleSelf   = /(^|[\s“"「『‘])(กระผม|ผม)/.test(q);
+    const femaleSelf = /(ดิฉัน|อิฉัน)/.test(q);
+    if (pc.female && maleSelf && !femaleSelf && !/(ฉัน|หนู)/.test(q)) {
+      issues.push({ ...base, level: 'high', reason: 'แทนตัวว่า "ผม" แต่ลงท้าย "ค่ะ/คะ"' });
+      continue;
+    }
+    if (pc.male && femaleSelf && !maleSelf) {
+      issues.push({ ...base, level: 'high', reason: 'แทนตัวว่า "ดิฉัน" แต่ลงท้าย "ครับ"' });
+      continue;
+    }
+    if (characters.length) {
+      const sp = _findSpeaker(text, m.index, m.index + m[0].length, characters);
+      const pg = pc.male ? 'male' : 'female';
+      if (sp && (sp.gender === 'male' || sp.gender === 'female') && sp.gender !== pg) {
+        issues.push({ ...base, level: 'mid', speaker: sp.thai,
+          reason: `ผู้พูด "${sp.thai}" เป็น${_GENDER_TH[sp.gender]} แต่ลงท้าย "${pc.male ? 'ครับ' : 'ค่ะ/คะ'}"` });
+      }
+    }
+  }
+  return issues;
+}
+
+function _genderedCharacters() {
+  return (S.currentWs?.glossary || []).filter(g =>
+    g.type === 'character' && (g.gender === 'male' || g.gender === 'female') && g.thai);
+}
+
+function particleHighCount(text) {
+  try { return particleScanText(text, _genderedCharacters()).length; } catch { return 0; }
+}
+
+// เรียกหลังแปลเสร็จ — เตือนถ้ามี ครับ/ค่ะ น่าสงสัย (หน่วงไว้ไม่ให้ทับ toast "แปลเสร็จ")
+function particleQuickCheck(text) {
+  const n = particleHighCount(text);
+  if (n) setTimeout(() => showToast(`⚠ ครับ/ค่ะ น่าสงสัย ${n} จุด — ตรวจที่ 🚻 สรรพนาม/ครับ-ค่ะ (แท็บคลังศัพท์)`, 'error'), 1800);
+  return n;
+}
+
 function openPronounCheck() {
   if (!S.currentWs) { showToast('เลือก Workspace ก่อน', 'error'); return; }
-  const characters = (S.currentWs.glossary || []).filter(g =>
-    g.type === 'character' && (g.gender === 'male' || g.gender === 'female') && g.thai);
+  const characters = _genderedCharacters();
   const box = document.getElementById('pronounCheckResults');
+  const chapters = _getSortedChapters();
 
+  // ── สรรพนาม ──
+  const pRows = [];
+  if (characters.length) {
+    for (const ch of chapters) for (const it of pronounScanChapter(ch, characters)) pRows.push({ ch, ...it });
+  }
+  // ── ครับ/ค่ะ ──
+  const kRows = [];
+  for (const ch of chapters) {
+    for (const it of particleScanText(ch.translation || '', characters)) {
+      kRows.push({ ch, ...it });
+      if (kRows.length >= 300) break;
+    }
+    if (kRows.length >= 300) break;
+  }
+  kRows.sort((a, b) => (a.level === b.level ? 0 : a.level === 'high' ? -1 : 1));
+
+  const sec = (title) => `<div style="font-weight:600;font-size:0.84rem;margin:6px 0 2px">${title}</div>`;
+  const okMsg = (msg) => `<div style="color:#4caf50;font-size:0.82rem;padding:8px 14px">✓ ${msg}</div>`;
+  const chLabel = (ch) => `ตอน #${ch.chapterNum || '?'} ${esc((ch.title || '').slice(0, 24))}`;
+
+  let html = sec(`🚻 สรรพนามขัดกับเพศ (${pRows.length})`);
   if (!characters.length) {
-    box.innerHTML = '<div style="color:var(--text-muted);font-size:0.8rem;padding:14px;text-align:center">ไม่มีตัวละครที่ระบุเพศใน Glossary — เพิ่มคำศัพท์ประเภท "ตัวละคร" พร้อมเพศก่อน</div>';
-    openModal('modal-pronoun-check');
-    return;
-  }
-
-  const rows = [];
-  for (const ch of _getSortedChapters()) {
-    for (const it of pronounScanChapter(ch, characters)) rows.push({ ch, ...it });
-  }
-
-  const GENDER_TH = { male: 'ชาย', female: 'หญิง' };
-  box.innerHTML = rows.length ? rows.map(r => `
+    html += '<div style="color:var(--text-muted);font-size:0.8rem;padding:8px 14px">ไม่มีตัวละครที่ระบุเพศใน Glossary — เพิ่มคำศัพท์ประเภท "ตัวละคร" พร้อมเพศก่อน (ใช้ทั้งตรวจสรรพนาม และหาผู้พูดของ ครับ/ค่ะ)</div>';
+  } else if (!pRows.length) {
+    html += okMsg('ไม่พบสรรพนามขัดแย้งกับเพศของตัวละคร');
+  } else {
+    html += pRows.map(r => `
     <div style="border:1px solid var(--border);border-radius:var(--radius);padding:10px;background:var(--bg-deep)">
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
         <b>${esc(r.name)}</b>
-        <span class="tag tag-term" style="font-size:0.66rem">เพศ${GENDER_TH[r.gender]}</span>
+        <span class="tag tag-term" style="font-size:0.66rem">เพศ${_GENDER_TH[r.gender]}</span>
         <span style="font-size:0.76rem;color:var(--crimson-light)">สรรพนามเพศตรงข้าม ${r.wrong} ครั้งใกล้ชื่อ (ตรงเพศ ${r.right})</span>
-        <span style="font-size:0.74rem;color:var(--text-muted)">ตอน #${r.ch.chapterNum || '?'} ${esc((r.ch.title || '').slice(0, 24))}</span>
+        <span style="font-size:0.74rem;color:var(--text-muted)">${chLabel(r.ch)}</span>
         <button class="btn-xs" style="margin-left:auto" data-name="${esc(r.name)}"
           onclick="closeModal('modal-pronoun-check');openReviewSearch(this.dataset.name)">🔎 ตรวจใน Review</button>
       </div>
       ${r.samples.map(s => `<div style="font-size:0.74rem;color:var(--text-secondary);margin-top:6px;padding:6px;background:var(--surface-2);border-radius:4px;line-height:1.6">${esc(s)}</div>`).join('')}
-    </div>`).join('')
-    : '<div style="color:#4caf50;font-size:0.84rem;padding:14px;text-align:center">✓ ไม่พบสรรพนามขัดแย้งกับเพศของตัวละคร</div>';
+    </div>`).join('');
+  }
+
+  html += sec(`💬 ครับ/ค่ะ ไม่ตรงผู้พูด (${kRows.length}${kRows.length >= 300 ? '+' : ''})`);
+  if (!kRows.length) {
+    html += okMsg('ไม่พบ ครับ/ค่ะ ที่น่าสงสัย');
+  } else {
+    html += kRows.map(r => {
+      // ใช้ส่วนต้นของบทพูดเป็นคำค้น (ตรงกับข้อความจริงแน่นอน)
+      const needle = r.quote.trim().slice(0, 40);
+      return `
+    <div style="border:1px solid var(--border);border-radius:var(--radius);padding:10px;background:var(--bg-deep)">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <span class="tag ${r.level === 'high' ? 'tag-monster' : 'tag-term'}" style="font-size:0.66rem">${r.level === 'high' ? 'ชัดเจน' : 'น่าสงสัย'}</span>
+        <span style="font-size:0.76rem;color:var(--crimson-light)">${esc(r.reason)}</span>
+        <span style="font-size:0.74rem;color:var(--text-muted)">${chLabel(r.ch)}</span>
+        <button class="btn-xs" style="margin-left:auto" data-q="${esc(needle)}"
+          onclick="closeModal('modal-pronoun-check');openReviewSearch(this.dataset.q)">🔎 แก้ใน Review</button>
+      </div>
+      <div style="font-size:0.74rem;color:var(--text-secondary);margin-top:6px;padding:6px;background:var(--surface-2);border-radius:4px;line-height:1.6">“${esc(r.quote.slice(0, 200))}${r.quote.length > 200 ? '…' : ''}”</div>
+    </div>`;
+    }).join('');
+  }
+
+  box.innerHTML = html;
   openModal('modal-pronoun-check');
 }

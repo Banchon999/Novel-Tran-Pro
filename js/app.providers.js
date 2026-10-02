@@ -123,6 +123,18 @@ function getTimeoutMs(kind = 'chunk') {
   return Math.round(base * (kind === 'full' ? 1.5 : 1) * 1000);
 }
 
+// ตั้ง timeout ให้ AbortController แบบแยกแยะได้ว่า "หมดเวลา" หรือ "ผู้ใช้กดหยุด"
+// (ทั้งสองกรณีโยน AbortError เหมือนกัน — เช็ค t.timedOut ใน catch)
+function startAbortTimer(ctrl, ms) {
+  const t = { timedOut: false, ms };
+  t.id = setTimeout(() => { t.timedOut = true; ctrl.abort(); }, ms);
+  return t;
+}
+
+function timeoutMessage(ms) {
+  return `หมดเวลา ${Math.round(ms / 1000)} วินาที — เพิ่ม Timeout ได้ใน ⚙ ตั้งค่า API Key`;
+}
+
 // provider ปัจจุบันของ workspace — default openrouter เพื่อให้ workspace เก่าทำงานเหมือนเดิม
 function getProvider() {
   const p = S.currentWs?.settings?.aiProvider || 'openrouter';

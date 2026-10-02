@@ -158,7 +158,7 @@ function getActivePreset(ws) {
 
 function buildTranslatePrompt({ sourceText, glossaryStr = '', contextStr = '', styleNote = '', ws = null, mtlDraft = '' }) {
   const preset = getActivePreset(ws);
-  return applyConsistencyLock(preset.systemPrompt, ws)
+  return applyParticleRules(applyConsistencyLock(preset.systemPrompt, ws))
     .replace('{style_note}', styleNote ? `STYLE GUIDE:\n${styleNote}\n` : '')
     .replace('{glossary}',   glossaryStr || '(ไม่มี)')
     .replace('{context}',   contextStr)
@@ -188,6 +188,7 @@ REGISTER CONSISTENCY (ล็อกระดับภาษา)
 • Once a speaker's Thai speech register is established, preserve it throughout the passage.
 • Do NOT fluctuate between colloquial / neutral / polite / formal / literary / archaic Thai without explicit evidence from the source.
 • Avoid unnecessary variation in self-reference and address terms.
+• Keep each speaker's polite particles (ครับ/ค่ะ/คะ…) consistent with their gender and established register.
 
 ━━━━━━━━━━━━━━━━━━━━
 NARRATIVE POV LOCK (ล็อกมุมมองเล่าเรื่อง)
@@ -206,6 +207,26 @@ DETERMINISTIC TRANSLATION POLICY
 • If multiple valid Thai renderings exist, always choose the one most consistent with earlier decisions in the same passage.
 • Prefer consistency with earlier choices over re-evaluating alternatives.
 • Treat established terminology, pronouns, titles, honorifics, relationship terms, and self-references as LOCKED for the rest of the passage unless the source explicitly changes them.`;
+}
+
+// ─── Speech Particles (คำลงท้าย ครับ/ค่ะ — ใส่ทุก prompt เสมอ) ───
+// preset ใน workspace เก็บ prompt แบบเต็มไว้ตอนสร้าง → แก้ค่าคงที่ไม่ถึง workspace เดิม จึง inject ตอน runtime แทน
+const SPEECH_PARTICLE_RULES = `━━━━━━━━━━━━━━━━━━━━
+SPEECH PARTICLE RULES (คำลงท้าย ครับ/ค่ะ) — CRITICAL
+━━━━━━━━━━━━━━━━━━━━
+• Thai polite particles follow the gender of the SPEAKER of that line — never the listener, never the narrator.
+• Before writing each line of dialogue, identify who is speaking (dialogue tags, turn order, glossary gender), then choose the particle.
+• Male speaker: ครับ / นะครับ / ครับผม / ขอรับ · Female speaker: ค่ะ / คะ / นะคะ / เจ้าค่ะ.
+• Royal register: male speaker → พ่ะย่ะค่ะ · female speaker → เพคะ.
+• NEVER mix male and female particles inside one line of dialogue.
+• The particle must agree with the speaker's self-pronoun in the same line (ผม/กระผม → ครับ · ดิฉัน/อิฉัน → ค่ะ/คะ).
+• If the speaker or their gender is unclear, do NOT guess: use a gender-neutral ending (นะ, จ้ะ, or no particle) instead.`;
+
+function applyParticleRules(systemPrompt) {
+  if (typeof systemPrompt !== 'string' || systemPrompt.includes('SPEECH PARTICLE RULES')) return systemPrompt;
+  return systemPrompt.includes('{text}')
+    ? systemPrompt.replace('{text}', SPEECH_PARTICLE_RULES + '\n\n{text}')
+    : systemPrompt + '\n\n' + SPEECH_PARTICLE_RULES;
 }
 
 // แทรกบล็อกกฎ Consistency เข้า systemPrompt (ก่อน {text}) เมื่อ workspace เปิดใช้งาน
@@ -230,6 +251,7 @@ RULES:
 • Correct Thai spelling, vowels, tone marks (วรรณยุกต์), and word spacing; remove typos, doubled characters, and any stray source-language characters or symbols.
 • Keep tone, character voice, and pacing consistent; do NOT add, omit, or alter meaning.
 • Preserve all glossary terms exactly as given.
+• Do NOT change the gender of speech particles (ครับ ↔ ค่ะ/คะ) unless one contradicts the speaker's gender given in the glossary; never mix both in one line of dialogue.
 
 GLOSSARY (preserve these terms):
 {glossary}

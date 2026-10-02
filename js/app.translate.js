@@ -10,7 +10,7 @@ function getOptions() {
   const styleId = document.getElementById('activeStyleSelect')?.value || S.activeStyleId;
   const customStylePrompt = getStyleById(styleId)?.prompt || null;
   const wsGlossary = {};
-  (S.currentWs?.glossary || []).forEach(g => { wsGlossary[g.korean] = { thai: g.thai, type: g.type, note: g.note }; });
+  (S.currentWs?.glossary || []).forEach(g => { wsGlossary[g.korean] = { thai: g.thai, type: g.type, note: g.note, gender: g.gender }; });
 
   // Prev chapter context
   let prevChapterContext = '';
@@ -60,6 +60,7 @@ function buildGlossaryStr(wsGlossary) {
   const GENDER_MAP   = { male: 'male/ชาย', female: 'female/หญิง', neutral: 'neutral/กลาง' };
   const PRONOUN_3RD  = { male: '3rd→เขา/ของเขา', female: '3rd→เธอ/นาง/ของเธอ' };
   const PRONOUN_1ST  = { male: '1st→ผม/กู/ข้า', female: '1st→ฉัน/หนู/อิฉัน' };
+  const PARTICLE     = { male: 'particle→ครับ/ขอรับ', female: 'particle→ค่ะ/คะ' };
   const entries = Object.entries(wsGlossary || {});
   if (!entries.length) return '(ไม่มี)';
   return entries.map(([k, v]) => {
@@ -68,6 +69,7 @@ function buildGlossaryStr(wsGlossary) {
       parts.push(`gender:${GENDER_MAP[v.gender] || v.gender}`);
       parts.push(PRONOUN_3RD[v.gender]);
       parts.push(PRONOUN_1ST[v.gender]);
+      if (PARTICLE[v.gender]) parts.push(PARTICLE[v.gender]);
     } else if (v.type === 'character' && v.gender === 'neutral') {
       parts.push('gender:neutral/กลาง');
     }
@@ -107,10 +109,15 @@ function _mcGet(key) {
   return _memoryCache[key];
 }
 
+// key ของ Memory = โมเดล + preset + ข้อความเต็ม (เดิมใช้แค่ 120 ตัวแรก → chunk ที่ขึ้นต้นเหมือนกันได้คำแปลผิดอัน)
+function _mcKey(model, text) {
+  return `${model || ''}|${S.currentWs?.presetId || ''}|${text}`;
+}
+
 // ── True SSE streaming per segment — ใช้ aiStream (provider-aware) ──
 async function streamSegment(text, contextSegs, options, onChunk, onDone) {
   const { model, temperature = 0.7, customStylePrompt, wsGlossary = {}, useMemory = true } = options;
-  const cacheKey = text.slice(0, 120);
+  const cacheKey = _mcKey(model, text);
 
   if (useMemory && _mcGet(cacheKey)) {
     onChunk(_mcGet(cacheKey));
@@ -156,7 +163,7 @@ async function streamSegment(text, contextSegs, options, onChunk, onDone) {
 // Fallback non-streaming (for preview/polish)
 async function translateSegmentDirect(text, allSegments = [], options = {}) {
   const { model = 'google/gemini-2.5-flash', temperature = 0.7, customStylePrompt, wsGlossary = {}, useMemory = true, usePolish = false } = options;
-  const cacheKey = text.slice(0, 120);
+  const cacheKey = _mcKey(model, text);
   if (useMemory && _mcGet(cacheKey)) return { translation: _mcGet(cacheKey), fromMemory: true };
 
   const glossaryStr = buildGlossaryStr(wsGlossary);
@@ -196,6 +203,12 @@ async function startTranslation() {
   } else {
     await translateAllStream(text);
   }
+}
+
+// gender ใช้ได้เฉพาะ type=character และต้องเป็นค่าที่รู้จัก — ใช้ร่วมกันทั้ง auto-glossary หลังแปลและแบบกดเอง
+function sanitizeGlossaryEntry(entry) {
+  if (entry.type !== 'character' || !['male', 'female', 'neutral'].includes(entry.gender)) delete entry.gender;
+  return entry;
 }
 
 // ─── Auto Extract Glossary หลังแปลเสร็จ ───
@@ -244,11 +257,7 @@ async function autoExtractGlossaryAfterTranslation(sourceText, model, chapterInf
       const exactExists = S.currentWs.glossary.some(g => g.korean === term.korean);
       if (exactExists) return;
       // แนบ source chapter info ถ้ามี
-      const entry = { ...term };
-      // sanitize gender — only valid for character type, and must be a known value
-      if (entry.type !== 'character' || !['male','female','neutral'].includes(entry.gender)) {
-        delete entry.gender;
-      }
+      const entry = sanitizeGlossaryEntry({ ...term });
       if (chapterInfo?.title) {
         entry.sourceChapterId    = chapterInfo.id    || null;
         entry.sourceChapterTitle = chapterInfo.title;
@@ -286,7 +295,7 @@ async function translateAllStream(text) {
   output.innerHTML = '';
 
   const options = getOptions();
-  const cacheKey = text.slice(0, 120);
+  const cacheKey = _mcKey(options.model, text);
 
   // Build prompt — whole text as one
   const glossaryStr = buildGlossaryStr(options.wsGlossary);
@@ -330,10 +339,11 @@ async function translateAllStream(text) {
     return;
   }
 
+  let timer = null;
   try {
     let charCount = 0;
     S.abortCtrl = new AbortController();
-    const timer = setTimeout(() => S.abortCtrl.abort(), getTimeoutMs('full'));
+    timer = startAbortTimer(S.abortCtrl, getTimeoutMs('full'));
 
     let inTok = 0, outTok = 0;
     let fullText = '';
@@ -354,7 +364,7 @@ async function translateAllStream(text) {
         S.abortCtrl.signal
       );
     } finally {
-      clearTimeout(timer);
+      clearTimeout(timer.id);
     }
 
     cursor.remove();
@@ -380,6 +390,7 @@ async function translateAllStream(text) {
     updateProgress(100, 'แปลเสร็จสิ้น ✓');
     document.getElementById('translationStats').textContent = `${fullText.length.toLocaleString()} ตัวอักษร`;
     showToast('แปลเสร็จสิ้น ✓', 'success');
+    particleQuickCheck(fullText);
     // ดึง chapter info จาก chapter ที่กำลัง edit อยู่ (ถ้ามี)
     const _streamChInfo = S.editingChapterId
       ? (() => { const c = S.currentWs?.chapters?.find(ch => ch.id === S.editingChapterId); return c ? { id: c.id, title: c.title, chapterNum: c.chapterNum } : null; })()
@@ -393,7 +404,11 @@ async function translateAllStream(text) {
 
   } catch (e) {
     cursor.remove();
-    if (e.name === 'AbortError') {
+    if (e.name === 'AbortError' && timer?.timedOut) {
+      txtEl.textContent = `⏱ ${timeoutMessage(timer.ms)}`;
+      updateProgress(0, 'หมดเวลา');
+      showToast('⏱ ' + timeoutMessage(timer.ms), 'error');
+    } else if (e.name === 'AbortError') {
       txtEl.textContent = '⬛ ถูกหยุดโดยผู้ใช้';
       updateProgress(0, 'หยุดแล้ว');
       showToast('⬛ หยุดการแปลแล้ว', '');
@@ -527,6 +542,24 @@ async function translateChunked(text, options) {
     output.appendChild(wrapEl);
   }
 
+  // บันทึกความคืบหน้าเข้า chapter ทันที (กัน data loss) + chunkProgress สำหรับ resume — ลบทิ้งเมื่อแปลครบ
+  const savePartial = () => {
+    if (!S.editingChapterId || !S.currentWs) return;
+    const _pCh = S.currentWs.chapters?.find(ch => ch.id === S.editingChapterId);
+    if (!_pCh || !completedTranslations.length) return; // ยังไม่มี chunk ไหนเสร็จ → ไม่ทับคำแปลเดิมของตอน
+    const doneAll = completedTranslations.length >= n;
+    _pCh.translation = completedTranslations.join('\n\n');
+    _pCh.status = doneAll ? 'translated' : 'partial';
+    if (doneAll) delete _pCh.chunkProgress;
+    else _pCh.chunkProgress = { chunkSize: options.chunkSize, srcHash: _srcHash, chunks: [...completedTranslations], updatedAt: Date.now() };
+    _pCh.updatedAt = Date.now();
+    lsSaveWorkspace(S.currentWs).catch(() => {});
+  };
+
+  let stopped = false;     // ผู้ใช้กดหยุด
+  let failedAt = -1;       // chunk ที่ error/timeout (หยุดไว้ให้ resume ต่อจากจุดนี้)
+  let failMsg = '';
+
   try {
     for (let i = startIdx; i < n; i++) {
       const chunk = chunks[i];
@@ -561,7 +594,7 @@ async function translateChunked(text, options) {
       const badge = idxEl.querySelector('.seg-status');
 
       // Check memory cache
-      const cacheKey = chunk.slice(0, 120);
+      const cacheKey = _mcKey(options.model, chunk);
       if (options.useMemory && _mcGet(cacheKey)) {
         cursor.remove();
         txtEl.textContent = _mcGet(cacheKey);
@@ -569,6 +602,7 @@ async function translateChunked(text, options) {
         badge.className = 'seg-status cached';
         badge.innerHTML = '📦 Memory';
         updateProgress(Math.round((i+1)/n*100), `chunk ${i+1}/${n} เสร็จ`);
+        savePartial();
         continue;
       }
 
@@ -595,11 +629,12 @@ async function translateChunked(text, options) {
 
       let chunkFull = '';
       let inTok = 0, outTok = 0;
+      let timer = null;
 
       try {
-        // ใช้ global abort + timeout 120s
+        // ใช้ global abort + timeout (แยกได้ว่าหมดเวลาหรือผู้ใช้กดหยุด)
         S.abortCtrl = new AbortController();
-        const timer = setTimeout(() => S.abortCtrl.abort(), getTimeoutMs('chunk'));
+        timer = startAbortTimer(S.abortCtrl, getTimeoutMs('chunk'));
         try {
           chunkFull = await aiStream(
             { model: options.model, temperature: chunkPreset.temperature ?? options.temperature, max_tokens: Math.max(2000, Math.ceil(chunk.length * 2)), messages: [{ role: 'user', content: prompt }] },
@@ -612,7 +647,7 @@ async function translateChunked(text, options) {
             (i, o) => { inTok = i; outTok = o; },
             S.abortCtrl.signal
           );
-        } finally { clearTimeout(timer); }
+        } finally { clearTimeout(timer.id); }
 
         cursor.remove();
         if (inTok || outTok) addCosts(inTok, outTok, options.model);
@@ -636,39 +671,37 @@ async function translateChunked(text, options) {
         badge.textContent = `✓ ${chunkFull.length} ตัวอักษร`;
         updateProgress(Math.round((i+1)/n*100), `chunk ${i+1}/${n} เสร็จ`);
 
-        // Partial save: บันทึก chunk ที่เสร็จแล้วเข้า chapter ทันที (กัน data loss ถ้าหยุดกลางคัน)
-        // + chunkProgress สำหรับ resume — ลบทิ้งเมื่อแปลครบ
-        if (S.editingChapterId && S.currentWs) {
-          const _pCh = S.currentWs.chapters?.find(ch => ch.id === S.editingChapterId);
-          if (_pCh) {
-            _pCh.translation = completedTranslations.join('\n\n');
-            _pCh.status = i + 1 < n ? 'partial' : 'translated';
-            if (i + 1 < n) {
-              _pCh.chunkProgress = { chunkSize: options.chunkSize, srcHash: _srcHash, chunks: [...completedTranslations], updatedAt: Date.now() };
-            } else {
-              delete _pCh.chunkProgress;
-            }
-            _pCh.updatedAt = Date.now();
-            lsSaveWorkspace(S.currentWs).catch(() => {});
-          }
-        }
+        savePartial();
 
       } catch (err) {
         cursor.remove();
-        // ถ้า user กดหยุด → ออกจาก loop ทันที
-        if (err.name === 'AbortError') {
-          badge.className = 'seg-status error';
+        badge.className = 'seg-status error';
+        // ผู้ใช้กดหยุด → ออกจาก loop ทันที
+        if (err.name === 'AbortError' && !timer?.timedOut) {
           badge.textContent = '⬛ หยุดแล้ว';
           txtEl.textContent = '⬛ ถูกหยุดโดยผู้ใช้';
-          updateProgress(Math.round((i+1)/n*100), `หยุดที่ chunk ${i+1}/${n}`);
+          updateProgress(Math.round(i / n * 100), `หยุดที่ chunk ${i+1}/${n}`);
+          stopped = true;
           break;
         }
-        badge.className = 'seg-status error';
-        badge.textContent = '✗ Error';
-        txtEl.textContent = `❌ ${err.message}`;
-        completedTranslations.push('');
-        updateProgress(Math.round((i+1)/n*100), `chunk ${i+1}/${n} Error`);
+        // error / หมดเวลา → หยุดที่ chunk นี้ (ไม่ข้าม — กันคำแปลขาดหายแต่ขึ้นว่าแปลเสร็จ)
+        failMsg = (err.name === 'AbortError') ? timeoutMessage(timer.ms) : err.message;
+        badge.textContent = err.name === 'AbortError' ? '⏱ หมดเวลา' : '✗ Error';
+        txtEl.textContent = `❌ ${failMsg}`;
+        updateProgress(Math.round(i / n * 100), `chunk ${i+1}/${n} ล้มเหลว`);
+        failedAt = i;
+        break;
       }
+    }
+
+    if (stopped || failedAt >= 0) {
+      savePartial();
+      setStage('translate', 'error');
+      const doneCnt = completedTranslations.length;
+      document.getElementById('translationStats').textContent = `แปลแล้ว ${doneCnt}/${n} chunks`;
+      if (stopped) showToast(`⬛ หยุดแล้ว — แปลแล้ว ${doneCnt}/${n} chunk (กดแปลอีกครั้งเพื่อแปลต่อ)`, '');
+      else showToast(`chunk ${failedAt + 1}/${n} ล้มเหลว: ${failMsg} — กดแปลอีกครั้งเพื่อแปลต่อ`, 'error');
+      return;
     }
 
     setStage('translate', 'done');
@@ -678,6 +711,7 @@ async function translateChunked(text, options) {
     const totalChars = completedTranslations.join('').length;
     document.getElementById('translationStats').textContent = `แปลเสร็จ ${n} chunks · ${totalChars.toLocaleString()} ตัวอักษร`;
     showToast(`แปลเสร็จ ${n} chunks ✓`, 'success');
+    particleQuickCheck(completedTranslations.join('\n\n'));
 
     // ── Auto Extract Glossary ──
     const _chunkChInfo = S.editingChapterId
@@ -912,6 +946,12 @@ function renderAgResults(terms) {
       <span class="ag-arrow">→</span>
       <input class="ag-thai-input" id="ag-thai-${i}" value="${esc(t.thai)}" onclick="event.stopPropagation()" title="แก้ไขคำแปล"/>
       <span class="ag-type-badge"><span class="tag tag-${t.type || 'term'}">${t.type || 'term'}</span></span>
+      ${t.type === 'character' ? `<select class="select-input" id="ag-gender-${i}" onclick="event.stopPropagation()" title="เพศ (ใช้คุมสรรพนาม/ครับ-ค่ะ)" style="width:auto;font-size:0.72rem;padding:2px 4px">
+        <option value=""${!['male','female','neutral'].includes(t.gender) ? ' selected' : ''}>เพศ?</option>
+        <option value="male"${t.gender === 'male' ? ' selected' : ''}>ชาย</option>
+        <option value="female"${t.gender === 'female' ? ' selected' : ''}>หญิง</option>
+        <option value="neutral"${t.gender === 'neutral' ? ' selected' : ''}>กลาง</option>
+      </select>` : ''}
       <span class="ag-note">${esc(t.note || '')}</span>
     </div>
   `).join('');

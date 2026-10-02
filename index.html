@@ -276,7 +276,7 @@
         <button class="btn btn-primary btn-sm" onclick="openAddGlossary()">＋ เพิ่มคำ</button>
         <button class="btn btn-secondary btn-sm" onclick="openAutoGlossary()">🤖 Auto</button>
         <button class="btn btn-secondary btn-sm" onclick="checkDuplicateGlossary()">🔎 ซ้ำ</button>
-        <button class="btn btn-ghost btn-sm" onclick="openPronounCheck()" title="หาจุดที่สรรพนามขัดกับเพศตัวละครใน Glossary">🚻 สรรพนาม</button>
+        <button class="btn btn-ghost btn-sm" onclick="openPronounCheck()" title="หาจุดที่สรรพนาม หรือ ครับ/ค่ะ ขัดกับเพศตัวละครใน Glossary">🚻 สรรพนาม/ครับ-ค่ะ</button>
         <button class="btn btn-ghost btn-sm" onclick="openGlossaryExport()">📤 Export</button>
         <button class="btn btn-ghost btn-sm" onclick="openGlossaryCSVImport()">📥 CSV Import</button>
         <button class="btn btn-ghost btn-sm" onclick="openGlossaryInherit()">🔗 Import จาก WS อื่น</button>
@@ -1397,10 +1397,12 @@
 
 <div class="modal-backdrop" id="modal-pronoun-check">
   <div class="modal modal-wide">
-    <div class="modal-header"><span>🚻 ตรวจสรรพนาม/เพศ</span><button class="icon-btn" onclick="closeModal('modal-pronoun-check')">✕</button></div>
+    <div class="modal-header"><span>🚻 ตรวจสรรพนาม / ครับ-ค่ะ</span><button class="icon-btn" onclick="closeModal('modal-pronoun-check')">✕</button></div>
     <div class="modal-body">
       <div style="font-size:0.76rem;color:var(--text-muted);margin-bottom:10px">
-        สแกนหาจุดที่คำแปลใช้สรรพนามขัดกับเพศของตัวละครใน Glossary (เช่น ใช้ "เขา" ใกล้ชื่อตัวละครหญิง)
+        สแกนทุกตอน (ไม่เสียค่า AI) หาจุดที่ (1) สรรพนามขัดกับเพศตัวละครใน Glossary เช่น ใช้ "เขา" ใกล้ชื่อตัวละครหญิง
+        (2) คำลงท้าย ครับ/ค่ะ ขัดกัน — "ชัดเจน" = ผสม ครับ+ค่ะ หรือขัดกับ ผม/ดิฉัน ในบทพูดเดียว ·
+        "น่าสงสัย" = ไม่ตรงเพศผู้พูดที่ระบุไว้ เช่น <i>ลีน่ากล่าว “…ครับ”</i>
         — เป็นการเดาเบื้องต้น ควรเปิดดูบริบทจริงก่อนแก้
       </div>
       <div id="pronounCheckResults" style="display:flex;flex-direction:column;gap:8px"></div>

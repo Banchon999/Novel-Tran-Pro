@@ -1013,14 +1013,18 @@ async function startBatchChapters() {
         if (multi) document.getElementById('bchProgressLabel').textContent = `แปลตอน ${i+1}/${n} · chunk ${ci+1}/${chChunks.length}: ${ch.title}`;
 
         S.abortCtrl = new AbortController();
-        const timer = setTimeout(() => S.abortCtrl.abort(), getTimeoutMs(multi ? 'chunk' : 'full'));
+        const timer = startAbortTimer(S.abortCtrl, getTimeoutMs(multi ? 'chunk' : 'full'));
         let part = '', inTok = 0, outTok = 0;
         try {
           part = await aiStream(
             { model, temperature: batchPreset.temperature ?? 0.65, max_tokens: Math.max(2000, Math.ceil(chunk.length * 2)), messages: [{role:'user',content:prompt}] },
             d => { part += d; }, (inp,out) => { inTok=inp; outTok=out; }, S.abortCtrl.signal
           );
-        } finally { clearTimeout(timer); }
+        } catch (e) {
+          // หมดเวลา ≠ ผู้ใช้กดหยุด → ถือเป็น error ของตอนนี้ แล้ว batch ไปตอนถัดไป
+          if (e.name === 'AbortError' && timer.timedOut) throw new Error(timeoutMessage(timer.ms));
+          throw e;
+        } finally { clearTimeout(timer.id); }
         if (inTok||outTok) addCosts(inTok, outTok, model);
         fullText += (ci > 0 && part ? '\n\n' : '') + part;
       }
@@ -1036,6 +1040,8 @@ async function startBatchChapters() {
       ch.translation = fullText; ch.status = 'translated'; ch.wordCount = fullText.length; ch.updatedAt = Date.now();
       await lsSaveWorkspace(S.currentWs);
       addLog(log, `✓ #${ch.chapterNum||'?'} "${ch.title}" — ${fullText.length.toLocaleString()} ตัวอักษร`, 'success');
+      const _pHigh = particleHighCount(fullText);
+      if (_pHigh) addLog(log, `  ↳ ⚠ ครับ/ค่ะ น่าสงสัย ${_pHigh} จุด — ดูใน 🚻 สรรพนาม/ครับ-ค่ะ (แท็บคลังศัพท์)`, 'error');
 
       // ── สรุปตอนที่เพิ่งแปลเสร็จทันที เพื่อให้ตอนถัดไปใน batch ได้ context ต่อเนื่อง ──
       // (เฟส 1 สรุปได้เฉพาะตอนที่แปลก่อนเริ่ม batch — ตอนที่แปลใหม่ใน loop ต้องสรุปที่นี่)
@@ -1205,12 +1211,21 @@ function openModal(id) { document.getElementById(id).classList.add('open'); }
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
 
 let _toastTimer = null;
-function showToast(msg, type) {
+// action (ไม่บังคับ): { label, fn } → แสดงลิงก์กดได้ต่อท้ายข้อความ (เช่น Undo) — msg ยังเป็น text ล้วน กัน HTML แทรก
+function showToast(msg, type, action) {
   const t = document.getElementById('toast');
   t.textContent = msg;
+  if (action && typeof action === 'object' && action.fn) {
+    const a = document.createElement('u');
+    a.textContent = ' ' + (action.label || 'Undo');
+    a.style.cursor = 'pointer';
+    a.style.marginLeft = '6px';
+    a.onclick = () => { t.className = 'toast'; action.fn(); };
+    t.appendChild(a);
+  }
   t.className = 'toast show' + (type ? ' ' + type : '');
   if (_toastTimer) clearTimeout(_toastTimer);
-  _toastTimer = setTimeout(() => { t.className = 'toast'; }, 3500);
+  _toastTimer = setTimeout(() => { t.className = 'toast'; }, action && action.fn ? 7000 : 3500);
 }
 
 // ─── Load from Chapter (Translate Tab) ───

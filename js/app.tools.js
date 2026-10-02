@@ -397,7 +397,10 @@ async function addSelectedGlossary() {
   const selected = _agTerms.filter((_, i) => document.getElementById(`ag-chk-${i}`)?.checked)
     .map((t) => {
       const i = _agTerms.indexOf(t);
-      return { ...t, thai: document.getElementById(`ag-thai-${i}`)?.value?.trim() || t.thai };
+      const genderEl = document.getElementById(`ag-gender-${i}`);
+      const entry = { ...t, thai: document.getElementById(`ag-thai-${i}`)?.value?.trim() || t.thai };
+      if (genderEl) entry.gender = genderEl.value;
+      return sanitizeGlossaryEntry(entry);
     });
   if (!selected.length) { showToast('ไม่ได้เลือกคำ', 'error'); return; }
   let added = 0;
