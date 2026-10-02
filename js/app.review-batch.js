@@ -977,6 +977,7 @@ async function startBatchChapters() {
   // ── PHASE 2: แปลทีละตอน (sequential) ──
   addLog(log, `⚡ เริ่มแปล ${n} ตอน...`, '');
   let batchStopped = false;
+  let failedCount = 0;     // ตอนที่ error/หมดเวลา — นับไว้สรุปท้าย (ไม่ขึ้น "เสร็จ n ตอน" ทั้งที่มีตอนพัง)
   for (let i = 0; i < n; i++) {
     const ch = selectedChapters[i];
     const pct = 30 + Math.round(i / n * 70); // progress 30%→100% ในช่วงแปล
@@ -985,6 +986,7 @@ async function startBatchChapters() {
     document.getElementById('bchProgressLabel').textContent = `แปลตอน ${i+1}/${n}: ${ch.title}`;
     if (!ch.sourceText?.trim()) {
       addLog(log, `⚠ #${ch.chapterNum||'?'} "${ch.title}" — ไม่มีต้นฉบับ ข้าม`, 'error');
+      failedCount++;
       continue;
     }
     const ctxStr = usePrevContext ? getCtxFromCache(ch) : '';
@@ -1078,6 +1080,7 @@ async function startBatchChapters() {
         break;
       }
       addLog(log, `✗ #${ch.chapterNum||'?'} "${ch.title}" — ${err.message}`, 'error');
+      failedCount++;
     }
     document.getElementById('bchProgressFill').style.width = (30 + Math.round((i+1)/n*70)) + '%';
     document.getElementById('bchProgressPct').textContent  = (30 + Math.round((i+1)/n*70)) + '%';
@@ -1085,11 +1088,15 @@ async function startBatchChapters() {
 
   document.getElementById('bchProgressFill').style.width = '100%';
   document.getElementById('bchProgressPct').textContent   = '100%';
-  document.getElementById('bchProgressLabel').textContent = batchStopped ? 'หยุดแล้ว ⬛' : `เสร็จสิ้น ${n} ตอน ✓`;
+  const okCount = n - failedCount;
+  document.getElementById('bchProgressLabel').textContent = batchStopped ? 'หยุดแล้ว ⬛'
+    : failedCount ? `เสร็จ ${okCount}/${n} ตอน · ล้มเหลว ${failedCount} ตอน (ดู log)` : `เสร็จสิ้น ${n} ตอน ✓`;
   renderChapters();
   setTranslating(false);
   btn.disabled = false;
-  showToast(batchStopped ? '⬛ หยุด Batch แล้ว' : `Batch แปลเสร็จ ${n} ตอน ✓`, batchStopped ? '' : 'success');
+  showToast(batchStopped ? '⬛ หยุด Batch แล้ว'
+    : failedCount ? `Batch แปลได้ ${okCount}/${n} ตอน — ล้มเหลว ${failedCount} ตอน (เลือก "เฉพาะที่ยังไม่แปล" แล้วกดแปลอีกครั้ง)` : `Batch แปลเสร็จ ${n} ตอน ✓`,
+    batchStopped ? '' : failedCount ? 'error' : 'success');
 
   // ── Auto Extract Glossary จาก source texts ทั้ง batch รวมกัน (ครั้งเดียว) ──
   if (!batchStopped) {
