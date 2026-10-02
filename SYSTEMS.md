@@ -71,7 +71,7 @@
 | **aiCall / aiStream** | เรียกแบบปกติ / แบบ stream (SSE) แปลงให้เป็นรูปแบบเดียวกันทุก provider |
 | **Error ภาษาไทย** | แยก 401 / 402 / 429 / 5xx / CORS / network |
 | **🔄 Fetch Models** | ดึงรายชื่อโมเดลจาก API ของ provider + cache ไว้ (`nt8_fetched_models`) |
-| **โมเดลกำหนดเอง** | `✏ กำหนดเอง…` ใส่ model id เอง (`settings.customModels`) |
+| **โมเดลที่ไม่อยู่ในรายการ** | ไม่มีช่องพิมพ์ model id เอง — เลือกได้เฉพาะโมเดลตั้งต้นหรือที่ 🔄 Fetch มา (ถ้าค่าที่บันทึกไว้ไม่อยู่ในรายการ จะแสดงเป็น ⭐ แทน) |
 | **🧮 มิเตอร์ Context Window** | ประมาณ token ที่จะส่ง เทียบกับ context สูงสุดของโมเดล |
 | **Cost Tracker** | คิดค่าใช้จ่ายตาม input/output token ต่อโมเดล — แสดง USD/THB, แยกต่อ WS + รวม, รีเซ็ตได้ |
 | **Health check** | จุดสถานะ API ใน sidebar |
@@ -84,7 +84,8 @@
 - **แปลแบบ True Stream** — เห็นคำแปลไหลออกมาสด ๆ, กดหยุดได้
 - **ตัวเลือกในแท็บแปล**
   - **Polish** — ขัดเกลาคำแปลรอบสอง (POLISH_PROMPT / พิสูจน์อักษร)
-  - **Memory** — ใช้ cache คำแปล segment เดิม (สูงสุด 200 รายการ)
+  - **Memory** — cache คำแปลในหน่วยความจำ (สูงสุด 200 รายการ, หายเมื่อรีโหลด)
+    - ⚠ key ของ cache คือ **120 ตัวอักษรแรก** ของ segment เท่านั้น — ถ้า 2 chunk ขึ้นต้นเหมือนกันแต่ท้ายต่างกัน จะได้คำแปลของ chunk แรกซ้ำ (ปิด Memory ถ้าเจอปัญหานี้)
   - **Prev Ch** — แนบท้ายตอนก่อนหน้า (เลือกได้ว่าเป็น คำแปล หรือ ต้นฉบับ)
   - **Chunk** — จำนวนตัวอักษรต่อ chunk (0 = ส่งทั้งก้อน)
 - **แปลแบบ Chunk + Resume** — หยุดกลางคัน ตอนจะเป็น `◐ แปลค้าง` กดแปลใหม่จะถามว่าแปลต่อจาก chunk เดิมไหม (`chunkProgress`)
@@ -126,6 +127,7 @@
 `js/app.translate.js`, `js/app.core.js`
 
 - **🧠 Context Memory** — หลังแปลแต่ละตอน AI สรุปเนื้อเรื่อง (ตัวละคร/เพศ/สรรพนาม/เหตุการณ์) เก็บไว้ใช้แปลตอนถัดไป
+  - ⚠ การสรุปใช้โมเดล `google/gemini-2.5-flash-lite` แบบ fix ไว้ ส่งผ่าน provider ที่เลือกอยู่ → ใช้ได้กับ **OpenRouter** · ถ้าใช้ OpenAI / Anthropic / DeepSeek ตรง จะเรียกไม่สำเร็จและ**ไม่มี summary ถูกบันทึก** (ไม่มี error ขึ้นหน้าจอ)
   - Token budget 500–3000, เกินแล้ว **บีบอัด summary อัตโนมัติ**
   - Context Manager: ดู / แก้ / ลบ summary ทีละอัน, ล้างทั้งหมด
 - **🔒 Consistency Lock** — แทรกกฎล็อก สรรพนาม + ระดับภาษา + POV + ความเสถียรคำแปล
@@ -184,7 +186,7 @@
 | **🤖 ให้ AI จัดการคำซ้อน** | ตัดสินว่าคู่ไหนควรลบ (มี fast-path คำต่อท้ายเกาหลีที่รู้จัก) |
 | **🔧 ตรวจทานให้สอดคล้อง** | AI แก้คำแปลของคู่ substring ให้ใช้คำเดียวกัน (ไม่แตะต้นฉบับ) |
 | **🚻 สรรพนาม** | ดูข้อ 7 |
-| **📤 Export** | TXT / MD / CSV / JSON / XLSX — เลือกขอบเขต, ประเภท, คอลัมน์ |
+| **📤 Export** | TXT / MD / CSV / JSON / XLS (ปุ่มเขียน XLSX แต่ไฟล์จริงเป็น SpreadsheetML นามสกุล `.xls`) — เลือกขอบเขต, ประเภท, คอลัมน์ |
 | **📥 CSV Import** | นำเข้าพร้อมพรีวิว + ติ๊กเลือกแถว |
 | **🔗 Import จาก WS อื่น** | สืบทอด glossary จาก Workspace อื่น |
 | **Smart Glossary** | ส่งเฉพาะคำที่เจอในข้อความนั้นเข้า prompt (ประหยัด token) |
@@ -256,10 +258,11 @@
 **ฟิลด์สำคัญใน Workspace**
 - `chapters[]` (`sourceText`, `translation`, `status`, `chunkProgress`)
 - `glossary[]`, `customGlossaryTypes`
-- `styles`, `presets`
-- `settings`: `aiProvider`, `customModels`, `temperature`, `prevCtxChars`, `batchChunkMode`, `batchChunkSize`, `consistencyLock`, `consistencySelfRef`, `titleModel`, `titlePromptTemplate`
+- `customStyles` (Styles), `presets`, `presetId` (preset ที่ใช้อยู่)
+- `settings`: `aiProvider`, `translateModel`, `temperature`, `activeStyleId`, `autoGlossary`, `prevCtxChars`, `batchChunkMode`, `batchChunkSize`, `consistencyLock`, `consistencySelfRef`, `titleModel`, `titlePromptTemplate`
 - `readerSettings` (รวม `glossaryHl`), `readerPosition`
-- context memory (summaries)
+- `translationContext` (`enabled`, `maxTokens`, `summaries`) — Context Memory
+- `costs` — ต้นทุนของ WS นี้
 
 ---
 
