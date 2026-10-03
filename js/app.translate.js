@@ -64,7 +64,7 @@ function buildGlossaryStr(wsGlossary) {
   const entries = Object.entries(wsGlossary || {});
   if (!entries.length) return '(ไม่มี)';
   return entries.map(([k, v]) => {
-    const parts = [v.thai];
+    const parts = [fixAddressGender(k, v.thai)];   // แก้คำเรียกขานผิดเพศในคลังเดิมตอนส่งเข้า prompt
     if (v.type === 'character' && v.gender && v.gender !== 'neutral') {
       parts.push(`gender:${GENDER_MAP[v.gender] || v.gender}`);
       parts.push(PRONOUN_3RD[v.gender]);
@@ -648,11 +648,23 @@ ${proposals.map((x, i) => `#${i + 1}\nKOREAN:\n${korFor(x.k, 5)}\nTHAI (earlier 
   return res;
 }
 
+// อ่าน JSON array จากคำตอบ AI แบบทนทาน: ตัด ```json, ข้อความนำหน้า/ท้าย, และกู้ array ที่ถูกตัดกลางคัน (token หมด)
+// คืน { arr, broken } — broken = อ่านไม่ได้เลย (ต่างจาก "ไม่พบคำ" จริง)
+function parseJsonArrayLoose(raw) {
+  const t = String(raw || '').replace(/```json|```/g, '').trim();
+  if (!t) return { arr: [], broken: true };
+  const a = t.indexOf('['), b = t.lastIndexOf(']');
+  if (a >= 0 && b > a) { try { const v = JSON.parse(t.slice(a, b + 1)); if (Array.isArray(v)) return { arr: v, broken: false }; } catch {} }
+  if (a >= 0) { const v = tryRepairJson(t.slice(a)); if (Array.isArray(v)) return { arr: v, broken: false, repaired: true }; }
+  return { arr: [], broken: true };
+}
+
 // gender ใช้ได้เฉพาะ type=character และต้องเป็นค่าที่รู้จัก — ใช้ร่วมกันทั้ง auto-glossary หลังแปลและแบบกดเอง
 // คืน null ถ้าคำแปลไทยมีอักษรเกาหลี/จีน/ญี่ปุ่นปน (เช่น "เซ피อา") — ห้ามเข้าคลัง ไม่งั้นจะลามไปทุกตอน
 function sanitizeGlossaryEntry(entry) {
   if (!entry || /[\u3131-\u318e\uac00-\ud7a3\u4e00-\u9fff\u3040-\u30ff]/.test(String(entry.thai || ''))) return null;
   if (entry.type !== 'character' || !['male', 'female', 'neutral'].includes(entry.gender)) delete entry.gender;
+  entry.thai = fixAddressGender(entry.korean, entry.thai);
   // AI บางครั้งคืนชื่อซ้ำสองรอบ ("세피아 세피아" = "เซเปีย เซเปีย") → ยุบเหลือชื่อเดียว
   for (const f of ['korean', 'thai']) {
     const m = String(entry[f] || '').trim().match(/^(.+?)(?:\s+\1)+$/);
@@ -691,24 +703,25 @@ async function autoExtractGlossaryAfterTranslation(sourceText, model, chapterInf
       model: model || document.getElementById('translateModel')?.value || 'google/gemini-2.5-flash',
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.2,
-      max_tokens: 6000,   // เดิม 1500 — โมเดลที่คิดก่อนตอบ (reasoning) ใช้หมดก่อนตอบ ได้ผลว่าง
+      max_tokens: 12000,   // เดิม 1500→6000 — โมเดลที่คิดก่อนตอบ (thinking) ใช้ token ส่วนนี้ด้วย ถ้าหมดก่อน JSON จะถูกตัด
     });
 
-    const raw = (res.choices?.[0]?.message?.content || '').trim().replace(/```json|```/g, '').trim();
-    let terms;
-    try { terms = JSON.parse(raw); }
-    catch { terms = tryRepairJson(raw) || []; }
-
-    if (!Array.isArray(terms) || !terms.length) {
+    const { arr: terms, broken } = parseJsonArrayLoose(res.choices?.[0]?.message?.content);
+    const cut = res.choices?.[0]?.finish_reason === 'length';
+    if (broken) {
+      showToast(`📖 Auto Glossary: อ่านคำตอบ AI ไม่ได้${cut ? ' (token หมดระหว่างตอบ — โมเดลคิดนานเกิน)' : ''} — ลองกด 🤖 Auto ในแท็บคลังศัพท์ หรือเปลี่ยนโมเดล`, 'error');
+      return;
+    }
+    if (!terms.length) {
       showToast('📖 Auto Glossary: ไม่พบคำศัพท์ใหม่', '');
       return;
     }
 
-    let added = 0, genderFilled = 0;
+    let added = 0, genderFilled = 0, rejected = 0;
     terms.forEach(raw => {
-      if (!raw.korean || !raw.thai) return;
+      if (!raw?.korean || !raw?.thai) return;
       const term = sanitizeGlossaryEntry({ ...raw });
-      if (!term) return;
+      if (!term) { rejected++; return; }
       const existingEntry = S.currentWs.glossary.find(g => g.korean === term.korean);
       if (existingEntry) {
         // เติมเพศให้ตัวละครเดิมที่ยังไม่มีเพศ
@@ -735,6 +748,9 @@ async function autoExtractGlossaryAfterTranslation(sourceText, model, chapterInf
       if (S.currentTab === 'glossary') renderGlossaryTable();
       const chLabel = chapterInfo?.title ? ` (ตอน #${chapterInfo.chapterNum||'?'} ${chapterInfo.title.slice(0,20)})` : '';
       showToast(`📖 Auto Glossary: เพิ่ม ${added} คำใหม่${genderFilled ? ` · เติมเพศ ${genderFilled} ตัวละคร` : ''}${chLabel} ✓`, 'success');
+    } else if (rejected) {
+      // เดิมขึ้น "มีในคลังแล้ว" ทั้งที่ AI ส่งชื่อไทยที่มีอักษรเกาหลีปน (เช่น "อา리아") แล้วถูกกรองทิ้งหมด
+      showToast(`📖 Auto Glossary: ข้าม ${rejected} คำ — ชื่อไทยที่ AI ให้มามีอักษรเกาหลีปน (ลองกด 🤖 Auto ใหม่ หรือเพิ่มเอง)`, 'error');
     } else {
       showToast('📖 Auto Glossary: คำทั้งหมดมีในคลังแล้ว', '');
     }
@@ -1266,6 +1282,13 @@ async function runQACheck() {
     const r = JSON.parse(txt.replace(/```json|```/g, '').trim());
     const msg = r.pass ? `✓ PASS (${r.score}/100): ${r.summary}` : `✗ FAIL (${r.score}/100): ${r.summary}`;
     showToast(msg, r.pass ? 'success' : 'error');
+    const st = document.getElementById('translationStats');
+    if (st) {
+      const issues = (Array.isArray(r.issues) ? r.issues : []).slice(0, 6)
+        .map(i => `• ${i.description || i.type || ''}${i.suggestion ? ' → ' + i.suggestion : ''}`);
+      st.style.whiteSpace = 'pre-wrap';
+      st.textContent = `QA ${msg}${issues.length ? '\n' + issues.join('\n') : ''}`;
+    }
   } catch (e) { showToast('QA ล้มเหลว: ' + e.message, 'error'); }
 }
 
@@ -1355,9 +1378,13 @@ async function testApiKey(provId) {
   if (!key) { result.textContent = '⚠ ใส่ key ก่อน'; result.style.color = 'var(--gold)'; return; }
   result.textContent = 'กำลังทดสอบ...'; result.style.color = 'var(--text-muted)';
   try {
-    const t = p.testEndpoint(key);
+    const t = (p.keyCheckEndpoint || p.testEndpoint)(key);
     const res = await fetch(t.url, { headers: t.headers });
-    if (res.ok) { result.textContent = '✓ Key ใช้งานได้'; result.style.color = '#4caf50'; }
+    if (res.ok) {
+      let extra = '';
+      try { const d = (await res.json())?.data; if (d && d.limit != null) extra = ` · เครดิตคงเหลือ $${(d.limit_remaining ?? (d.limit - (d.usage || 0))).toFixed(2)}`; } catch {}
+      result.textContent = '✓ Key ใช้งานได้' + extra; result.style.color = '#4caf50';
+    }
     else { result.textContent = `✗ Key ไม่ถูกต้อง (HTTP ${res.status})`; result.style.color = 'var(--crimson-light)'; }
   } catch { result.textContent = '✗ ทดสอบไม่สำเร็จ (เครือข่าย/CORS)'; result.style.color = 'var(--crimson-light)'; }
 }
@@ -1656,7 +1683,7 @@ function ctxRenderSummaries() {
         style="width:100%;box-sizing:border-box;background:var(--bg-deep);border:1px solid var(--border);
                border-radius:4px;padding:6px 8px;font-size:0.78rem;line-height:1.7;color:var(--text-secondary);
                resize:vertical;min-height:70px;font-family:inherit"
-        onchange="ctxUpdateSummary(${idx}, this.value)">${escHtml(s.text)}</textarea>
+        onchange="ctxUpdateSummary(${idx}, this.value)">${esc(s.text)}</textarea>
     </div>
   `).join('');
 }

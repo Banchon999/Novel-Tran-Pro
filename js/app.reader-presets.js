@@ -269,7 +269,11 @@ function reLoadChapter(id) {
   const sel = document.getElementById('reChapterSelect');
   if (sel && reState.chapterId) sel.value = reState.chapterId;
   // จำตำแหน่งตอนล่าสุด (ใช้ร่วมกับ "อ่านต่อ")
-  if (ch && ws) { ws.readerPosition = { ...(ws.readerPosition || {}), chapterId: ch.id }; lsSaveWorkspace(ws).catch(() => {}); }
+  if (ch && ws) {   // เปลี่ยนตอน → ล้างตำแหน่ง scroll เดิม (ไม่งั้นเปิดเต็มจอแล้วกระโดดไปตำแหน่งของตอนก่อน)
+    const prev = ws.readerPosition || {};
+    ws.readerPosition = prev.chapterId === ch.id ? prev : { chapterId: ch.id, scrollPct: 0 };
+    lsSaveWorkspace(ws).catch(() => {});
+  }
 
   // ปุ่ม prev/next
   const chs = _getSortedChapters();
@@ -619,6 +623,38 @@ function openReader(chId) {
   switchTab('read');
 }
 
+// อ่านเต็มจอ (overlay) + Prefetch แปลตอนถัดไปล่วงหน้า — เคยถูกปิดทางเข้าตอนเพิ่มแท็บ อ่าน/แก้ไข (8a08fb9) ตอนนี้เปิดกลับ
+function openReaderFull(chId) {
+  const ch = S.currentWs?.chapters?.find(c => c.id === chId);
+  if (!ch) { showToast('ไม่พบตอน', 'error'); return; }
+  rState.active = true;
+  rState.chapterId = chId;
+  document.getElementById('readerOverlay').style.display = 'flex';
+  readerApplySettings();
+  readerRenderChapter(ch);
+  // คืนตำแหน่ง scroll เฉพาะตอนที่บันทึกไว้ล่าสุด
+  const pos = S.currentWs.readerPosition;
+  const scroller = document.getElementById('readerScroll');
+  requestAnimationFrame(() => {
+    const denom = scroller.scrollHeight - scroller.clientHeight;
+    scroller.scrollTop = (pos && pos.chapterId === chId && pos.scrollPct && denom > 0)
+      ? pos.scrollPct * denom : 0;
+    readerUpdateProgress();
+  });
+  if (!rState._pushedHistory) {
+    try { history.pushState({ ntReader: true }, ''); rState._pushedHistory = true; } catch {}
+  }
+  readerSavePosition(true);
+  readerKickPrefetch();
+}
+
+// ปุ่ม ⛶ เต็มจอ ในแท็บ อ่าน/แก้ไข
+function reOpenFull() {
+  const id = reState.chapterId || document.getElementById('reChapterSelect')?.value;
+  if (!id) { showToast('เลือกตอนก่อน', 'error'); return; }
+  openReaderFull(id);
+}
+
 function openReaderResume() {
   const ws = S.currentWs;
   if (!ws) { showToast('เลือก Workspace ก่อน', 'error'); return; }
@@ -626,13 +662,13 @@ function openReaderResume() {
   let ch = pos ? ws.chapters?.find(c => c.id === pos.chapterId) : null;
   if (!ch) ch = _getSortedChapters()[0];
   if (!ch) { showToast('ยังไม่มีตอนใน Workspace นี้', 'error'); return; }
-  openReader(ch.id);
+  openReaderFull(ch.id);
 }
 
 function openReaderFromModal() {
   const id = S.editingChapterId;
   closeModal('modal-view-chapter');
-  if (id) openReader(id);
+  if (id) openReaderFull(id);
 }
 
 function closeReader(fromPopstate = false) {
@@ -644,6 +680,8 @@ function closeReader(fromPopstate = false) {
   if (rState._pushedHistory && !fromPopstate) { try { history.back(); } catch {} }
   rState._pushedHistory = false;
   if (S.currentTab === 'chapters') renderChapters();
+  // อยู่แท็บ อ่าน/แก้ไข → เปิดตอนที่อ่านค้างในเต็มจอ (และคำแปลที่ prefetch มาแล้ว)
+  if (S.currentTab === 'read' && rState.chapterId) { reState.chapterId = rState.chapterId; renderReadTab(); }   // renderReadTab = รีเฟรชป้าย "ยังไม่แปล" ด้วย
 }
 
 function readerRenderChapter(ch) {

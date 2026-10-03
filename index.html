@@ -227,6 +227,7 @@
         </div>
         <button class="btn btn-secondary btn-sm" id="reTranslateBtn" onclick="reTranslateChapter()" title="แปลตอนนี้">⚡ แปลตอนนี้</button>
         <button class="btn btn-sm" id="reGlossHlBtn" onclick="reToggleGlossHl()" title="ไฮไลต์คำแปลที่ตรงกับคลังศัพท์ (Glossary)">🖍 ไฮไลต์ศัพท์</button>
+        <button class="btn btn-sm" onclick="reOpenFull()" title="อ่านเต็มจอ + แปลตอนถัดไปล่วงหน้า (Prefetch)">⛶ เต็มจอ</button>
         <span id="reStatus" class="count-label"></span>
       </div>
       <!-- Find & Replace bar -->
@@ -1165,6 +1166,7 @@
           <label class="toggle-mini"><input type="checkbox" id="gexColKorean" checked onchange="glossaryExportPreview()"/> เกาหลี</label>
           <label class="toggle-mini"><input type="checkbox" id="gexColThai" checked onchange="glossaryExportPreview()"/> ไทย</label>
           <label class="toggle-mini"><input type="checkbox" id="gexColType" checked onchange="glossaryExportPreview()"/> ประเภท</label>
+          <label class="toggle-mini"><input type="checkbox" id="gexColGender" checked onchange="glossaryExportPreview()"/> เพศ</label>
           <label class="toggle-mini"><input type="checkbox" id="gexColNote" checked onchange="glossaryExportPreview()"/> หมายเหตุ</label>
           <label class="toggle-mini"><input type="checkbox" id="gexColSource" onchange="glossaryExportPreview()"/> ตอนที่พบ</label>
         </div>

@@ -305,6 +305,8 @@ function loadChapterToTranslate() {
   if (!ch) return;
   document.getElementById('sourceText').value = ch.sourceText || '';
   updateSourceStats();
+  const tgt = document.getElementById('chapterSaveTarget');
+  if (tgt) tgt.value = ch.id;   // บันทึกกลับตอนเดิมได้ทันที
   // มีงานแปลค้าง → ตั้ง chunk size เดิมให้เลย จะได้ resume ได้ทันทีตอนกดแปล
   if (ch.chunkProgress?.chunkSize) {
     const cs = document.getElementById('chunkSize');

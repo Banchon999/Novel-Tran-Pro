@@ -15,8 +15,8 @@ async function renumberAllChapters() {
 
 // ─── Bulk Rename / แปลชื่อตอนอัตโนมัติ ───
 const DEFAULT_TITLE_PROMPT = `You are a professional chapter-title translator. Translate each chapter title into natural, fluent Thai.
-Keep proper names consistent. Return ONLY a valid JSON array of strings — no markdown, no extra text — with EXACTLY {count} elements, in the same order.
-Example: ["ชื่อตอนที่ 1","ชื่อตอนที่ 2"]
+Keep proper names consistent. Keep each title's own chapter number exactly as written — never renumber, re-sort or fix the order.
+Return ONLY a valid JSON array of strings — no markdown, no extra text — with EXACTLY {count} elements, element N = translation of line N.
 
 Chapter titles:
 {titles}`;
@@ -104,6 +104,12 @@ function openBulkRename() {
   openModal('modal-bulk-rename');
 }
 
+// เลขตอนในชื่อ: 12화 / 제12화 / 12장 / 第12章 / Chapter 12 / EP.12 / ตอนที่ 12 / บทที่ 12 → 12
+function _titleNum(t) {
+  const m = String(t || '').match(/(?:제|第|chapter|ch\.?|ep\.?|episode|ตอนที่|ตอน|บทที่|บท)\s*(\d+)|(\d+)\s*(?:화|장|話|章|회)/i);
+  return m ? +(m[1] || m[2]) : null;
+}
+
 async function bulkRenameWithAI() {
   const inputs = brTargetInputs();
   if (!inputs.length) return;
@@ -159,6 +165,21 @@ async function bulkRenameWithAI() {
       translated = translated.concat(batchResult);
     }
 
+    // โมเดลบางตัวเรียงผลใหม่ตามเลขตอน (เช่นส่ง 2화,3화,1화 ได้ ตอนที่1,2,3 กลับมา) → ชื่อไปลงผิดตอน
+    // ถ้าเลขตอนในชื่อต้นฉบับกับผลไม่ตรงกัน → จับคู่ใหม่ตามเลขตอน (เฉพาะเมื่อเลขไม่ซ้ำกัน)
+    const srcNums = titles.map(_titleNum), outNums = translated.map(t => typeof t === 'string' ? _titleNum(t) : null);
+    const mismatch = srcNums.some((n, i) => n != null && outNums[i] != null && n !== outNums[i]);
+    let remapped = 0;
+    if (mismatch) {
+      const byNum = new Map();
+      outNums.forEach((n, i) => { if (n != null) byNum.set(n, byNum.has(n) ? null : translated[i]); });
+      translated = titles.map((_, i) => {
+        const n = srcNums[i];
+        if (n != null && byNum.get(n)) { if (byNum.get(n) !== translated[i]) remapped++; return byNum.get(n); }
+        return (outNums[i] == null || outNums[i] === n) ? translated[i] : null;   // เลขไม่ตรงและหาคู่ไม่ได้ → ไม่ใส่
+      });
+    }
+
     // Apply results back to the target inputs
     let applied = 0;
     inputs.forEach((inp, i) => {
@@ -168,7 +189,7 @@ async function bulkRenameWithAI() {
         applied++;
       }
     });
-    status.textContent = `✓ แปลชื่อ ${applied}/${titles.length} ตอนแล้ว (ยังไม่บันทึก — กด 💾)`;
+    status.textContent = `✓ แปลชื่อ ${applied}/${titles.length} ตอนแล้ว${remapped ? ` · จัดคู่ใหม่ตามเลขตอน ${remapped} ตอน (AI สลับลำดับมา)` : ''} (ยังไม่บันทึก — กด 💾)`;
   } catch (e) {
     status.textContent = '❌ ' + e.message;
   } finally {
@@ -336,6 +357,7 @@ async function runAutoGlossary() {
   try {
     let allTerms = [];
     const seenKorean = new Set((S.glossaryData || []).map(g => g.korean));
+    const failed = []; let partial = 0;
 
     for (let ci = 0; ci < chunks.length; ci++) {
       const chunk = chunks[ci];
@@ -346,12 +368,15 @@ async function runAutoGlossary() {
       const prompt = agGetPrompt().replace('{existing}', existingNow).replace('{text}', chunk).replace('{thai_snippet}', '');
 
       try {
-        const res = await callOpenRouter({ model, messages: [{ role: 'user', content: prompt }], temperature: 0.2, max_tokens: 2000 });
-        const raw = res.choices?.[0]?.message?.content?.trim() || '[]';
-        const terms = JSON.parse(raw.replace(/```json|```/g, '').trim());
+        // เดิม max_tokens 2000 กับ chunk 15,000 ตัวอักษร → โมเดลที่คิดก่อนตอบ/คำเยอะ ถูกตัดกลาง JSON → ข้ามเงียบ ๆ แล้วขึ้น "ไม่พบ"
+        const res = await callOpenRouter({ model, messages: [{ role: 'user', content: prompt }], temperature: 0.2, max_tokens: 12000 });
+        const { arr: terms, broken, repaired } = parseJsonArrayLoose(res.choices?.[0]?.message?.content);
+        const cut = res.choices?.[0]?.finish_reason === 'length';
+        if (broken) { failed.push(`ส่วน ${ci + 1}: ${cut ? 'token หมดก่อนตอบเสร็จ' : 'อ่านคำตอบไม่ได้'}`); continue; }
+        if (repaired || cut) partial++;
         if (Array.isArray(terms)) {
           terms.forEach(t => {
-            if (t.korean && !seenKorean.has(t.korean)) {
+            if (t?.korean && !seenKorean.has(t.korean)) {
               seenKorean.add(t.korean);
               // Attach source chapter info
               if (window._agCheckedChapters?.length === 1) {
@@ -372,18 +397,20 @@ async function runAutoGlossary() {
           });
         }
       } catch (chunkErr) {
-        // Skip failed chunk, continue
+        // Skip failed chunk, continue — แต่จดไว้แจ้งผู้ใช้ (เดิมเงียบ แล้วขึ้น "ไม่พบ")
         console.warn(`Auto Glossary chunk ${ci+1} failed:`, chunkErr.message);
+        failed.push(`ส่วน ${ci + 1}: ${chunkErr.message}`);
       }
     }
 
     _agTerms = allTerms;
+    const warn = (failed.length ? ` · ⚠ ล้มเหลว ${failed.length}/${chunks.length} ส่วน (${failed.join(' / ')})` : '') + (partial ? ` · ⚠ คำตอบถูกตัด ${partial} ส่วน (ได้บางคำ)` : '');
     if (!_agTerms.length) {
-      status.textContent = '✓ ไม่พบคำศัพท์ใหม่';
+      status.textContent = failed.length ? `❌ วิเคราะห์ไม่สำเร็จ${warn} — ลองเปลี่ยนโมเดล หรือเลือกตอนน้อยลง` : '✓ ไม่พบคำศัพท์ใหม่';
       document.getElementById('agResults').style.display = 'none';
       return;
     }
-    status.textContent = `พบ ${_agTerms.length} คำใหม่`;
+    status.textContent = `พบ ${_agTerms.length} คำใหม่${warn}`;
     renderAgResults(_agTerms);
     document.getElementById('agResults').style.display = 'block';
 
@@ -998,6 +1025,8 @@ function agGetPrompt() {
 // ─── Clean Source Text (ลบ Base64 / ขยะ) ───
 function cleanText(text) {
   return text
+    // ลบ data URI ทั้งก้อน (เดิมเหลือ "data:image/png;base64," ค้างไว้)
+    .replace(/data:[\w.+-]+\/[\w.+-]+(?:;[\w=.-]+)*;base64,[A-Za-z0-9+/=]*/g, '')
     // ลบ Base64 string (ยาว 20+ ตัว ประกอบด้วย A-Za-z0-9+/= ติดกัน)
     .replace(/[A-Za-z0-9+/]{20,}={0,2}/g, '')
     // ลบ URL ที่ติดมา
@@ -1480,6 +1509,7 @@ function _getGlossaryExportCols() {
     korean: document.getElementById('gexColKorean')?.checked ?? true,
     thai:   document.getElementById('gexColThai')?.checked ?? true,
     type:   document.getElementById('gexColType')?.checked ?? true,
+    gender: document.getElementById('gexColGender')?.checked ?? true,
     note:   document.getElementById('gexColNote')?.checked ?? true,
     source: document.getElementById('gexColSource')?.checked ?? false,
   };
@@ -1540,6 +1570,7 @@ function glossaryExportPreview() {
   if (cols.korean) header.push('Korean');
   if (cols.thai)   header.push('Thai');
   if (cols.type)   header.push('Type');
+  if (cols.gender) header.push('Gender');   // ลำดับ Korean,Thai,Type,Gender,Note = ลำดับที่ CSV Import อ่าน
   if (cols.note)   header.push('Note');
   if (cols.source) header.push('Source');
 
@@ -1548,6 +1579,7 @@ function glossaryExportPreview() {
     if (cols.korean) row.push(g.korean || '');
     if (cols.thai)   row.push(g.thai || '');
     if (cols.type)   row.push(g.type || '');
+    if (cols.gender) row.push(g.type === 'character' ? (g.gender || '') : '');
     if (cols.note)   row.push(g.note || '');
     if (cols.source) row.push(g.sourceChapterTitle ? `#${g.sourceChapterNum||'?'} ${g.sourceChapterTitle}` : '');
     return row.map(v => v.includes(',') || v.includes('"') ? `"${v.replace(/"/g,'""')}"` : v).join(',');
@@ -1576,6 +1608,7 @@ function doExportGlossary(format) {
   if (cols.korean) header.push('Korean');
   if (cols.thai)   header.push('Thai');
   if (cols.type)   header.push('Type');
+  if (cols.gender) header.push('Gender');   // ลำดับ Korean,Thai,Type,Gender,Note = ลำดับที่ CSV Import อ่าน
   if (cols.note)   header.push('Note');
   if (cols.source) header.push('Source');
 
@@ -1584,6 +1617,7 @@ function doExportGlossary(format) {
     if (cols.korean) row.push(g.korean || '');
     if (cols.thai)   row.push(g.thai || '');
     if (cols.type)   row.push(g.type || '');
+    if (cols.gender) row.push(g.type === 'character' ? (g.gender || '') : '');
     if (cols.note)   row.push(g.note || '');
     if (cols.source) row.push(g.sourceChapterTitle ? `#${g.sourceChapterNum||'?'} ${g.sourceChapterTitle}` : '');
     return row;
