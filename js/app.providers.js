@@ -216,6 +216,7 @@ async function aiStream({ model, messages, temperature = 0.7, max_tokens = 2000 
   const dec = new TextDecoder();
   let buf = '', fullText = '', done = false;
   let inTok = 0, outTok = 0;
+  let truncated = false;   // โมเดลหยุดเพราะชน max_tokens → คำแปลไม่ครบ
 
   const handleData = (raw) => {
     if (raw === '[DONE]') { done = true; return; }
@@ -225,15 +226,18 @@ async function aiStream({ model, messages, temperature = 0.7, max_tokens = 2000 
       const delta = evt.choices?.[0]?.delta?.content;
       if (delta) { fullText += delta; onChunk(delta); }
       if (evt.usage) { inTok = evt.usage.prompt_tokens || 0; outTok = evt.usage.completion_tokens || 0; onUsage(inTok, outTok); }
-      if (evt.choices?.[0]?.finish_reason === 'stop') done = true;
+      const fr = evt.choices?.[0]?.finish_reason;
+      if (fr === 'length') truncated = true;
+      if (fr === 'stop') done = true;
     } else if (prov.sse === 'gemini') {
       const delta = (evt.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join('');
       if (delta) { fullText += delta; onChunk(delta); }
       if (evt.usageMetadata) { inTok = evt.usageMetadata.promptTokenCount || 0; outTok = evt.usageMetadata.candidatesTokenCount || 0; onUsage(inTok, outTok); }
+      if (evt.candidates?.[0]?.finishReason === 'MAX_TOKENS') truncated = true;
     } else if (prov.sse === 'anthropic') {
       if (evt.type === 'content_block_delta' && evt.delta?.type === 'text_delta' && evt.delta.text) { fullText += evt.delta.text; onChunk(evt.delta.text); }
       else if (evt.type === 'message_start') { inTok = evt.message?.usage?.input_tokens || 0; onUsage(inTok, outTok); }
-      else if (evt.type === 'message_delta') { outTok = evt.usage?.output_tokens || outTok; onUsage(inTok, outTok); }
+      else if (evt.type === 'message_delta') { outTok = evt.usage?.output_tokens || outTok; onUsage(inTok, outTok); if (evt.delta?.stop_reason === 'max_tokens') truncated = true; }
       else if (evt.type === 'message_stop') done = true;
       else if (evt.type === 'error') throw new Error(`${prov.label}: ${evt.error?.message || 'stream error'}`);
     }
@@ -252,6 +256,7 @@ async function aiStream({ model, messages, temperature = 0.7, max_tokens = 2000 
     }
   }
   reader.cancel().catch(() => {});
+  if (truncated) throw new Error(`${prov.label}: คำแปลถูกตัดเพราะยาวเกิน max_tokens — ลองแบ่ง chunk ให้เล็กลง`);
   return fullText;
 }
 

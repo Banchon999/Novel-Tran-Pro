@@ -417,14 +417,14 @@
               <span style="font-size:0.78rem;color:var(--text-secondary)">เปิดใช้ (แนะนำ)</span>
             </label>
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px">
-              <span style="font-size:0.78rem;color:var(--text-secondary)">โมเดลตรวจเพศหลังแปล:</span>
+              <span style="font-size:0.78rem;color:var(--text-secondary)">โมเดลช่วย (ระบุผู้พูด + ตรวจเพศหลังแปล):</span>
               <select id="wsProofreadModel" class="select-input" style="width:auto;font-size:0.78rem">
                 <option value="google/gemini-3-flash-preview">Gemini 3 Flash Preview (แนะนำ · OpenRouter)</option>
                 <option value="google/gemini-3.5-flash">Gemini 3.5 Flash (OpenRouter)</option>
                 <option value="same">ใช้โมเดลเดียวกับที่แปล</option>
               </select>
             </div>
-            <div style="font-size:0.70rem;color:var(--text-muted);margin-top:6px">ก่อนแปลจะให้ AI ระบุว่าบทพูดแต่ละบรรทัดใครพูด (เพศจากคลังศัพท์มาก่อน) → แนบเข้า prompt → หลังแปลแก้คำลงท้าย/คำแทนตัวที่ผิดเพศให้เอง + ตรวจ เขา/เธอ ในการบรรยายซ้ำด้วยโมเดลตรวจ (รับเฉพาะคำแก้ที่เปลี่ยนแค่คำบอกเพศ) · เรียก AI เพิ่ม 1–2 ครั้งต่อตอน (ค่าใช้จ่ายเพิ่มราว 20–40%) · ถ้าไม่ได้ใช้ OpenRouter ให้เลือก "ใช้โมเดลเดียวกับที่แปล"</div>
+            <div style="font-size:0.70rem;color:var(--text-muted);margin-top:6px">ก่อนแปลจะให้โมเดลช่วยระบุว่าบทพูดแต่ละบรรทัดใครพูด + ระดับภาษา (สุภาพ → ครับ/ค่ะ · ภาษาปกติ → ไม่ใส่) + ชื่อไทยของตัวละครที่ยังไม่อยู่ในคลัง (เพศจากคลังศัพท์มาก่อน) → แนบเข้า prompt → หลังแปลแก้คำลงท้าย/คำแทนตัวที่ผิดเพศให้เอง + ตรวจ เขา/เธอ ในการบรรยายซ้ำด้วยโมเดลตรวจ (รับเฉพาะคำแก้ที่เปลี่ยนแค่คำบอกเพศ) · เรียก AI เพิ่ม 1–2 ครั้งต่อตอน (ค่าใช้จ่ายเพิ่มราว 20–40%) · ถ้าไม่ได้ใช้ OpenRouter ให้เลือก "ใช้โมเดลเดียวกับที่แปล"</div>
           </div>
 
           <!-- ── Translation Context Memory ── -->
