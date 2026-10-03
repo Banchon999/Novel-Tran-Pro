@@ -648,6 +648,17 @@ ${proposals.map((x, i) => `#${i + 1}\nKOREAN:\n${korFor(x.k, 5)}\nTHAI (earlier 
   return res;
 }
 
+// อ่าน JSON array จากคำตอบ AI แบบทนทาน: ตัด ```json, ข้อความนำหน้า/ท้าย, และกู้ array ที่ถูกตัดกลางคัน (token หมด)
+// คืน { arr, broken } — broken = อ่านไม่ได้เลย (ต่างจาก "ไม่พบคำ" จริง)
+function parseJsonArrayLoose(raw) {
+  const t = String(raw || '').replace(/```json|```/g, '').trim();
+  if (!t) return { arr: [], broken: true };
+  const a = t.indexOf('['), b = t.lastIndexOf(']');
+  if (a >= 0 && b > a) { try { const v = JSON.parse(t.slice(a, b + 1)); if (Array.isArray(v)) return { arr: v, broken: false }; } catch {} }
+  if (a >= 0) { const v = tryRepairJson(t.slice(a)); if (Array.isArray(v)) return { arr: v, broken: false, repaired: true }; }
+  return { arr: [], broken: true };
+}
+
 // gender ใช้ได้เฉพาะ type=character และต้องเป็นค่าที่รู้จัก — ใช้ร่วมกันทั้ง auto-glossary หลังแปลและแบบกดเอง
 // คืน null ถ้าคำแปลไทยมีอักษรเกาหลี/จีน/ญี่ปุ่นปน (เช่น "เซ피อา") — ห้ามเข้าคลัง ไม่งั้นจะลามไปทุกตอน
 function sanitizeGlossaryEntry(entry) {
@@ -692,24 +703,25 @@ async function autoExtractGlossaryAfterTranslation(sourceText, model, chapterInf
       model: model || document.getElementById('translateModel')?.value || 'google/gemini-2.5-flash',
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.2,
-      max_tokens: 6000,   // เดิม 1500 — โมเดลที่คิดก่อนตอบ (reasoning) ใช้หมดก่อนตอบ ได้ผลว่าง
+      max_tokens: 12000,   // เดิม 1500→6000 — โมเดลที่คิดก่อนตอบ (thinking) ใช้ token ส่วนนี้ด้วย ถ้าหมดก่อน JSON จะถูกตัด
     });
 
-    const raw = (res.choices?.[0]?.message?.content || '').trim().replace(/```json|```/g, '').trim();
-    let terms;
-    try { terms = JSON.parse(raw); }
-    catch { terms = tryRepairJson(raw) || []; }
-
-    if (!Array.isArray(terms) || !terms.length) {
+    const { arr: terms, broken } = parseJsonArrayLoose(res.choices?.[0]?.message?.content);
+    const cut = res.choices?.[0]?.finish_reason === 'length';
+    if (broken) {
+      showToast(`📖 Auto Glossary: อ่านคำตอบ AI ไม่ได้${cut ? ' (token หมดระหว่างตอบ — โมเดลคิดนานเกิน)' : ''} — ลองกด 🤖 Auto ในแท็บคลังศัพท์ หรือเปลี่ยนโมเดล`, 'error');
+      return;
+    }
+    if (!terms.length) {
       showToast('📖 Auto Glossary: ไม่พบคำศัพท์ใหม่', '');
       return;
     }
 
-    let added = 0, genderFilled = 0;
+    let added = 0, genderFilled = 0, rejected = 0;
     terms.forEach(raw => {
-      if (!raw.korean || !raw.thai) return;
+      if (!raw?.korean || !raw?.thai) return;
       const term = sanitizeGlossaryEntry({ ...raw });
-      if (!term) return;
+      if (!term) { rejected++; return; }
       const existingEntry = S.currentWs.glossary.find(g => g.korean === term.korean);
       if (existingEntry) {
         // เติมเพศให้ตัวละครเดิมที่ยังไม่มีเพศ
@@ -736,6 +748,9 @@ async function autoExtractGlossaryAfterTranslation(sourceText, model, chapterInf
       if (S.currentTab === 'glossary') renderGlossaryTable();
       const chLabel = chapterInfo?.title ? ` (ตอน #${chapterInfo.chapterNum||'?'} ${chapterInfo.title.slice(0,20)})` : '';
       showToast(`📖 Auto Glossary: เพิ่ม ${added} คำใหม่${genderFilled ? ` · เติมเพศ ${genderFilled} ตัวละคร` : ''}${chLabel} ✓`, 'success');
+    } else if (rejected) {
+      // เดิมขึ้น "มีในคลังแล้ว" ทั้งที่ AI ส่งชื่อไทยที่มีอักษรเกาหลีปน (เช่น "อา리아") แล้วถูกกรองทิ้งหมด
+      showToast(`📖 Auto Glossary: ข้าม ${rejected} คำ — ชื่อไทยที่ AI ให้มามีอักษรเกาหลีปน (ลองกด 🤖 Auto ใหม่ หรือเพิ่มเอง)`, 'error');
     } else {
       showToast('📖 Auto Glossary: คำทั้งหมดมีในคลังแล้ว', '');
     }

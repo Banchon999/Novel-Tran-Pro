@@ -357,6 +357,7 @@ async function runAutoGlossary() {
   try {
     let allTerms = [];
     const seenKorean = new Set((S.glossaryData || []).map(g => g.korean));
+    const failed = []; let partial = 0;
 
     for (let ci = 0; ci < chunks.length; ci++) {
       const chunk = chunks[ci];
@@ -367,12 +368,15 @@ async function runAutoGlossary() {
       const prompt = agGetPrompt().replace('{existing}', existingNow).replace('{text}', chunk).replace('{thai_snippet}', '');
 
       try {
-        const res = await callOpenRouter({ model, messages: [{ role: 'user', content: prompt }], temperature: 0.2, max_tokens: 2000 });
-        const raw = res.choices?.[0]?.message?.content?.trim() || '[]';
-        const terms = JSON.parse(raw.replace(/```json|```/g, '').trim());
+        // เดิม max_tokens 2000 กับ chunk 15,000 ตัวอักษร → โมเดลที่คิดก่อนตอบ/คำเยอะ ถูกตัดกลาง JSON → ข้ามเงียบ ๆ แล้วขึ้น "ไม่พบ"
+        const res = await callOpenRouter({ model, messages: [{ role: 'user', content: prompt }], temperature: 0.2, max_tokens: 12000 });
+        const { arr: terms, broken, repaired } = parseJsonArrayLoose(res.choices?.[0]?.message?.content);
+        const cut = res.choices?.[0]?.finish_reason === 'length';
+        if (broken) { failed.push(`ส่วน ${ci + 1}: ${cut ? 'token หมดก่อนตอบเสร็จ' : 'อ่านคำตอบไม่ได้'}`); continue; }
+        if (repaired || cut) partial++;
         if (Array.isArray(terms)) {
           terms.forEach(t => {
-            if (t.korean && !seenKorean.has(t.korean)) {
+            if (t?.korean && !seenKorean.has(t.korean)) {
               seenKorean.add(t.korean);
               // Attach source chapter info
               if (window._agCheckedChapters?.length === 1) {
@@ -393,18 +397,20 @@ async function runAutoGlossary() {
           });
         }
       } catch (chunkErr) {
-        // Skip failed chunk, continue
+        // Skip failed chunk, continue — แต่จดไว้แจ้งผู้ใช้ (เดิมเงียบ แล้วขึ้น "ไม่พบ")
         console.warn(`Auto Glossary chunk ${ci+1} failed:`, chunkErr.message);
+        failed.push(`ส่วน ${ci + 1}: ${chunkErr.message}`);
       }
     }
 
     _agTerms = allTerms;
+    const warn = (failed.length ? ` · ⚠ ล้มเหลว ${failed.length}/${chunks.length} ส่วน (${failed.join(' / ')})` : '') + (partial ? ` · ⚠ คำตอบถูกตัด ${partial} ส่วน (ได้บางคำ)` : '');
     if (!_agTerms.length) {
-      status.textContent = '✓ ไม่พบคำศัพท์ใหม่';
+      status.textContent = failed.length ? `❌ วิเคราะห์ไม่สำเร็จ${warn} — ลองเปลี่ยนโมเดล หรือเลือกตอนน้อยลง` : '✓ ไม่พบคำศัพท์ใหม่';
       document.getElementById('agResults').style.display = 'none';
       return;
     }
-    status.textContent = `พบ ${_agTerms.length} คำใหม่`;
+    status.textContent = `พบ ${_agTerms.length} คำใหม่${warn}`;
     renderAgResults(_agTerms);
     document.getElementById('agResults').style.display = 'block';
 

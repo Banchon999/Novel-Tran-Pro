@@ -50,7 +50,8 @@ const PROVIDERS = {
     },
     testEndpoint: key => ({ url: 'https://generativelanguage.googleapis.com/v1beta/models', headers: { 'x-goog-api-key': key } }),
     extractText: d => (d.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join(''),
-    extractUsage: d => ({ inTok: d.usageMetadata?.promptTokenCount || 0, outTok: d.usageMetadata?.candidatesTokenCount || 0 }),
+    // token ที่ใช้ "คิด" (thinking) คิดเงินเป็น output ด้วย — เดิมไม่นับ ต้นทุนเลยต่ำกว่าจริง
+    extractUsage: d => ({ inTok: d.usageMetadata?.promptTokenCount || 0, outTok: (d.usageMetadata?.candidatesTokenCount || 0) + (d.usageMetadata?.thoughtsTokenCount || 0) }),
   },
 
   openai: {
@@ -191,7 +192,9 @@ async function aiCall({ model, messages, temperature = 0.7, max_tokens = 2000 })
   const data = await res.json();
   const usage = prov.extractUsage(data);
   addCosts(usage.inTok, usage.outTok, model, provName);
-  return { choices: [{ message: { content: prov.extractText(data) } }], usage: data.usage || usage, _raw: data };
+  const fr = data.choices?.[0]?.finish_reason || data.candidates?.[0]?.finishReason || data.stop_reason || '';
+  const finish_reason = /^(length|MAX_TOKENS|max_tokens)$/.test(fr) ? 'length' : fr;
+  return { choices: [{ message: { content: prov.extractText(data) }, finish_reason }], usage: data.usage || usage, _raw: data };
 }
 
 // alias เดิม — call-site ไม่ stream ทั้งหมดใช้ต่อได้โดยไม่แก้
@@ -234,7 +237,7 @@ async function aiStream({ model, messages, temperature = 0.7, max_tokens = 2000 
     } else if (prov.sse === 'gemini') {
       const delta = (evt.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join('');
       if (delta) { fullText += delta; onChunk(delta); }
-      if (evt.usageMetadata) { inTok = evt.usageMetadata.promptTokenCount || 0; outTok = evt.usageMetadata.candidatesTokenCount || 0; onUsage(inTok, outTok); }
+      if (evt.usageMetadata) { inTok = evt.usageMetadata.promptTokenCount || 0; outTok = (evt.usageMetadata.candidatesTokenCount || 0) + (evt.usageMetadata.thoughtsTokenCount || 0); onUsage(inTok, outTok); }
       if (evt.candidates?.[0]?.finishReason === 'MAX_TOKENS') truncated = true;
     } else if (prov.sse === 'anthropic') {
       if (evt.type === 'content_block_delta' && evt.delta?.type === 'text_delta' && evt.delta.text) { fullText += evt.delta.text; onChunk(evt.delta.text); }
@@ -340,11 +343,23 @@ const LS_KEY_MODELS = 'nt8_fetched_models';
 const _modelPriceMap = {};      // OpenRouter model id → { in, out } USD ต่อ 1M token (จาก 🔄 Fetch)
 
 // แปลง response ของแต่ละ provider → [{ id, label, context }]
+// แอพนี้ใช้แค่โมเดลข้อความ → ตัดโมเดลสร้างภาพ/เสียง/วิดีโอ, embedding, TTS, ถอดเสียง ฯลฯ ออกจากรายการ
+const NON_TEXT_MODEL_RE = /(^|[\/-])(image|imagen|dall-e|gpt-image|tts|whisper|transcribe|audio|realtime|embedding|embed|moderation|aqa|veo|sora|lyria|native-audio|live|robotics|computer-use|search-preview)([\/-]|$)|:batch$|^openrouter\/auto/i;   // openrouter/auto = router ที่อาจเลือกโมเดลภาพ
+function isTextModel(provName, m) {
+  if (NON_TEXT_MODEL_RE.test(m.id || '')) return false;
+  const out = m.architecture?.output_modalities;   // OpenRouter บอก modality มาให้
+  if (Array.isArray(out) && !(out.length === 1 && out[0] === 'text')) return false;
+  const inp = m.architecture?.input_modalities;
+  if (Array.isArray(inp) && !inp.includes('text')) return false;
+  return true;
+}
+
 function parseModelsResponse(provName, json) {
   try {
     if (provName === 'gemini') {
       return (json.models || [])
         .filter(m => !m.supportedGenerationMethods || m.supportedGenerationMethods.includes('generateContent'))
+        .filter(m => isTextModel(provName, { id: String(m.name || '').replace(/^models\//, '') }))
         .map(m => ({
           id: String(m.name || '').replace(/^models\//, ''),
           label: m.displayName || String(m.name || '').replace(/^models\//, ''),
@@ -356,7 +371,7 @@ function parseModelsResponse(provName, json) {
       return (json.data || []).map(m => ({ id: m.id, label: m.display_name || m.id, context: 200000 })).filter(m => m.id);
     }
     // openrouter / openai / deepseek → OpenAI-style { data: [{ id, name, context_length }] }
-    return (json.data || []).map(m => {
+    return (json.data || []).filter(m => isTextModel(provName, m)).map(m => {
       // OpenRouter ส่งราคาจริง (USD ต่อ token) มาด้วย → เก็บไว้คิดต้นทุนแทนตารางในโค้ดที่ล้าสมัยได้
       const pin = parseFloat(m.pricing?.prompt), pout = parseFloat(m.pricing?.completion);
       if (provName === 'openrouter' && isFinite(pin) && isFinite(pout) && pin >= 0 && pout >= 0) _modelPriceMap[m.id] = { in: pin * 1e6, out: pout * 1e6 };
@@ -399,7 +414,8 @@ function saveFetchedModelsCache() {
 function loadFetchedModelsCache() {
   try {
     const raw = JSON.parse(localStorage.getItem(LS_KEY_MODELS) || '{}');
-    Object.assign(_fetchedModels, raw.models || {});
+    for (const [prov, list] of Object.entries(raw.models || {}))   // รายการที่ fetch ไว้ก่อนมีตัวกรอง → ตัดโมเดลที่ไม่ใช่ข้อความออก
+      _fetchedModels[prov] = Array.isArray(list) ? list.filter(m => isTextModel(prov, m)) : list;
     Object.assign(_modelContextMap, raw.ctx || {});
     Object.assign(_modelPriceMap, raw.price || {});
   } catch {}
