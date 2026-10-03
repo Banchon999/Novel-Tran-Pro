@@ -110,6 +110,7 @@ async function selectWorkspace(id) {
   const ws = await lsGetWorkspace(id);
   if (!ws) { showToast('ไม่พบ Workspace', 'error'); return; }
   ensureWsStylesPresets(ws);
+  S._undoStack = null; // undo เก็บ snapshot ของ workspace เดิม — ห้ามนำไปใช้กับ workspace อื่น
   S.currentWsId = id;
   S.currentWs = ws;
   S.glossaryData = ws.glossary || [];
@@ -235,6 +236,10 @@ function renderWsSettings() {
   if (clEl)  clEl.checked = clOn;
   if (clOpt) clOpt.style.display = clOn ? 'block' : 'none';
   if (clRef) clRef.value = w.settings?.consistencySelfRef || 'auto';
+  const smEl = document.getElementById('wsSpeakerMap');
+  if (smEl) smEl.checked = w.settings?.speakerMap !== false;
+  const pmEl = document.getElementById('wsProofreadModel');
+  if (pmEl) pmEl.value = w.settings?.proofreadModel || ((w.settings?.aiProvider || 'openrouter') === 'openrouter' ? 'google/gemini-3-flash-preview' : 'same');
   renderPresetSelect();
   // Context Memory settings
   const ctx = wsGetContext(w);
@@ -263,6 +268,8 @@ async function saveWsSettings() {
     prevCtxChars: Math.max(100, Math.min(4000, parseInt(document.getElementById('wsPrevCtxChars')?.value) || 400)),
     consistencyLock: !!document.getElementById('wsConsistencyLock')?.checked,
     consistencySelfRef: document.getElementById('wsConsistencySelfRef')?.value || 'auto',
+    speakerMap: document.getElementById('wsSpeakerMap') ? document.getElementById('wsSpeakerMap').checked : true,
+    proofreadModel: document.getElementById('wsProofreadModel')?.value || S.currentWs.settings?.proofreadModel,
     batchChunkMode: document.getElementById('wsBatchChunkMode')?.value || 'off',
     batchChunkSize: Math.max(1000, Math.min(20000, parseInt(document.getElementById('wsBatchChunkSize')?.value) || 3000)),
   };

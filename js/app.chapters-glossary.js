@@ -222,7 +222,7 @@ async function deleteCurrentChapter() {
   await lsSaveWorkspace(S.currentWs);
   renderChapters();
   updateChapterSaveSelect();
-  showToast('ลบตอนแล้ว — <u style="cursor:pointer" onclick="undoLastAction()">Undo</u>', '');
+  showToast('ลบตอนแล้ว —', '', { label: '↩ Undo', fn: undoLastAction });
   const newSorted = _getSortedChapters();
   if (newSorted.length) {
     const next = newSorted[Math.min(idx, newSorted.length - 1)];
@@ -235,6 +235,11 @@ async function deleteCurrentChapter() {
   } else {
     closeModal('modal-view-chapter');
   }
+}
+
+// เลขตอนของทุกตอน (id → chapterNum) — ใช้คืนลำดับเดิมตอน undo split/merge
+function _chapterNumSnapshot() {
+  return Object.fromEntries((S.currentWs?.chapters || []).map(c => [c.id, c.chapterNum]));
 }
 
 async function undoLastAction() {
@@ -264,6 +269,20 @@ async function undoLastAction() {
     _updateChapterNav();
     openModal('modal-view-chapter');
     showToast('↩ Undo: คืนตอนที่ลบแล้ว', 'success');
+
+  } else if (action.type === 'split_chapter' || action.type === 'merge_chapter') {
+    // คืนตอนตาม snapshot (แทนที่ตัวเดิม / ใส่กลับถ้าถูกลบ) + ลบตอนที่สร้างใหม่ + คืนเลขตอนทั้ง WS
+    const removeIds = new Set(action.removeIds || []);
+    S.currentWs.chapters = S.currentWs.chapters.filter(c => !removeIds.has(c.id));
+    for (const snap of action.chapters) {
+      const i = S.currentWs.chapters.findIndex(c => c.id === snap.id);
+      if (i >= 0) S.currentWs.chapters[i] = snap; else S.currentWs.chapters.push(snap);
+    }
+    for (const c of S.currentWs.chapters) if (action.nums[c.id] !== undefined) c.chapterNum = action.nums[c.id];
+    await lsSaveWorkspace(S.currentWs);
+    renderChapters();
+    updateChapterSaveSelect();
+    showToast(action.type === 'split_chapter' ? '↩ Undo: คืนตอนก่อนแยกแล้ว' : '↩ Undo: คืนตอนก่อนรวมแล้ว', 'success');
 
   } else if (action.type === 'clean_all_source') {
     for (const snap of action.snapshot) {
@@ -538,11 +557,16 @@ async function confirmSplitChapter() {
   const title1 = document.getElementById('splitTitle1').value.trim() || ch.title;
   const title2 = document.getElementById('splitTitle2').value.trim() || ch.title + ' (2)';
 
+  // คำแปลแยกตามบรรทัดต้นฉบับไม่ได้ → ต้องล้างแล้วแปลใหม่ · เตือนก่อนเพราะเสียค่า API ซ้ำ
+  if (ch.translation?.trim() && !confirm('ตอนนี้มีคำแปลอยู่แล้ว — การแยกตอนจะล้างคำแปลของทั้งสองส่วน (ต้องแปลใหม่)\nกด ↩ Undo คืนได้หลังแยก\n\nแยกตอนต่อไหม?')) return;
+  const undo = { type: 'split_chapter', chapters: [JSON.parse(JSON.stringify(ch))], nums: _chapterNumSnapshot() };
+
   // แก้ part 1 (ใช้ id เดิม)
   ch.title = title1;
   ch.sourceText = lines.slice(0, at).join('\n');
   ch.translation = '';
   ch.status = 'pending';
+  delete ch.chunkProgress;
   ch.updatedAt = Date.now();
 
   // สร้าง part 2 ใหม่ (chapterNum +0.5 ก่อน renumber)
@@ -558,6 +582,8 @@ async function confirmSplitChapter() {
     updatedAt: Date.now(),
   };
   S.currentWs.chapters.push(newCh);
+  undo.removeIds = [newCh.id];
+  S._undoStack = undo;
 
   // Renumber ทั้ง WS ตามลำดับ
   [...S.currentWs.chapters]
@@ -569,7 +595,7 @@ async function confirmSplitChapter() {
   updateChapterSaveSelect();
   closeModal('modal-split-chapter');
   closeModal('modal-view-chapter');
-  showToast(`✂ Split เสร็จ — "${title1}" และ "${title2}"`, 'success');
+  showToast(`✂ Split เสร็จ — "${title1}" และ "${title2}"`, 'success', { label: '↩ Undo', fn: undoLastAction });
 }
 
 // ─── Merge Chapter ───
@@ -606,11 +632,17 @@ async function confirmMergeChapter() {
   // Merge: ต้นฉบับ + แปล ต่อกัน
   const sep = '\n\n';
   const [first, second] = dir === 'next' ? [ch, other] : [other, ch];
+  const bothDone = first.status === 'translated' && second.status === 'translated';
+  const anyText  = !!(first.translation?.trim() || second.translation?.trim());
+  if (!bothDone && anyText && !confirm('มีตอนหนึ่งยังแปลไม่ครบ — ตอนที่รวมแล้วจะถูกตั้งเป็น "รอแปล" (คำแปลที่มีอยู่ยังเก็บไว้)\n\nรวมตอนต่อไหม?')) return;
+  S._undoStack = { type: 'merge_chapter', chapters: [JSON.parse(JSON.stringify(ch)), JSON.parse(JSON.stringify(other))], removeIds: [], nums: _chapterNumSnapshot() };
+
   ch.title = newTitle;
   ch.chapterNum = first.chapterNum;
   ch.sourceText  = [first.sourceText, second.sourceText].filter(Boolean).join(sep);
   ch.translation = [first.translation, second.translation].filter(Boolean).join(sep);
-  ch.status = ch.translation.trim() ? 'translated' : 'pending';
+  ch.status = bothDone ? 'translated' : 'pending';
+  delete ch.chunkProgress;
   ch.wordCount = ch.translation.length;
   ch.updatedAt = Date.now();
 
@@ -627,7 +659,7 @@ async function confirmMergeChapter() {
   updateChapterSaveSelect();
   closeModal('modal-merge-chapter');
   closeModal('modal-view-chapter');
-  showToast(`🔗 Merge เสร็จ — "${newTitle}"`, 'success');
+  showToast(`🔗 Merge เสร็จ — "${newTitle}"`, 'success', { label: '↩ Undo', fn: undoLastAction });
 }
 
 // ─── Styles (ของผู้ใช้ทั้งหมด) ───

@@ -977,6 +977,7 @@ async function startBatchChapters() {
   // ── PHASE 2: แปลทีละตอน (sequential) ──
   addLog(log, `⚡ เริ่มแปล ${n} ตอน...`, '');
   let batchStopped = false;
+  let failedCount = 0;     // ตอนที่ error/หมดเวลา — นับไว้สรุปท้าย (ไม่ขึ้น "เสร็จ n ตอน" ทั้งที่มีตอนพัง)
   for (let i = 0; i < n; i++) {
     const ch = selectedChapters[i];
     const pct = 30 + Math.round(i / n * 70); // progress 30%→100% ในช่วงแปล
@@ -985,6 +986,7 @@ async function startBatchChapters() {
     document.getElementById('bchProgressLabel').textContent = `แปลตอน ${i+1}/${n}: ${ch.title}`;
     if (!ch.sourceText?.trim()) {
       addLog(log, `⚠ #${ch.chapterNum||'?'} "${ch.title}" — ไม่มีต้นฉบับ ข้าม`, 'error');
+      failedCount++;
       continue;
     }
     const ctxStr = usePrevContext ? getCtxFromCache(ch) : '';
@@ -1000,6 +1002,8 @@ async function startBatchChapters() {
       if (multi) addLog(log, `  ↳ แบ่งเป็น ${chChunks.length} chunk (${batchChunkMode})`, '');
 
       let fullText = '';
+      let spFixCount = 0;
+      let allMap = [];       // แผนที่ผู้พูดของทุก chunk ต่อกัน — ใช้แก้ซ้ำหลัง Polish (Polish อาจเปลี่ยนคำลงท้ายกลับ)
       for (let ci = 0; ci < chChunks.length; ci++) {
         const chunk = chChunks[ci];
         // Smart Glossary per chunk (ลด token)
@@ -1009,19 +1013,31 @@ async function startBatchChapters() {
         // context: ตอน summary เฉพาะ chunk แรก + ท้ายคำแปล chunk ก่อนหน้า (ต่อเนื่อง)
         const prevTail = ci > 0 ? fullText.slice(-getPrevCtxChars()) : '';
         const chunkCtx = (ci === 0 ? ctxStr : '') + (prevTail ? `CONTEXT (ท้าย chunk ก่อนหน้า):\n${prevTail}\n` : '');
-        const prompt = buildTranslatePrompt({ sourceText: chunk, glossaryStr: cgStr, contextStr: chunkCtx, styleNote: csp || '', ws: S.currentWs });
+        const spMap = await buildSpeakerMap(chunk, model);
+        if (allMap) allMap = spMap ? allMap.concat(spMap) : (extractSourceQuotes(chunk).length ? null : allMap);
+        const prompt = buildTranslatePrompt({ sourceText: chunk, glossaryStr: cgStr, contextStr: chunkCtx, styleNote: csp || '', ws: S.currentWs, speakerMap: spMap });
         if (multi) document.getElementById('bchProgressLabel').textContent = `แปลตอน ${i+1}/${n} · chunk ${ci+1}/${chChunks.length}: ${ch.title}`;
 
         S.abortCtrl = new AbortController();
-        const timer = setTimeout(() => S.abortCtrl.abort(), getTimeoutMs(multi ? 'chunk' : 'full'));
+        const timer = startAbortTimer(S.abortCtrl, getTimeoutMs(multi ? 'chunk' : 'full'));
         let part = '', inTok = 0, outTok = 0;
         try {
-          part = await aiStream(
-            { model, temperature: batchPreset.temperature ?? 0.65, max_tokens: Math.max(2000, Math.ceil(chunk.length * 2)), messages: [{role:'user',content:prompt}] },
-            d => { part += d; }, (inp,out) => { inTok=inp; outTok=out; }, S.abortCtrl.signal
-          );
-        } finally { clearTimeout(timer); }
+          for (let attempt = 0; attempt < 2; attempt++) {   // ส่งต้นฉบับกลับมาโดยไม่แปล → ลองใหม่ 1 ครั้ง
+            part = await aiStream(
+              { model, temperature: batchPreset.temperature ?? 0.65, max_tokens: Math.max(2000, Math.ceil(chunk.length * 2)), messages: [{role:'user',content:prompt}] },
+              d => { part += d; }, (inp,out) => { inTok=inp; outTok=out; }, S.abortCtrl.signal
+            );
+            if (!looksUntranslated(part)) break;
+          }
+          if (looksUntranslated(part)) throw new Error('AI ส่งต้นฉบับกลับมาโดยไม่แปล');
+        } catch (e) {
+          // หมดเวลา ≠ ผู้ใช้กดหยุด → ถือเป็น error ของตอนนี้ แล้ว batch ไปตอนถัดไป
+          if (e.name === 'AbortError' && timer.timedOut) throw new Error(timeoutMessage(timer.ms));
+          throw e;
+        } finally { clearTimeout(timer.id); }
         if (inTok||outTok) addCosts(inTok, outTok, model);
+        const spFix = applySpeakerFixes(part, spMap);
+        if (spFix.fixes.length) { part = spFix.text; spFixCount += spFix.fixes.length; }
         fullText += (ci > 0 && part ? '\n\n' : '') + part;
       }
 
@@ -1032,10 +1048,18 @@ async function startBatchChapters() {
           const pr = await callOpenRouter({ model, messages:[{role:'user',content:POLISH_PROMPT.replace('{glossary}',fgStr).replace('{text}',fullText)}], temperature:0.5, max_tokens:Math.max(4000,Math.ceil(fullText.length*1.2)) });
           fullText = pr.choices?.[0]?.message?.content?.trim() || fullText;
         } catch {}
+        const spFix2 = applySpeakerFixes(fullText, allMap);
+        if (spFix2.fixes.length) { fullText = spFix2.text; spFixCount += spFix2.fixes.length; }
+      }
+      if (fullText && speakerMapEnabled() && extractSourceQuotes(src).length) {
+        const gp = await genderProofread(src, fullText, model);
+        if (gp.fixes.length) { fullText = gp.text; spFixCount += gp.fixes.length; }
       }
       ch.translation = fullText; ch.status = 'translated'; ch.wordCount = fullText.length; ch.updatedAt = Date.now();
       await lsSaveWorkspace(S.currentWs);
-      addLog(log, `✓ #${ch.chapterNum||'?'} "${ch.title}" — ${fullText.length.toLocaleString()} ตัวอักษร`, 'success');
+      addLog(log, `✓ #${ch.chapterNum||'?'} "${ch.title}" — ${fullText.length.toLocaleString()} ตัวอักษร${spFixCount ? ` · แก้ ครับ/ค่ะ ตามผู้พูด ${spFixCount} จุด` : ''}`, 'success');
+      const _pHigh = particleHighCount(fullText);
+      if (_pHigh) addLog(log, `  ↳ ⚠ ครับ/ค่ะ น่าสงสัย ${_pHigh} จุด — ดูใน 🚻 สรรพนาม/ครับ-ค่ะ (แท็บคลังศัพท์)`, 'error');
 
       // ── สรุปตอนที่เพิ่งแปลเสร็จทันที เพื่อให้ตอนถัดไปใน batch ได้ context ต่อเนื่อง ──
       // (เฟส 1 สรุปได้เฉพาะตอนที่แปลก่อนเริ่ม batch — ตอนที่แปลใหม่ใน loop ต้องสรุปที่นี่)
@@ -1072,6 +1096,7 @@ async function startBatchChapters() {
         break;
       }
       addLog(log, `✗ #${ch.chapterNum||'?'} "${ch.title}" — ${err.message}`, 'error');
+      failedCount++;
     }
     document.getElementById('bchProgressFill').style.width = (30 + Math.round((i+1)/n*70)) + '%';
     document.getElementById('bchProgressPct').textContent  = (30 + Math.round((i+1)/n*70)) + '%';
@@ -1079,11 +1104,15 @@ async function startBatchChapters() {
 
   document.getElementById('bchProgressFill').style.width = '100%';
   document.getElementById('bchProgressPct').textContent   = '100%';
-  document.getElementById('bchProgressLabel').textContent = batchStopped ? 'หยุดแล้ว ⬛' : `เสร็จสิ้น ${n} ตอน ✓`;
+  const okCount = n - failedCount;
+  document.getElementById('bchProgressLabel').textContent = batchStopped ? 'หยุดแล้ว ⬛'
+    : failedCount ? `เสร็จ ${okCount}/${n} ตอน · ล้มเหลว ${failedCount} ตอน (ดู log)` : `เสร็จสิ้น ${n} ตอน ✓`;
   renderChapters();
   setTranslating(false);
   btn.disabled = false;
-  showToast(batchStopped ? '⬛ หยุด Batch แล้ว' : `Batch แปลเสร็จ ${n} ตอน ✓`, batchStopped ? '' : 'success');
+  showToast(batchStopped ? '⬛ หยุด Batch แล้ว'
+    : failedCount ? `Batch แปลได้ ${okCount}/${n} ตอน — ล้มเหลว ${failedCount} ตอน (เลือก "เฉพาะที่ยังไม่แปล" แล้วกดแปลอีกครั้ง)` : `Batch แปลเสร็จ ${n} ตอน ✓`,
+    batchStopped ? '' : failedCount ? 'error' : 'success');
 
   // ── Auto Extract Glossary จาก source texts ทั้ง batch รวมกัน (ครั้งเดียว) ──
   if (!batchStopped) {
@@ -1205,12 +1234,21 @@ function openModal(id) { document.getElementById(id).classList.add('open'); }
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
 
 let _toastTimer = null;
-function showToast(msg, type) {
+// action (ไม่บังคับ): { label, fn } → แสดงลิงก์กดได้ต่อท้ายข้อความ (เช่น Undo) — msg ยังเป็น text ล้วน กัน HTML แทรก
+function showToast(msg, type, action) {
   const t = document.getElementById('toast');
   t.textContent = msg;
+  if (action && typeof action === 'object' && action.fn) {
+    const a = document.createElement('u');
+    a.textContent = ' ' + (action.label || 'Undo');
+    a.style.cursor = 'pointer';
+    a.style.marginLeft = '6px';
+    a.onclick = () => { t.className = 'toast'; action.fn(); };
+    t.appendChild(a);
+  }
   t.className = 'toast show' + (type ? ' ' + type : '');
   if (_toastTimer) clearTimeout(_toastTimer);
-  _toastTimer = setTimeout(() => { t.className = 'toast'; }, 3500);
+  _toastTimer = setTimeout(() => { t.className = 'toast'; }, action && action.fn ? 7000 : 3500);
 }
 
 // ─── Load from Chapter (Translate Tab) ───

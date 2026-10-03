@@ -156,9 +156,9 @@ function getActivePreset(ws) {
   return list.find(p => p.id === ws?.presetId) || list[0] || SEED_PRESETS[0];
 }
 
-function buildTranslatePrompt({ sourceText, glossaryStr = '', contextStr = '', styleNote = '', ws = null, mtlDraft = '' }) {
+function buildTranslatePrompt({ sourceText, glossaryStr = '', contextStr = '', styleNote = '', ws = null, mtlDraft = '', speakerMap = null }) {
   const preset = getActivePreset(ws);
-  return applyConsistencyLock(preset.systemPrompt, ws)
+  return applySpeakerMap(applyParticleRules(applyConsistencyLock(preset.systemPrompt, ws)), speakerMap)
     .replace('{style_note}', styleNote ? `STYLE GUIDE:\n${styleNote}\n` : '')
     .replace('{glossary}',   glossaryStr || '(ไม่มี)')
     .replace('{context}',   contextStr)
@@ -188,6 +188,7 @@ REGISTER CONSISTENCY (ล็อกระดับภาษา)
 • Once a speaker's Thai speech register is established, preserve it throughout the passage.
 • Do NOT fluctuate between colloquial / neutral / polite / formal / literary / archaic Thai without explicit evidence from the source.
 • Avoid unnecessary variation in self-reference and address terms.
+• Keep each speaker's polite particles (ครับ/ค่ะ/คะ…) consistent with their gender and established register.
 
 ━━━━━━━━━━━━━━━━━━━━
 NARRATIVE POV LOCK (ล็อกมุมมองเล่าเรื่อง)
@@ -208,15 +209,50 @@ DETERMINISTIC TRANSLATION POLICY
 • Treat established terminology, pronouns, titles, honorifics, relationship terms, and self-references as LOCKED for the rest of the passage unless the source explicitly changes them.`;
 }
 
+// ─── Speech Particles (คำลงท้าย ครับ/ค่ะ — ใส่ทุก prompt เสมอ) ───
+// preset ใน workspace เก็บ prompt แบบเต็มไว้ตอนสร้าง → แก้ค่าคงที่ไม่ถึง workspace เดิม จึง inject ตอน runtime แทน
+const SPEECH_PARTICLE_RULES = `━━━━━━━━━━━━━━━━━━━━
+SPEECH PARTICLE RULES (คำลงท้าย ครับ/ค่ะ) — CRITICAL
+━━━━━━━━━━━━━━━━━━━━
+• Thai polite particles follow the gender of the SPEAKER of that line — never the listener, never the narrator.
+• Before writing each line of dialogue, identify who is speaking (dialogue tags, turn order, glossary gender), then choose the particle.
+• Male speaker: ครับ / นะครับ / ครับผม / ขอรับ · Female speaker: ค่ะ / คะ / นะคะ / เจ้าค่ะ.
+• Royal register: male speaker → พ่ะย่ะค่ะ · female speaker → เพคะ.
+• NEVER mix male and female particles inside one line of dialogue.
+• The particle must agree with the speaker's self-pronoun in the same line (ผม/กระผม → ครับ · ดิฉัน/อิฉัน → ค่ะ/คะ).
+• If the speaker or their gender is unclear, do NOT guess: use a gender-neutral ending (นะ, จ้ะ, or no particle) instead.
+• Forms of address follow the gender of the person ADDRESSED (공자님/도련님 → คุณชาย · 아가씨/영애 → คุณหนู · 부인 → ท่านหญิง/คุณนาย); never call a male character คุณหนู or a female one คุณชาย.
+• Narration pronouns follow each character's gender: male → เขา · female → เธอ/นาง — check the glossary before every เขา/เธอ/นาง.`;
+
+// แทรกบล็อกกฎเข้า prompt ของ preset — วางต่อจาก {glossary} (ห่างจากต้นฉบับ)
+// เดิมวางก่อน {text} ซึ่งใน preset ที่มีหัวข้อ "KOREAN SOURCE" ก่อน {text} บล็อกจะไปอยู่ใต้หัวข้อนั้น
+// → AI บางตัว (Gemini Flash Lite) สับสนแล้วส่งต้นฉบับเกาหลีกลับมาทั้งตอน
+function injectPromptBlock(systemPrompt, block) {
+  if (!block || typeof systemPrompt !== 'string') return systemPrompt;
+  if (systemPrompt.includes('{glossary}')) return systemPrompt.replace('{glossary}', '{glossary}\n\n' + block);
+  if (systemPrompt.includes('{text}')) return systemPrompt.replace('{text}', block + '\n\n{text}');
+  return systemPrompt + '\n\n' + block;
+}
+
+function applyParticleRules(systemPrompt) {
+  if (typeof systemPrompt !== 'string' || systemPrompt.includes('SPEECH PARTICLE RULES')) return systemPrompt;
+  return injectPromptBlock(systemPrompt, SPEECH_PARTICLE_RULES);
+}
+
+// AI ส่งต้นฉบับกลับมาโดยไม่แปล? (อักษรเกาหลี/จีน/ญี่ปุ่นเกิน 30% ของตัวอักษรทั้งหมด)
+function looksUntranslated(text) {
+  const t = String(text || '');
+  const cjk = (t.match(/[\uac00-\ud7a3\u3131-\u318e\u4e00-\u9fff\u3040-\u30ff]/g) || []).length;
+  const thai = (t.match(/[\u0e00-\u0e7f]/g) || []).length;
+  return cjk > 50 && cjk / Math.max(1, cjk + thai) > 0.3;
+}
+
 // แทรกบล็อกกฎ Consistency เข้า systemPrompt (ก่อน {text}) เมื่อ workspace เปิดใช้งาน
 // idempotent: ถ้า prompt ของผู้ใช้มีบล็อกนี้อยู่แล้ว จะไม่แทรกซ้ำ
 function applyConsistencyLock(systemPrompt, ws) {
   if (!ws?.settings?.consistencyLock || typeof systemPrompt !== 'string') return systemPrompt;
   if (systemPrompt.includes('PRONOUN CONSISTENCY CONTROL')) return systemPrompt;
-  const block = buildConsistencyBlock(ws.settings.consistencySelfRef);
-  return systemPrompt.includes('{text}')
-    ? systemPrompt.replace('{text}', block + '\n\n{text}')
-    : systemPrompt + '\n\n' + block;
+  return injectPromptBlock(systemPrompt, buildConsistencyBlock(ws.settings.consistencySelfRef));
 }
 
 // ─── Prompts ───
@@ -230,6 +266,7 @@ RULES:
 • Correct Thai spelling, vowels, tone marks (วรรณยุกต์), and word spacing; remove typos, doubled characters, and any stray source-language characters or symbols.
 • Keep tone, character voice, and pacing consistent; do NOT add, omit, or alter meaning.
 • Preserve all glossary terms exactly as given.
+• Do NOT change the gender of speech particles (ครับ ↔ ค่ะ/คะ) unless one contradicts the speaker's gender given in the glossary; never mix both in one line of dialogue.
 
 GLOSSARY (preserve these terms):
 {glossary}
@@ -270,7 +307,7 @@ Rules:
   • Korean pronouns (strongest signal): 그/남자/형/오빠/아버지/아들/왕/황제/그는/그가 = male | 그녀/여자/언니/누나/어머니/딸/왕비/그녀는/그녀가 = female
   • Korean kinship terms used FOR the character: 형/오빠/아버지/할아버지 = male | 언니/누나/어머니/할머니 = female
   • Korean dialogue honorifics when others address the character: ~씨/~님 is neutral; 여왕/공주 = female; 왕자/황자 = male
-  • Thai translation pronouns if provided (strong signal): เขา/ผม/กู/ท่าน(masc context) = male | เธอ/นาง/ฉัน/หนู = female
+  • Thai translation pronouns if provided (weak support only): เขา/นาย = male | เธอ/นาง/หล่อน = female. Do NOT treat ฉัน/ผม in narration or inner thoughts as evidence — a preset may lock every narrator to ฉัน
   • Korean fantasy name patterns: names ending in 아/야/이 with feminine context = likely female; strong warrior names without feminine markers = likely male
   • First-person Korean 나/저 does NOT indicate gender — look at surrounding context instead
   • CAUTION for chapter 1 / first appearance: If cues are ambiguous or mixed, assign "neutral" — it is BETTER to be neutral and correct later than to assign wrong gender permanently.

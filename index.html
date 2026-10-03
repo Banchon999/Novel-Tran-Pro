@@ -276,7 +276,7 @@
         <button class="btn btn-primary btn-sm" onclick="openAddGlossary()">＋ เพิ่มคำ</button>
         <button class="btn btn-secondary btn-sm" onclick="openAutoGlossary()">🤖 Auto</button>
         <button class="btn btn-secondary btn-sm" onclick="checkDuplicateGlossary()">🔎 ซ้ำ</button>
-        <button class="btn btn-ghost btn-sm" onclick="openPronounCheck()" title="หาจุดที่สรรพนามขัดกับเพศตัวละครใน Glossary">🚻 สรรพนาม</button>
+        <button class="btn btn-ghost btn-sm" onclick="openPronounCheck()" title="หาจุดที่สรรพนาม หรือ ครับ/ค่ะ ขัดกับเพศตัวละครใน Glossary">🚻 สรรพนาม/ครับ-ค่ะ</button>
         <button class="btn btn-ghost btn-sm" onclick="openGlossaryExport()">📤 Export</button>
         <button class="btn btn-ghost btn-sm" onclick="openGlossaryCSVImport()">📥 CSV Import</button>
         <button class="btn btn-ghost btn-sm" onclick="openGlossaryInherit()">🔗 Import จาก WS อื่น</button>
@@ -404,6 +404,27 @@
               </div>
               <div style="font-size:0.70rem;color:var(--text-muted);margin-top:6px">เมื่อต้นฉบับไม่ระบุสรรพนาม จะใช้คำที่เลือกนี้คงที่ตลอดทั้งตอน · "อัตโนมัติ" = อิงเพศตัวละครจาก glossary (male→ผม, female→ฉัน)</div>
             </div>
+          </div>
+
+          <!-- ── Speaker Map (ระบุผู้พูดก่อนแปล) ── -->
+          <div class="sf-group" style="border-top:1px solid var(--border);padding-top:10px;margin-top:2px">
+            <div class="sf-label" style="margin-bottom:6px">
+              🗣 ระบุผู้พูดก่อนแปล (Speaker Map)
+              <span style="font-size:0.70rem;color:var(--text-muted);font-weight:400"> — กัน ครับ/ค่ะ และ ผม/ฉัน ผิดคน</span>
+            </div>
+            <label class="toggle-mini" style="gap:8px;cursor:pointer">
+              <input type="checkbox" id="wsSpeakerMap"/>
+              <span style="font-size:0.78rem;color:var(--text-secondary)">เปิดใช้ (แนะนำ)</span>
+            </label>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px">
+              <span style="font-size:0.78rem;color:var(--text-secondary)">โมเดลตรวจเพศหลังแปล:</span>
+              <select id="wsProofreadModel" class="select-input" style="width:auto;font-size:0.78rem">
+                <option value="google/gemini-3-flash-preview">Gemini 3 Flash Preview (แนะนำ · OpenRouter)</option>
+                <option value="google/gemini-3.5-flash">Gemini 3.5 Flash (OpenRouter)</option>
+                <option value="same">ใช้โมเดลเดียวกับที่แปล</option>
+              </select>
+            </div>
+            <div style="font-size:0.70rem;color:var(--text-muted);margin-top:6px">ก่อนแปลจะให้ AI ระบุว่าบทพูดแต่ละบรรทัดใครพูด (เพศจากคลังศัพท์มาก่อน) → แนบเข้า prompt → หลังแปลแก้คำลงท้าย/คำแทนตัวที่ผิดเพศให้เอง + ตรวจ เขา/เธอ ในการบรรยายซ้ำด้วยโมเดลตรวจ (รับเฉพาะคำแก้ที่เปลี่ยนแค่คำบอกเพศ) · เรียก AI เพิ่ม 1–2 ครั้งต่อตอน (ค่าใช้จ่ายเพิ่มราว 20–40%) · ถ้าไม่ได้ใช้ OpenRouter ให้เลือก "ใช้โมเดลเดียวกับที่แปล"</div>
           </div>
 
           <!-- ── Translation Context Memory ── -->
@@ -1397,10 +1418,12 @@
 
 <div class="modal-backdrop" id="modal-pronoun-check">
   <div class="modal modal-wide">
-    <div class="modal-header"><span>🚻 ตรวจสรรพนาม/เพศ</span><button class="icon-btn" onclick="closeModal('modal-pronoun-check')">✕</button></div>
+    <div class="modal-header"><span>🚻 ตรวจสรรพนาม / ครับ-ค่ะ</span><button class="icon-btn" onclick="closeModal('modal-pronoun-check')">✕</button></div>
     <div class="modal-body">
       <div style="font-size:0.76rem;color:var(--text-muted);margin-bottom:10px">
-        สแกนหาจุดที่คำแปลใช้สรรพนามขัดกับเพศของตัวละครใน Glossary (เช่น ใช้ "เขา" ใกล้ชื่อตัวละครหญิง)
+        สแกนทุกตอน (ไม่เสียค่า AI) หาจุดที่ (1) สรรพนามขัดกับเพศตัวละครใน Glossary เช่น ใช้ "เขา" ใกล้ชื่อตัวละครหญิง
+        (2) คำลงท้าย ครับ/ค่ะ ขัดกัน — "ชัดเจน" = ผสม ครับ+ค่ะ หรือขัดกับ ผม/ดิฉัน ในบทพูดเดียว ·
+        "น่าสงสัย" = ไม่ตรงเพศผู้พูดที่ระบุไว้ เช่น <i>ลีน่ากล่าว “…ครับ”</i>
         — เป็นการเดาเบื้องต้น ควรเปิดดูบริบทจริงก่อนแก้
       </div>
       <div id="pronounCheckResults" style="display:flex;flex-direction:column;gap:8px"></div>
