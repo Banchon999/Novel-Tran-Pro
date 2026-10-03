@@ -1,0 +1,36 @@
+# ปล่อย Release อัตโนมัติเมื่อ push tag v* (เช่น v12.5.0)
+# → แพ็กไฟล์แอพเป็น zip พร้อมใช้ (แตกแล้วเปิด serve.sh / อัปโหลดขึ้นเว็บได้เลย) + ใช้ release-notes/<tag>.md เป็นคำอธิบาย
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build app zip
+        run: |
+          set -e
+          mkdir -p dist/NovelTrans
+          cp -r index.html style.css sw.js manifest.webmanifest icon.svg serve.sh js README.md SYSTEMS.md dist/NovelTrans/
+          cd dist && zip -qr "NovelTrans-${GITHUB_REF_NAME}.zip" NovelTrans
+
+      - name: Release notes
+        id: notes
+        run: |
+          f="release-notes/${GITHUB_REF_NAME}.md"
+          if [ -f "$f" ]; then echo "path=$f" >> "$GITHUB_OUTPUT"; else echo "path=" >> "$GITHUB_OUTPUT"; fi
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: NovelTrans ${{ github.ref_name }}
+          body_path: ${{ steps.notes.outputs.path }}
+          generate_release_notes: ${{ steps.notes.outputs.path == '' }}
+          files: dist/NovelTrans-${{ github.ref_name }}.zip
