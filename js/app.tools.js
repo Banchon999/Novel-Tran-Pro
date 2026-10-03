@@ -1086,7 +1086,7 @@ async function cleanAllSourceTexts() {
   });
   if (!chaptersAffected) { S._undoStack = null; showToast('ไม่พบสิ่งที่ต้องลบในทุกตอน', ''); return; }
   await lsSaveWorkspace(S.currentWs);
-  showToast(`🧹 ลบออก ${totalRemoved.toLocaleString()} ตัวอักษร จาก ${chaptersAffected} ตอน — <u style="cursor:pointer" onclick="undoLastAction()">Undo</u>`, 'success');
+  showToast(`🧹 ลบออก ${totalRemoved.toLocaleString()} ตัวอักษร จาก ${chaptersAffected} ตอน`, 'success', { label: '↩ Undo', fn: undoLastAction });
 }
 
 // ─── Add Line Breaks (เพิ่ม 1 บรรทัดว่างระหว่างทุกบรรทัด) ───

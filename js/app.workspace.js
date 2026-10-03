@@ -110,6 +110,7 @@ async function selectWorkspace(id) {
   const ws = await lsGetWorkspace(id);
   if (!ws) { showToast('ไม่พบ Workspace', 'error'); return; }
   ensureWsStylesPresets(ws);
+  S._undoStack = null; // undo เก็บ snapshot ของ workspace เดิม — ห้ามนำไปใช้กับ workspace อื่น
   S.currentWsId = id;
   S.currentWs = ws;
   S.glossaryData = ws.glossary || [];
