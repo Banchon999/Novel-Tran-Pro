@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════
-// NovelTrans v10 Pro — Multi-file Edition
+// NovelTrans v12.5 Pro — Multi-file Edition
 // IndexedDB backend + OpenRouter API (SSE streaming)
 // ═══════════════════════════════════════════════
 'use strict';
