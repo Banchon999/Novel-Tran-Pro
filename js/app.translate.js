@@ -316,11 +316,7 @@ ${lines.join('\n')}${sheetTxt ? `
 
 // แทรกแผนที่ผู้พูดก่อน {text} (ถ้า prompt ไม่มี {text} → ต่อท้าย)
 function applySpeakerMap(systemPrompt, map) {
-  const block = speakerMapPromptBlock(map);
-  if (!block || typeof systemPrompt !== 'string') return systemPrompt;
-  return systemPrompt.includes('{text}')
-    ? systemPrompt.replace('{text}', block + '\n\n{text}')
-    : systemPrompt + '\n\n' + block;
+  return injectPromptBlock(systemPrompt, speakerMapPromptBlock(map));
 }
 
 // แปลงคำลงท้าย/คำแทนตัวในบทพูด 1 บรรทัดให้ตรงเพศผู้พูด — คืนข้อความใหม่ (ไม่เปลี่ยนถ้าตรงอยู่แล้ว)
@@ -633,6 +629,7 @@ async function translateAllStream(text) {
 
     cursor.remove();
     if (inTok || outTok) addCosts(inTok, outTok, options.model);
+    if (looksUntranslated(fullText)) throw new Error('AI ส่งต้นฉบับกลับมาโดยไม่แปล — กดแปลอีกครั้ง หรือเปลี่ยนโมเดล');
 
     if (options.useMemory && fullText) _mcSet(cacheKey, fullText);
 
@@ -927,6 +924,7 @@ async function translateChunked(text, options) {
 
         cursor.remove();
         if (inTok || outTok) addCosts(inTok, outTok, options.model);
+        if (looksUntranslated(chunkFull)) throw new Error('AI ส่งต้นฉบับกลับมาโดยไม่แปล');
 
         if (options.useMemory && chunkFull) _mcSet(cacheKey, chunkFull);
         completedTranslations.push(chunkFull);

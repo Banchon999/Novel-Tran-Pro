@@ -224,11 +224,27 @@ SPEECH PARTICLE RULES (คำลงท้าย ครับ/ค่ะ) — CRIT
 • Forms of address follow the gender of the person ADDRESSED (공자님/도련님 → คุณชาย · 아가씨/영애 → คุณหนู · 부인 → ท่านหญิง/คุณนาย); never call a male character คุณหนู or a female one คุณชาย.
 • Narration pronouns follow each character's gender: male → เขา · female → เธอ/นาง — check the glossary before every เขา/เธอ/นาง.`;
 
+// แทรกบล็อกกฎเข้า prompt ของ preset — วางต่อจาก {glossary} (ห่างจากต้นฉบับ)
+// เดิมวางก่อน {text} ซึ่งใน preset ที่มีหัวข้อ "KOREAN SOURCE" ก่อน {text} บล็อกจะไปอยู่ใต้หัวข้อนั้น
+// → AI บางตัว (Gemini Flash Lite) สับสนแล้วส่งต้นฉบับเกาหลีกลับมาทั้งตอน
+function injectPromptBlock(systemPrompt, block) {
+  if (!block || typeof systemPrompt !== 'string') return systemPrompt;
+  if (systemPrompt.includes('{glossary}')) return systemPrompt.replace('{glossary}', '{glossary}\n\n' + block);
+  if (systemPrompt.includes('{text}')) return systemPrompt.replace('{text}', block + '\n\n{text}');
+  return systemPrompt + '\n\n' + block;
+}
+
 function applyParticleRules(systemPrompt) {
   if (typeof systemPrompt !== 'string' || systemPrompt.includes('SPEECH PARTICLE RULES')) return systemPrompt;
-  return systemPrompt.includes('{text}')
-    ? systemPrompt.replace('{text}', SPEECH_PARTICLE_RULES + '\n\n{text}')
-    : systemPrompt + '\n\n' + SPEECH_PARTICLE_RULES;
+  return injectPromptBlock(systemPrompt, SPEECH_PARTICLE_RULES);
+}
+
+// AI ส่งต้นฉบับกลับมาโดยไม่แปล? (อักษรเกาหลี/จีน/ญี่ปุ่นเกิน 30% ของตัวอักษรทั้งหมด)
+function looksUntranslated(text) {
+  const t = String(text || '');
+  const cjk = (t.match(/[\uac00-\ud7a3\u3131-\u318e\u4e00-\u9fff\u3040-\u30ff]/g) || []).length;
+  const thai = (t.match(/[\u0e00-\u0e7f]/g) || []).length;
+  return cjk > 50 && cjk / Math.max(1, cjk + thai) > 0.3;
 }
 
 // แทรกบล็อกกฎ Consistency เข้า systemPrompt (ก่อน {text}) เมื่อ workspace เปิดใช้งาน
@@ -236,10 +252,7 @@ function applyParticleRules(systemPrompt) {
 function applyConsistencyLock(systemPrompt, ws) {
   if (!ws?.settings?.consistencyLock || typeof systemPrompt !== 'string') return systemPrompt;
   if (systemPrompt.includes('PRONOUN CONSISTENCY CONTROL')) return systemPrompt;
-  const block = buildConsistencyBlock(ws.settings.consistencySelfRef);
-  return systemPrompt.includes('{text}')
-    ? systemPrompt.replace('{text}', block + '\n\n{text}')
-    : systemPrompt + '\n\n' + block;
+  return injectPromptBlock(systemPrompt, buildConsistencyBlock(ws.settings.consistencySelfRef));
 }
 
 // ─── Prompts ───

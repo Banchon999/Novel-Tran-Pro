@@ -1022,10 +1022,14 @@ async function startBatchChapters() {
         const timer = startAbortTimer(S.abortCtrl, getTimeoutMs(multi ? 'chunk' : 'full'));
         let part = '', inTok = 0, outTok = 0;
         try {
-          part = await aiStream(
-            { model, temperature: batchPreset.temperature ?? 0.65, max_tokens: Math.max(2000, Math.ceil(chunk.length * 2)), messages: [{role:'user',content:prompt}] },
-            d => { part += d; }, (inp,out) => { inTok=inp; outTok=out; }, S.abortCtrl.signal
-          );
+          for (let attempt = 0; attempt < 2; attempt++) {   // ส่งต้นฉบับกลับมาโดยไม่แปล → ลองใหม่ 1 ครั้ง
+            part = await aiStream(
+              { model, temperature: batchPreset.temperature ?? 0.65, max_tokens: Math.max(2000, Math.ceil(chunk.length * 2)), messages: [{role:'user',content:prompt}] },
+              d => { part += d; }, (inp,out) => { inTok=inp; outTok=out; }, S.abortCtrl.signal
+            );
+            if (!looksUntranslated(part)) break;
+          }
+          if (looksUntranslated(part)) throw new Error('AI ส่งต้นฉบับกลับมาโดยไม่แปล');
         } catch (e) {
           // หมดเวลา ≠ ผู้ใช้กดหยุด → ถือเป็น error ของตอนนี้ แล้ว batch ไปตอนถัดไป
           if (e.name === 'AbortError' && timer.timedOut) throw new Error(timeoutMessage(timer.ms));

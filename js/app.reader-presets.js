@@ -42,12 +42,17 @@ async function translateChapterCore(ch, {
   let inTok = 0, outTok = 0;
   let fullText = '';
   try {
-    fullText = await aiStream(
-      { model: useModel, temperature: temperature, max_tokens: Math.max(16000, Math.ceil(ch.sourceText.length * 4)), messages: [{ role: 'user', content: prompt }] },
-      onDelta || function() {},
-      function(i, o) { inTok = i; outTok = o; },
-      _ctrl.signal
-    );
+    // AI ส่งต้นฉบับกลับมาโดยไม่แปล → ลองใหม่ 1 ครั้ง
+    for (let attempt = 0; attempt < 2; attempt++) {
+      fullText = await aiStream(
+        { model: useModel, temperature: temperature, max_tokens: Math.max(16000, Math.ceil(ch.sourceText.length * 4)), messages: [{ role: 'user', content: prompt }] },
+        onDelta || function() {},
+        function(i, o) { inTok = i; outTok = o; },
+        _ctrl.signal
+      );
+      if (inTok || outTok) { addCosts(inTok, outTok, useModel); inTok = outTok = 0; }
+      if (!looksUntranslated(fullText)) break;
+    }
   } catch (e) {
     // หมดเวลา → error ปกติ (ให้ prefetch ลองใหม่ / แจ้งผู้ใช้) — ไม่ปนกับการกดยกเลิก
     if (e.name === 'AbortError' && _timer.timedOut) throw new Error(timeoutMessage(_timer.ms));
@@ -59,6 +64,7 @@ async function translateChapterCore(ch, {
   }
 
   if (!fullText || !fullText.trim()) throw new Error('AI ส่งผลลัพธ์ว่าง');
+  if (looksUntranslated(fullText)) throw new Error('AI ส่งต้นฉบับกลับมาโดยไม่แปล (ลองแล้ว 2 ครั้ง) — ลองเปลี่ยนโมเดลหรือแปลใหม่');
 
   if (presetBase.polish) {
     try {
