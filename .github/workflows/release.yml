@@ -1,10 +1,15 @@
-# ปล่อย Release อัตโนมัติเมื่อ push tag v* (เช่น v12.5.0)
-# → แพ็กไฟล์แอพเป็น zip พร้อมใช้ (แตกแล้วเปิด serve.sh / อัปโหลดขึ้นเว็บได้เลย) + ใช้ release-notes/<tag>.md เป็นคำอธิบาย
+# ปล่อย Release อัตโนมัติ
+#  - merge ไฟล์ release-notes/vX.Y.Z.md เข้า main → สร้าง tag + Release ของเวอร์ชันล่าสุดในโฟลเดอร์นั้น (ถ้ายังไม่มี)
+#  - หรือ push tag v* เอง / กด Run workflow ในแท็บ Actions
+# แพ็กไฟล์แอพเป็น zip พร้อมใช้ (แตกแล้วเปิด serve.sh / อัปโหลดขึ้นเว็บได้เลย) + ใช้ release-notes/<tag>.md เป็นคำอธิบาย
 name: Release
 
 on:
   push:
     tags: ['v*']
+    branches: [main]
+    paths: ['release-notes/**', '.github/workflows/release.yml']
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -15,22 +20,37 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Resolve version
+        id: v
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            tag="$GITHUB_REF_NAME"
+          else
+            tag=$(ls release-notes/v*.md 2>/dev/null | xargs -n1 basename | sed 's/\.md$//' | sort -V | tail -1)
+          fi
+          if [ -z "$tag" ]; then echo "ไม่พบ release-notes/v*.md"; echo "skip=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          if gh release view "$tag" >/dev/null 2>&1; then echo "Release $tag มีอยู่แล้ว — ข้าม"; echo "skip=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+          if [ -f "release-notes/$tag.md" ]; then echo "notes=release-notes/$tag.md" >> "$GITHUB_OUTPUT"; fi
+
       - name: Build app zip
+        if: steps.v.outputs.skip != 'true'
         run: |
           set -e
           mkdir -p dist/NovelTrans
           cp -r index.html style.css sw.js manifest.webmanifest icon.svg serve.sh js README.md SYSTEMS.md dist/NovelTrans/
-          cd dist && zip -qr "NovelTrans-${GITHUB_REF_NAME}.zip" NovelTrans
-
-      - name: Release notes
-        id: notes
-        run: |
-          f="release-notes/${GITHUB_REF_NAME}.md"
-          if [ -f "$f" ]; then echo "path=$f" >> "$GITHUB_OUTPUT"; else echo "path=" >> "$GITHUB_OUTPUT"; fi
+          cd dist && zip -qr "NovelTrans-${{ steps.v.outputs.tag }}.zip" NovelTrans
 
       - uses: softprops/action-gh-release@v2
+        if: steps.v.outputs.skip != 'true'
         with:
-          name: NovelTrans ${{ github.ref_name }}
-          body_path: ${{ steps.notes.outputs.path }}
-          generate_release_notes: ${{ steps.notes.outputs.path == '' }}
-          files: dist/NovelTrans-${{ github.ref_name }}.zip
+          tag_name: ${{ steps.v.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: NovelTrans ${{ steps.v.outputs.tag }}
+          body_path: ${{ steps.v.outputs.notes }}
+          generate_release_notes: ${{ steps.v.outputs.notes == '' }}
+          files: dist/NovelTrans-${{ steps.v.outputs.tag }}.zip
