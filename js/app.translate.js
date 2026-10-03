@@ -737,6 +737,7 @@ async function translateAllStream(text) {
     cursor.remove();
     if (inTok || outTok) addCosts(inTok, outTok, options.model);
     if (looksUntranslated(fullText)) throw new Error('AI ส่งต้นฉบับกลับมาโดยไม่แปล — กดแปลอีกครั้ง หรือเปลี่ยนโมเดล');
+    if (looksIncomplete(text, fullText)) throw new Error('คำแปลสั้นผิดปกติ — น่าจะถูกตัดกลางคันหรือตกหล่น · กดแปลอีกครั้ง');
 
     if (options.useMemory && fullText) _mcSet(cacheKey, fullText);
 
@@ -1038,6 +1039,7 @@ async function translateChunked(text, options) {
         cursor.remove();
         if (inTok || outTok) addCosts(inTok, outTok, options.model);
         if (looksUntranslated(chunkFull)) throw new Error('AI ส่งต้นฉบับกลับมาโดยไม่แปล');
+        if (looksIncomplete(chunk, chunkFull)) throw new Error('คำแปลสั้นผิดปกติ (ถูกตัดกลางคัน/ตกหล่น)');
 
         if (options.useMemory && chunkFull) _mcSet(cacheKey, chunkFull);
         completedTranslations.push(chunkFull);

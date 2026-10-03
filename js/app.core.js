@@ -239,6 +239,16 @@ function applyParticleRules(systemPrompt) {
   return injectPromptBlock(systemPrompt, SPEECH_PARTICLE_RULES);
 }
 
+// คำแปลสั้นผิดปกติ = ถูกตัดกลางคันหรือตกหล่น (เทียบจำนวนอักษรไทยกับอักษรเกาหลี/จีน/ญี่ปุ่นในต้นฉบับ)
+// จากเทสจริง: ปกติ 2.1–2.7 เท่า · stream ถูกตัด ≈ 1.0 · แปลตกหล่นทั้งช่วง ≈ 1.6 → เกณฑ์ < 1.5
+// ใช้เฉพาะต้นฉบับที่เป็นอักษรเอเชียตะวันออก ≥ 800 ตัว (ภาษาอังกฤษอัตราส่วนต่างกันมาก)
+function looksIncomplete(src, out) {
+  const cjk = (String(src || '').match(/[\uac00-\ud7a3\u4e00-\u9fff\u3040-\u30ff]/g) || []).length;
+  if (cjk < 800) return false;
+  const thai = (String(out || '').match(/[\u0e00-\u0e7f]/g) || []).length;
+  return thai < cjk * 1.5;
+}
+
 // AI ส่งต้นฉบับกลับมาโดยไม่แปล? (อักษรเกาหลี/จีน/ญี่ปุ่นเกิน 30% ของตัวอักษรทั้งหมด)
 function looksUntranslated(text) {
   const t = String(text || '');

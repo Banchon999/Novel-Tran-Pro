@@ -1027,9 +1027,10 @@ async function startBatchChapters() {
               { model, temperature: batchPreset.temperature ?? 0.65, max_tokens: Math.max(2000, Math.ceil(chunk.length * 2)), messages: [{role:'user',content:prompt}] },
               d => { part += d; }, (inp,out) => { inTok=inp; outTok=out; }, S.abortCtrl.signal
             );
-            if (!looksUntranslated(part)) break;
+            if (!looksUntranslated(part) && !looksIncomplete(chunk, part)) break;
           }
           if (looksUntranslated(part)) throw new Error('AI ส่งต้นฉบับกลับมาโดยไม่แปล');
+          if (looksIncomplete(chunk, part)) throw new Error('คำแปลสั้นผิดปกติ (ถูกตัดกลางคัน/ตกหล่น)');
         } catch (e) {
           // หมดเวลา ≠ ผู้ใช้กดหยุด → ถือเป็น error ของตอนนี้ แล้ว batch ไปตอนถัดไป
           if (e.name === 'AbortError' && timer.timedOut) throw new Error(timeoutMessage(timer.ms));
