@@ -211,11 +211,17 @@ async function startTranslation() {
 // 1) ก่อนแปล: ให้ AI ระบุผู้พูด + เพศ ของบทพูดทุกบรรทัดในต้นฉบับ (เพศจาก glossary มีสิทธิ์เหนือกว่า)
 // 2) ตอนแปล: แนบแผนที่ผู้พูดเข้า prompt
 // 3) หลังแปล: ถ้าจำนวนบทพูดไทยตรงกับต้นฉบับ → แก้คำลงท้าย/คำแทนตัวที่ผิดเพศให้อัตโนมัติ (local ไม่เสียเงิน)
-const _SRC_QUOTE_RE = /[“"]([^“”"\n]{1,600})[”"]/g;
-const _TH_QUOTE_RE  = /([“"「])([^“”"「」\n]{1,600})([”"」])/g;
+// บทพูด “…” (dq) + ความคิด/คำพูดที่นึกย้อน/ชื่อเฉพาะใน ‘…’ (sq) — เรียงตามลำดับในต้นฉบับ
+const _SRC_LINE_RE  = /[“"]([^“”"\n]{1,600})[”"]|‘([^‘’\n]{1,600})’/g;
+const _TH_DQ_RE     = /([“"「])([^“”"「」\n]{1,600})([”"」])/g;
+const _TH_ANY_RE    = /([“"「‘])([^“”"「」‘’\n]{1,600})([”"」’])/g;
 
+function extractSourceLines(text) {
+  return [...String(text || '').matchAll(_SRC_LINE_RE)].map(m => m[1] !== undefined ? { q: m[1], kind: 'dq' } : { q: m[2], kind: 'sq' });
+}
+// มีบทพูด “…” อย่างน้อย 1 บรรทัดไหม (ไม่มี → ไม่ต้องเรียก AI ระบุผู้พูด)
 function extractSourceQuotes(text) {
-  return [...String(text || '').matchAll(_SRC_QUOTE_RE)].map(m => m[1]);
+  return extractSourceLines(text).filter(l => l.kind === 'dq').map(l => l.q);
 }
 
 function speakerMapEnabled(ws = S.currentWs) {
@@ -245,32 +251,32 @@ NUMBERED LINES:
 // คืน [{q, speaker, gender}] ตามลำดับบทพูด หรือ null ถ้าไม่มีบทพูด/ปิดใช้/เรียกไม่สำเร็จ (การแปลยังเดินต่อได้)
 async function buildSpeakerMap(text, model, ws = S.currentWs) {
   if (!speakerMapEnabled(ws)) return null;
-  const quotes = extractSourceQuotes(text);
-  if (!quotes.length) return null;
+  if (!extractSourceQuotes(text).length) return null;
+  const lines = extractSourceLines(text);
   const glossChars = (ws?.glossary || []).filter(g => g.type === 'character' && g.korean);
   const chars = glossChars.filter(g => text.includes(g.korean))
     .map(g => `- ${g.korean} = ${g.thai}${g.gender === 'male' || g.gender === 'female' ? ` (${g.gender})` : ''}`).join('\n') || '(none)';
   const prompt = SPEAKER_MAP_PROMPT
     .replace('{characters}', chars)
-    .replace('{n}', String(quotes.length))
+    .replace('{n}', String(lines.length))
     .replace('{text}', text)
-    .replace('{lines}', quotes.map((q, i) => `Q${i + 1}: “${q}”`).join('\n'));
+    .replace('{lines}', lines.map((l, i) => l.kind === 'dq' ? `Q${i + 1}: “${l.q}”` : `Q${i + 1}: ‘${l.q}’ (single quotes: thought / recalled speech / a named term — for a term use speaker "-")`).join('\n'));
   try {
     const res = await callOpenRouter({
       model, temperature: 0,
-      max_tokens: Math.max(6000, quotes.length * 80 + 3000),   // เผื่อโมเดลที่คิดก่อนตอบ (reasoning)
+      max_tokens: Math.max(6000, lines.length * 80 + 3000),   // เผื่อโมเดลที่คิดก่อนตอบ (reasoning)
       messages: [{ role: 'user', content: prompt }],
     });
     const raw = (res.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
     const arr = JSON.parse(raw.slice(raw.indexOf('['), raw.lastIndexOf(']') + 1));
     if (!Array.isArray(arr)) return null;
-    return quotes.map((q, i) => {
+    return lines.map(({ q, kind }, i) => {
       const e = arr.find(x => +x.q === i + 1) || {};
       const sp = String(e.speaker || '').trim();
       // ผู้พูดตรงกับตัวละครใน glossary ที่ระบุเพศ → ใช้เพศจาก glossary เสมอ
       const g = sp && glossChars.find(c => (c.gender === 'male' || c.gender === 'female') && (sp.includes(c.korean) || c.korean.includes(sp) || (c.thai && sp.includes(c.thai))));
       const gender = g ? g.gender : (e.gender === 'male' || e.gender === 'female' ? e.gender : 'unknown');
-      return { q, speaker: sp || '?', gender };
+      return { q, kind, speaker: sp || '?', gender };
     });
   } catch (e) {
     console.warn('[speakerMap]', e);
@@ -281,11 +287,15 @@ async function buildSpeakerMap(text, model, ws = S.currentWs) {
 function speakerMapPromptBlock(map) {
   if (!map?.length) return '';
   const end = g => g === 'male' ? 'ครับ/ขอรับ, self: ผม' : g === 'female' ? 'ค่ะ/คะ, self: ฉัน/ดิฉัน' : 'no gendered particle';
-  const lines = map.map((m, i) => `Q${i + 1} “${m.q.length > 40 ? m.q.slice(0, 40) + '…' : m.q}” → ${m.speaker} (${m.gender}) → ${end(m.gender)}`);
+  const lines = map.filter(m => m.speaker && m.speaker !== '-' && m.speaker !== '?').map(m => {
+    const q = m.q.length > 40 ? m.q.slice(0, 40) + '…' : m.q;
+    return `${m.kind === 'sq' ? `‘${q}’ (thought/recalled)` : `“${q}”`} → ${m.speaker} (${m.gender}) → ${end(m.gender)}`;
+  });
+  if (!lines.length) return '';
   return `━━━━━━━━━━━━━━━━━━━━
 DIALOGUE SPEAKER MAP (pre-identified from the Korean source — one entry per quoted line, in order)
 ━━━━━━━━━━━━━━━━━━━━
-Use it for each line's speaker, self-pronoun and polite particle. Keep every quoted line as its own quote, in the same order.
+Use it for each line's speaker, self-pronoun and polite particle. Keep every quoted line as its own quote, in the same order, with the same quote marks (“…” stays “…”, ‘…’ stays ‘…’).
 ${lines.join('\n')}`;
 }
 
@@ -330,20 +340,32 @@ function fixQuoteGender(q, gender) {
   return t;
 }
 
-// ใช้แผนที่ผู้พูดแก้คำแปลไทย — ทำเฉพาะเมื่อจำนวนบทพูดไทย = ต้นฉบับ (จับคู่ตามลำดับได้แน่นอน)
+// ใช้แผนที่ผู้พูดแก้คำแปลไทย — แก้เฉพาะเมื่อจับคู่บทพูดไทยกับต้นฉบับตามลำดับได้แน่นอน:
+//   • จำนวน “…” ตรงกัน → แก้ “…” · จำนวน ‘…’ ตรงกัน → แก้ ‘…’ (แยกกัน)
+//   • ถ้า “…” ไม่ตรง (เช่น AI เปลี่ยน ‘…’ เป็น “…”) → ลองนับทุกเครื่องหมายรวมกัน
+const _TH_SQ_RE = /(‘)([^‘’\n]{1,600})(’)/g;
+function _fixByRegex(text, re, map, fixes) {
+  let i = 0;
+  return text.replace(re, (all, open, body, close) => {
+    const m = map[i++];
+    const fixed = fixQuoteGender(body, m.gender);
+    if (fixed !== body) fixes.push({ speaker: m.speaker, gender: m.gender, from: body, to: fixed });
+    return open + fixed + close;
+  });
+}
 function applySpeakerFixes(thaiText, map) {
   const out = { text: thaiText, fixes: [], aligned: false };
   if (!map?.length || !thaiText) return out;
-  const found = [...thaiText.matchAll(_TH_QUOTE_RE)];
-  if (found.length !== map.length) return out;
-  out.aligned = true;
-  let i = 0;
-  out.text = thaiText.replace(_TH_QUOTE_RE, (all, open, body, close) => {
-    const m = map[i++];
-    const fixed = fixQuoteGender(body, m.gender);
-    if (fixed !== body) out.fixes.push({ q: i, speaker: m.speaker, gender: m.gender, from: body, to: fixed });
-    return open + fixed + close;
-  });
+  const dqMap = map.filter(m => m.kind !== 'sq'), sqMap = map.filter(m => m.kind === 'sq');
+  const count = re => [...out.text.matchAll(re)].length;
+  if (count(_TH_DQ_RE) === dqMap.length) {
+    out.aligned = true;
+    out.text = _fixByRegex(out.text, _TH_DQ_RE, dqMap, out.fixes);
+    if (sqMap.length && count(_TH_SQ_RE) === sqMap.length) out.text = _fixByRegex(out.text, _TH_SQ_RE, sqMap, out.fixes);
+  } else if (count(_TH_ANY_RE) === map.length) {
+    out.aligned = true;
+    out.text = _fixByRegex(out.text, _TH_ANY_RE, map, out.fixes);
+  }
   return out;
 }
 
