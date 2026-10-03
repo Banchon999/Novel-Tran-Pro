@@ -401,7 +401,7 @@ async function addSelectedGlossary() {
       const entry = { ...t, thai: document.getElementById(`ag-thai-${i}`)?.value?.trim() || t.thai };
       if (genderEl) entry.gender = genderEl.value;
       return sanitizeGlossaryEntry(entry);
-    });
+    }).filter(Boolean);
   if (!selected.length) { showToast('ไม่ได้เลือกคำ', 'error'); return; }
   let added = 0;
   selected.forEach(term => {
@@ -955,10 +955,12 @@ Rules:
 - Provide natural Thai translations that are CONSISTENT with professional Thai webnovel prose, so that when these terms are injected into the translated chapter they read seamlessly and never break the reader's flow
 - Apply professional proofreading (พิสูจน์อักษร): correct Thai spelling/tone marks, clean transliteration, no stray source-language characters; pick ONE canonical Thai spelling per term and keep it stable
 - type must be one of: character, title, rank, term, honorific, place
-- gender: REQUIRED for type="character". Infer aggressively from ALL available cues:
-  • Korean pronouns: 그/남자/형/오빠/아버지/아들/왕/황제 = male | 그녀/여자/언니/누나/어머니/딸/왕비 = female
-  • Thai translation pronouns if provided: เขา/ผม/กู = male | เธอ/นาง/ฉัน/หนู = female
-  • Leave "neutral" ONLY if genuinely impossible to determine
+- thai: Thai script only — never leave Korean/Chinese/Japanese characters inside the Thai translation
+- gender: REQUIRED for type="character". Infer carefully from the KOREAN source first:
+  • Korean cues: 그/남자/형/오빠/아버지/아들/왕/황제/공작(as a person)/기사 = male | 그녀/여자/언니/누나/어머니/딸/왕비/부인/영애/하녀/시녀 = female
+  • Who the character is (mother, wife, maid, daughter → female; father, son, husband → male)
+  • Thai translation, only as weak support: เขา/นาย = male | เธอ/นาง/หล่อน = female. Do NOT use ฉัน/ผม in narration or inner thoughts as evidence — a preset may lock every narrator to ฉัน
+  • Use "neutral" when the cues are missing or conflicting
 - Return empty array [] if no new terms found`;
 
 function agTogglePromptEditor() {

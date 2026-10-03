@@ -205,8 +205,152 @@ async function startTranslation() {
   }
 }
 
+// ═══════════════════════════════════════════════
+// ─── Speaker Map (ระบุผู้พูดก่อนแปล — กัน ครับ/ค่ะ / ผม-ฉัน ผิดคน) ───
+// ═══════════════════════════════════════════════
+// 1) ก่อนแปล: ให้ AI ระบุผู้พูด + เพศ ของบทพูดทุกบรรทัดในต้นฉบับ (เพศจาก glossary มีสิทธิ์เหนือกว่า)
+// 2) ตอนแปล: แนบแผนที่ผู้พูดเข้า prompt
+// 3) หลังแปล: ถ้าจำนวนบทพูดไทยตรงกับต้นฉบับ → แก้คำลงท้าย/คำแทนตัวที่ผิดเพศให้อัตโนมัติ (local ไม่เสียเงิน)
+const _SRC_QUOTE_RE = /[“"]([^“”"\n]{1,600})[”"]/g;
+const _TH_QUOTE_RE  = /([“"「])([^“”"「」\n]{1,600})([”"」])/g;
+
+function extractSourceQuotes(text) {
+  return [...String(text || '').matchAll(_SRC_QUOTE_RE)].map(m => m[1]);
+}
+
+function speakerMapEnabled(ws = S.currentWs) {
+  return ws?.settings?.speakerMap !== false;   // ค่าเริ่มต้น = เปิด
+}
+
+const SPEAKER_MAP_PROMPT = `You identify who speaks each quoted line of dialogue in a Korean web-novel passage.
+
+KNOWN CHARACTERS (glossary — the gender here is authoritative):
+{characters}
+
+For EACH numbered line decide the speaker from context:
+• dialogue tags BEFORE or AFTER the line (e.g. "…" 엘레나가 물었다 → 엘레나), turn-taking, who is being addressed, speech level and honorifics.
+• Unnamed speakers: describe them (노파, 시녀, 기사, 수행원…) and infer gender from the description
+  (노파/할멈/할머니/여인/여자/소녀/하녀/시녀/부인/어머니 = female · 노인/사내/남자/소년/청년/아버지 = male).
+• gender: "male" | "female" | "unknown" — use "unknown" only when it is truly impossible to tell.
+
+Return ONLY a JSON array with exactly {n} items, no markdown:
+[{"q":1,"speaker":"name or description","gender":"male|female|unknown"}]
+
+PASSAGE:
+{text}
+
+NUMBERED LINES:
+{lines}`;
+
+// คืน [{q, speaker, gender}] ตามลำดับบทพูด หรือ null ถ้าไม่มีบทพูด/ปิดใช้/เรียกไม่สำเร็จ (การแปลยังเดินต่อได้)
+async function buildSpeakerMap(text, model, ws = S.currentWs) {
+  if (!speakerMapEnabled(ws)) return null;
+  const quotes = extractSourceQuotes(text);
+  if (!quotes.length) return null;
+  const glossChars = (ws?.glossary || []).filter(g => g.type === 'character' && g.korean);
+  const chars = glossChars.filter(g => text.includes(g.korean))
+    .map(g => `- ${g.korean} = ${g.thai}${g.gender === 'male' || g.gender === 'female' ? ` (${g.gender})` : ''}`).join('\n') || '(none)';
+  const prompt = SPEAKER_MAP_PROMPT
+    .replace('{characters}', chars)
+    .replace('{n}', String(quotes.length))
+    .replace('{text}', text)
+    .replace('{lines}', quotes.map((q, i) => `Q${i + 1}: “${q}”`).join('\n'));
+  try {
+    const res = await callOpenRouter({
+      model, temperature: 0,
+      max_tokens: Math.max(6000, quotes.length * 80 + 3000),   // เผื่อโมเดลที่คิดก่อนตอบ (reasoning)
+      messages: [{ role: 'user', content: prompt }],
+    });
+    const raw = (res.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
+    const arr = JSON.parse(raw.slice(raw.indexOf('['), raw.lastIndexOf(']') + 1));
+    if (!Array.isArray(arr)) return null;
+    return quotes.map((q, i) => {
+      const e = arr.find(x => +x.q === i + 1) || {};
+      const sp = String(e.speaker || '').trim();
+      // ผู้พูดตรงกับตัวละครใน glossary ที่ระบุเพศ → ใช้เพศจาก glossary เสมอ
+      const g = sp && glossChars.find(c => (c.gender === 'male' || c.gender === 'female') && (sp.includes(c.korean) || c.korean.includes(sp) || (c.thai && sp.includes(c.thai))));
+      const gender = g ? g.gender : (e.gender === 'male' || e.gender === 'female' ? e.gender : 'unknown');
+      return { q, speaker: sp || '?', gender };
+    });
+  } catch (e) {
+    console.warn('[speakerMap]', e);
+    return null;
+  }
+}
+
+function speakerMapPromptBlock(map) {
+  if (!map?.length) return '';
+  const end = g => g === 'male' ? 'ครับ/ขอรับ, self: ผม' : g === 'female' ? 'ค่ะ/คะ, self: ฉัน/ดิฉัน' : 'no gendered particle';
+  const lines = map.map((m, i) => `Q${i + 1} “${m.q.length > 40 ? m.q.slice(0, 40) + '…' : m.q}” → ${m.speaker} (${m.gender}) → ${end(m.gender)}`);
+  return `━━━━━━━━━━━━━━━━━━━━
+DIALOGUE SPEAKER MAP (pre-identified from the Korean source — one entry per quoted line, in order)
+━━━━━━━━━━━━━━━━━━━━
+Use it for each line's speaker, self-pronoun and polite particle. Keep every quoted line as its own quote, in the same order.
+${lines.join('\n')}`;
+}
+
+// แทรกแผนที่ผู้พูดก่อน {text} (ถ้า prompt ไม่มี {text} → ต่อท้าย)
+function applySpeakerMap(systemPrompt, map) {
+  const block = speakerMapPromptBlock(map);
+  if (!block || typeof systemPrompt !== 'string') return systemPrompt;
+  return systemPrompt.includes('{text}')
+    ? systemPrompt.replace('{text}', block + '\n\n{text}')
+    : systemPrompt + '\n\n' + block;
+}
+
+// แปลงคำลงท้าย/คำแทนตัวในบทพูด 1 บรรทัดให้ตรงเพศผู้พูด — คืนข้อความใหม่ (ไม่เปลี่ยนถ้าตรงอยู่แล้ว)
+const _PEND = '(?=$|[\\s!?.…,~ๆ\\-—)”"」’])';
+const _HAIR_MASK_RE = /(เส้นผม|ทรงผม|สระผม|หวีผม|ผมเผ้า|ผมยาว|ผมสั้น|ผมสี|ปอยผม|มัดผม|ผมหงอก|ผมดำ|ผมทอง|ผมขาว|ผมแดง|ผมเงิน|ไรผม|โคนผม|ปลายผม|เกล้าผม|ถักผม)/g;
+function fixQuoteGender(q, gender) {
+  if (gender !== 'male' && gender !== 'female') return q;
+  const ROYAL_M = '\u0001RM\u0001';
+  let t = q.replace(/พ่ะย่ะค่ะ|พะยะค่ะ/g, ROYAL_M);
+  if (gender === 'female') {
+    // ไทยมักไม่เว้นวรรคหลังคำลงท้าย ("ครับท่านดยุก") → "ครับ" แปลงได้ทุกตำแหน่ง (ไม่ใช่ส่วนของคำอื่น)
+    t = t.replace(/ครับผม/g, 'ค่ะ')
+         .replace(new RegExp('ขอรับ' + _PEND, 'g'), 'เจ้าค่ะ')      // "ขอรับ" ที่ตามด้วยคำอื่นอาจเป็นกริยา (ขอรับเงิน) → แก้เฉพาะท้ายวลี
+         .replace(/นะครับ/g, 'นะคะ')
+         .replace(/ครับ(?=\s*[?？])/g, 'คะ')
+         .replace(/ครับ/g, 'ค่ะ')
+         .split(ROYAL_M).join('เพคะ');
+    // คำแทนตัว: ผม/กระผม → ฉัน/ดิฉัน (ไม่แตะ "ผม" ที่แปลว่าเส้นผม)
+    const hair = [];
+    t = t.replace(_HAIR_MASK_RE, m => { hair.push(m); return `\u0002${hair.length - 1}\u0002`; });
+    t = t.replace(/กระผม/g, 'ดิฉัน').replace(/(^|[\s“"「…,])ผม/g, '$1ฉัน');
+    t = t.replace(/\u0002(\d+)\u0002/g, (_, i) => hair[+i]);
+  } else {
+    t = t.replace(new RegExp('เจ้าค่ะ' + _PEND, 'g'), 'ขอรับ')
+         .replace(new RegExp('เพคะ' + _PEND, 'g'), ROYAL_M)
+         .replace(/นะคะ/g, 'นะครับ')
+         .replace(/ค่ะ/g, 'ครับ')                                  // "ค่ะ" ไม่เป็นส่วนของคำอื่น
+         .replace(new RegExp('คะ' + _PEND, 'g'), 'ครับ')          // "คะ" อยู่ในคำอื่นได้ (คะแนน) → ดูขอบคำ
+         .split(ROYAL_M).join('พ่ะย่ะค่ะ')
+         .replace(/ดิฉัน|อิฉัน/g, 'ผม');
+  }
+  return t;
+}
+
+// ใช้แผนที่ผู้พูดแก้คำแปลไทย — ทำเฉพาะเมื่อจำนวนบทพูดไทย = ต้นฉบับ (จับคู่ตามลำดับได้แน่นอน)
+function applySpeakerFixes(thaiText, map) {
+  const out = { text: thaiText, fixes: [], aligned: false };
+  if (!map?.length || !thaiText) return out;
+  const found = [...thaiText.matchAll(_TH_QUOTE_RE)];
+  if (found.length !== map.length) return out;
+  out.aligned = true;
+  let i = 0;
+  out.text = thaiText.replace(_TH_QUOTE_RE, (all, open, body, close) => {
+    const m = map[i++];
+    const fixed = fixQuoteGender(body, m.gender);
+    if (fixed !== body) out.fixes.push({ q: i, speaker: m.speaker, gender: m.gender, from: body, to: fixed });
+    return open + fixed + close;
+  });
+  return out;
+}
+
 // gender ใช้ได้เฉพาะ type=character และต้องเป็นค่าที่รู้จัก — ใช้ร่วมกันทั้ง auto-glossary หลังแปลและแบบกดเอง
+// คืน null ถ้าคำแปลไทยมีอักษรเกาหลี/จีน/ญี่ปุ่นปน (เช่น "เซ피อา") — ห้ามเข้าคลัง ไม่งั้นจะลามไปทุกตอน
 function sanitizeGlossaryEntry(entry) {
+  if (!entry || /[\u3131-\u318e\uac00-\ud7a3\u4e00-\u9fff\u3040-\u30ff]/.test(String(entry.thai || ''))) return null;
   if (entry.type !== 'character' || !['male', 'female', 'neutral'].includes(entry.gender)) delete entry.gender;
   return entry;
 }
@@ -220,7 +364,10 @@ async function autoExtractGlossaryAfterTranslation(sourceText, model, chapterInf
 
   if (!Array.isArray(S.currentWs.glossary)) S.currentWs.glossary = [];
 
-  const existing = S.currentWs.glossary.map(g => g.korean).join(', ') || '(none)';
+  // ตัวละครที่ยังไม่มีเพศ ไม่ใส่ในรายการ "ข้าม" → ให้ AI ดึงซ้ำเพื่อเติมเพศ (ด้านล่างจะเติมเฉพาะเพศ ไม่แก้คำแปลเดิม)
+  const existing = S.currentWs.glossary
+    .filter(g => !(g.type === 'character' && !['male', 'female', 'neutral'].includes(g.gender)))
+    .map(g => g.korean).join(', ') || '(none)';
 
   // เพิ่ม snippet ของ Thai translation เพื่อช่วย AI detect gender จากสรรพนามไทย
   const thaiSnippet = translationText?.trim()
@@ -238,7 +385,7 @@ async function autoExtractGlossaryAfterTranslation(sourceText, model, chapterInf
       model: model || document.getElementById('translateModel')?.value || 'google/gemini-2.5-flash',
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.2,
-      max_tokens: 1500,
+      max_tokens: 6000,   // เดิม 1500 — โมเดลที่คิดก่อนตอบ (reasoning) ใช้หมดก่อนตอบ ได้ผลว่าง
     });
 
     const raw = (res.choices?.[0]?.message?.content || '').trim().replace(/```json|```/g, '').trim();
@@ -251,13 +398,21 @@ async function autoExtractGlossaryAfterTranslation(sourceText, model, chapterInf
       return;
     }
 
-    let added = 0;
+    let added = 0, genderFilled = 0;
     terms.forEach(term => {
       if (!term.korean || !term.thai) return;
-      const exactExists = S.currentWs.glossary.some(g => g.korean === term.korean);
-      if (exactExists) return;
+      const existingEntry = S.currentWs.glossary.find(g => g.korean === term.korean);
+      if (existingEntry) {
+        // เติมเพศให้ตัวละครเดิมที่ยังไม่มีเพศ
+        if (existingEntry.type === 'character' && !['male', 'female', 'neutral'].includes(existingEntry.gender)
+            && term.type === 'character' && ['male', 'female'].includes(term.gender)) {
+          existingEntry.gender = term.gender; genderFilled++;
+        }
+        return;
+      }
       // แนบ source chapter info ถ้ามี
       const entry = sanitizeGlossaryEntry({ ...term });
+      if (!entry) return;
       if (chapterInfo?.title) {
         entry.sourceChapterId    = chapterInfo.id    || null;
         entry.sourceChapterTitle = chapterInfo.title;
@@ -267,12 +422,12 @@ async function autoExtractGlossaryAfterTranslation(sourceText, model, chapterInf
       added++;
     });
 
-    if (added > 0) {
+    if (added > 0 || genderFilled > 0) {
       S.glossaryData = S.currentWs.glossary;
       await lsSaveWorkspace(S.currentWs);
       if (S.currentTab === 'glossary') renderGlossaryTable();
       const chLabel = chapterInfo?.title ? ` (ตอน #${chapterInfo.chapterNum||'?'} ${chapterInfo.title.slice(0,20)})` : '';
-      showToast(`📖 Auto Glossary: เพิ่ม ${added} คำใหม่${chLabel} ✓`, 'success');
+      showToast(`📖 Auto Glossary: เพิ่ม ${added} คำใหม่${genderFilled ? ` · เติมเพศ ${genderFilled} ตัวละคร` : ''}${chLabel} ✓`, 'success');
     } else {
       showToast('📖 Auto Glossary: คำทั้งหมดมีในคลังแล้ว', '');
     }
@@ -297,6 +452,13 @@ async function translateAllStream(text) {
   const options = getOptions();
   const cacheKey = _mcKey(options.model, text);
 
+  // ระบุผู้พูดก่อนแปล (ข้ามถ้าจะใช้ผลจาก Memory)
+  let spMap = null;
+  if (!(options.useMemory && _mcGet(cacheKey)) && speakerMapEnabled() && extractSourceQuotes(text).length && getApiKey()) {
+    updateProgress(3, 'ระบุผู้พูดในบทสนทนา...');
+    spMap = await buildSpeakerMap(text, options.model);
+  }
+
   // Build prompt — whole text as one
   const glossaryStr = buildGlossaryStr(options.wsGlossary);
   const styleNote = options.customStylePrompt ? options.customStylePrompt : '';
@@ -313,6 +475,7 @@ async function translateAllStream(text) {
     styleNote,
     ws: S.currentWs,
     mtlDraft,
+    speakerMap: spMap,
   });
 
   const key = getApiKey();
@@ -385,10 +548,15 @@ async function translateAllStream(text) {
       setStage('polish', 'done');
     }
 
+    // แก้คำลงท้าย/คำแทนตัวที่ผิดเพศผู้พูด (ตามแผนที่ผู้พูด)
+    const spFix = applySpeakerFixes(fullText, spMap);
+    if (spFix.fixes.length) { fullText = spFix.text; txtEl.textContent = fullText; }
+
     setStage('translate', 'done');
     setStage('done', 'done');
     updateProgress(100, 'แปลเสร็จสิ้น ✓');
-    document.getElementById('translationStats').textContent = `${fullText.length.toLocaleString()} ตัวอักษร`;
+    document.getElementById('translationStats').textContent = `${fullText.length.toLocaleString()} ตัวอักษร`
+      + (spFix.fixes.length ? ` · แก้ ครับ/ค่ะ ตามผู้พูด ${spFix.fixes.length} จุด` : '');
     showToast('แปลเสร็จสิ้น ✓', 'success');
     particleQuickCheck(fullText);
     // ดึง chapter info จาก chapter ที่กำลัง edit อยู่ (ถ้ามี)
@@ -619,12 +787,19 @@ async function translateChunked(text, options) {
       const ctxStr = (_storyCtx ? _storyCtx + '\n\n' : '') + _baseCtx;
 
       const chunkPreset = getActivePreset(S.currentWs);
+      let spMap = null;
+      if (speakerMapEnabled() && extractSourceQuotes(chunk).length) {
+        badge.textContent = '🗣 ระบุผู้พูด';
+        spMap = await buildSpeakerMap(chunk, options.model);
+        badge.textContent = '⚡ กำลังแปล';
+      }
       const prompt = buildTranslatePrompt({
         sourceText: chunk,
         glossaryStr,
         contextStr: ctxStr,
         styleNote: options.customStylePrompt || '',
         ws: S.currentWs,
+        speakerMap: spMap,
       });
 
       let chunkFull = '';
@@ -666,6 +841,10 @@ async function translateChunked(text, options) {
             if (polished) { chunkFull = polished; txtEl.textContent = polished; completedTranslations[completedTranslations.length-1] = polished; }
           } catch {}
         }
+
+        // แก้คำลงท้าย/คำแทนตัวที่ผิดเพศผู้พูด (ตามแผนที่ผู้พูดของ chunk นี้)
+        const spFix = applySpeakerFixes(chunkFull, spMap);
+        if (spFix.fixes.length) { chunkFull = spFix.text; txtEl.textContent = chunkFull; completedTranslations[completedTranslations.length-1] = chunkFull; }
 
         badge.className = 'seg-status done';
         badge.textContent = `✓ ${chunkFull.length} ตัวอักษร`;

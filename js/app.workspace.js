@@ -236,6 +236,8 @@ function renderWsSettings() {
   if (clEl)  clEl.checked = clOn;
   if (clOpt) clOpt.style.display = clOn ? 'block' : 'none';
   if (clRef) clRef.value = w.settings?.consistencySelfRef || 'auto';
+  const smEl = document.getElementById('wsSpeakerMap');
+  if (smEl) smEl.checked = w.settings?.speakerMap !== false;
   renderPresetSelect();
   // Context Memory settings
   const ctx = wsGetContext(w);
@@ -264,6 +266,7 @@ async function saveWsSettings() {
     prevCtxChars: Math.max(100, Math.min(4000, parseInt(document.getElementById('wsPrevCtxChars')?.value) || 400)),
     consistencyLock: !!document.getElementById('wsConsistencyLock')?.checked,
     consistencySelfRef: document.getElementById('wsConsistencySelfRef')?.value || 'auto',
+    speakerMap: document.getElementById('wsSpeakerMap') ? document.getElementById('wsSpeakerMap').checked : true,
     batchChunkMode: document.getElementById('wsBatchChunkMode')?.value || 'off',
     batchChunkSize: Math.max(1000, Math.min(20000, parseInt(document.getElementById('wsBatchChunkSize')?.value) || 3000)),
   };

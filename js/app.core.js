@@ -156,9 +156,9 @@ function getActivePreset(ws) {
   return list.find(p => p.id === ws?.presetId) || list[0] || SEED_PRESETS[0];
 }
 
-function buildTranslatePrompt({ sourceText, glossaryStr = '', contextStr = '', styleNote = '', ws = null, mtlDraft = '' }) {
+function buildTranslatePrompt({ sourceText, glossaryStr = '', contextStr = '', styleNote = '', ws = null, mtlDraft = '', speakerMap = null }) {
   const preset = getActivePreset(ws);
-  return applyParticleRules(applyConsistencyLock(preset.systemPrompt, ws))
+  return applySpeakerMap(applyParticleRules(applyConsistencyLock(preset.systemPrompt, ws)), speakerMap)
     .replace('{style_note}', styleNote ? `STYLE GUIDE:\n${styleNote}\n` : '')
     .replace('{glossary}',   glossaryStr || '(ไม่มี)')
     .replace('{context}',   contextStr)
@@ -292,7 +292,7 @@ Rules:
   • Korean pronouns (strongest signal): 그/남자/형/오빠/아버지/아들/왕/황제/그는/그가 = male | 그녀/여자/언니/누나/어머니/딸/왕비/그녀는/그녀가 = female
   • Korean kinship terms used FOR the character: 형/오빠/아버지/할아버지 = male | 언니/누나/어머니/할머니 = female
   • Korean dialogue honorifics when others address the character: ~씨/~님 is neutral; 여왕/공주 = female; 왕자/황자 = male
-  • Thai translation pronouns if provided (strong signal): เขา/ผม/กู/ท่าน(masc context) = male | เธอ/นาง/ฉัน/หนู = female
+  • Thai translation pronouns if provided (weak support only): เขา/นาย = male | เธอ/นาง/หล่อน = female. Do NOT treat ฉัน/ผม in narration or inner thoughts as evidence — a preset may lock every narrator to ฉัน
   • Korean fantasy name patterns: names ending in 아/야/이 with feminine context = likely female; strong warrior names without feminine markers = likely male
   • First-person Korean 나/저 does NOT indicate gender — look at surrounding context instead
   • CAUTION for chapter 1 / first appearance: If cues are ambiguous or mixed, assign "neutral" — it is BETTER to be neutral and correct later than to assign wrong gender permanently.

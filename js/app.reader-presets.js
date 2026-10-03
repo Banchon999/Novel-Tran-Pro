@@ -12,7 +12,9 @@ async function translateChapterCore(ch, {
 } = {}) {
   const ws = S.currentWs;
   const presetBase = (ws.presets || []).find(p => p.id === presetId) || getActivePreset(ws);
-  const systemPrompt = applyParticleRules(applyConsistencyLock(presetBase.systemPrompt, ws));
+  const srcPrepared  = prepareSourceForTranslation(ch.sourceText);
+  const spMap        = await buildSpeakerMap(srcPrepared, model || ws.settings?.translateModel || document.getElementById('translateModel')?.value || 'google/gemini-2.5-flash', ws);
+  const systemPrompt = applySpeakerMap(applyParticleRules(applyConsistencyLock(presetBase.systemPrompt, ws)), spMap);
   const temperature  = presetBase.temperature;
   const useModel = model || ws.settings?.translateModel || document.getElementById('translateModel')?.value || 'google/gemini-2.5-flash';
 
@@ -25,7 +27,7 @@ async function translateChapterCore(ch, {
     .replace('{style_note}', '')
     .replace('{glossary}',   glossaryStr || '(ไม่มี)')
     .replace('{context}',    ctxGetPromptText(ws) || '')
-    .replace('{text}',       prepareSourceForTranslation(ch.sourceText))
+    .replace('{text}',       srcPrepared)
     .replace('{mtl_draft}',  mtlDraft || '(ไม่มี MTL draft)');
 
   // timeout ภายใน + เคารพ signal จาก caller (เดิม path Marathon ไม่มี timeout เลย — slot ค้างได้)
@@ -69,6 +71,11 @@ async function translateChapterCore(ch, {
       fullText = pr.choices?.[0]?.message?.content?.trim() || fullText;
     } catch (e) { /* polish failed, use unpolished */ }
   }
+
+  // แก้คำลงท้าย/คำแทนตัวที่ผิดเพศผู้พูด (ตามแผนที่ผู้พูด)
+  const spFix = applySpeakerFixes(fullText, spMap);
+  if (spFix.fixes.length) fullText = spFix.text;
+  ch.speakerFixes = spFix.fixes.length;
 
   ch.translation = fullText;
   ch.status      = 'translated';

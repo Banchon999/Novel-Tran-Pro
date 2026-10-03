@@ -1002,6 +1002,8 @@ async function startBatchChapters() {
       if (multi) addLog(log, `  ↳ แบ่งเป็น ${chChunks.length} chunk (${batchChunkMode})`, '');
 
       let fullText = '';
+      let spFixCount = 0;
+      let allMap = [];       // แผนที่ผู้พูดของทุก chunk ต่อกัน — ใช้แก้ซ้ำหลัง Polish (Polish อาจเปลี่ยนคำลงท้ายกลับ)
       for (let ci = 0; ci < chChunks.length; ci++) {
         const chunk = chChunks[ci];
         // Smart Glossary per chunk (ลด token)
@@ -1011,7 +1013,9 @@ async function startBatchChapters() {
         // context: ตอน summary เฉพาะ chunk แรก + ท้ายคำแปล chunk ก่อนหน้า (ต่อเนื่อง)
         const prevTail = ci > 0 ? fullText.slice(-getPrevCtxChars()) : '';
         const chunkCtx = (ci === 0 ? ctxStr : '') + (prevTail ? `CONTEXT (ท้าย chunk ก่อนหน้า):\n${prevTail}\n` : '');
-        const prompt = buildTranslatePrompt({ sourceText: chunk, glossaryStr: cgStr, contextStr: chunkCtx, styleNote: csp || '', ws: S.currentWs });
+        const spMap = await buildSpeakerMap(chunk, model);
+        if (allMap) allMap = spMap ? allMap.concat(spMap) : (extractSourceQuotes(chunk).length ? null : allMap);
+        const prompt = buildTranslatePrompt({ sourceText: chunk, glossaryStr: cgStr, contextStr: chunkCtx, styleNote: csp || '', ws: S.currentWs, speakerMap: spMap });
         if (multi) document.getElementById('bchProgressLabel').textContent = `แปลตอน ${i+1}/${n} · chunk ${ci+1}/${chChunks.length}: ${ch.title}`;
 
         S.abortCtrl = new AbortController();
@@ -1028,6 +1032,8 @@ async function startBatchChapters() {
           throw e;
         } finally { clearTimeout(timer.id); }
         if (inTok||outTok) addCosts(inTok, outTok, model);
+        const spFix = applySpeakerFixes(part, spMap);
+        if (spFix.fixes.length) { part = spFix.text; spFixCount += spFix.fixes.length; }
         fullText += (ci > 0 && part ? '\n\n' : '') + part;
       }
 
@@ -1038,10 +1044,12 @@ async function startBatchChapters() {
           const pr = await callOpenRouter({ model, messages:[{role:'user',content:POLISH_PROMPT.replace('{glossary}',fgStr).replace('{text}',fullText)}], temperature:0.5, max_tokens:Math.max(4000,Math.ceil(fullText.length*1.2)) });
           fullText = pr.choices?.[0]?.message?.content?.trim() || fullText;
         } catch {}
+        const spFix2 = applySpeakerFixes(fullText, allMap);
+        if (spFix2.fixes.length) { fullText = spFix2.text; spFixCount += spFix2.fixes.length; }
       }
       ch.translation = fullText; ch.status = 'translated'; ch.wordCount = fullText.length; ch.updatedAt = Date.now();
       await lsSaveWorkspace(S.currentWs);
-      addLog(log, `✓ #${ch.chapterNum||'?'} "${ch.title}" — ${fullText.length.toLocaleString()} ตัวอักษร`, 'success');
+      addLog(log, `✓ #${ch.chapterNum||'?'} "${ch.title}" — ${fullText.length.toLocaleString()} ตัวอักษร${spFixCount ? ` · แก้ ครับ/ค่ะ ตามผู้พูด ${spFixCount} จุด` : ''}`, 'success');
       const _pHigh = particleHighCount(fullText);
       if (_pHigh) addLog(log, `  ↳ ⚠ ครับ/ค่ะ น่าสงสัย ${_pHigh} จุด — ดูใน 🚻 สรรพนาม/ครับ-ค่ะ (แท็บคลังศัพท์)`, 'error');
 
