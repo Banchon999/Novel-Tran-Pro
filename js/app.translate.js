@@ -244,8 +244,12 @@ For EACH numbered line decide the speaker from context:
   (노파/할멈/할머니/여인/여자/소녀/하녀/시녀/부인/어머니 = female · 노인/사내/남자/소년/청년/아버지 = male).
 • gender: "male" | "female" | "unknown" — use "unknown" only when it is truly impossible to tell.
 
-Return ONLY a JSON array with exactly {n} items, no markdown:
-[{"q":1,"speaker":"name or description","gender":"male|female|unknown"}]
+Also list every PERSON named in the passage who is NOT in KNOWN CHARACTERS, with a Thai transliteration of the name
+(so the translator never leaves a Korean name untranslated).
+
+Return ONLY JSON, no markdown — "lines" must have exactly {n} items:
+{"lines":[{"q":1,"speaker":"name or description","gender":"male|female|unknown"}],
+ "names":[{"korean":"이름","thai":"ชื่อภาษาไทย","gender":"male|female|unknown"}]}
 
 PASSAGE:
 {text}
@@ -268,14 +272,25 @@ async function buildSpeakerMap(text, model, ws = S.currentWs) {
     .replace('{lines}', lines.map((l, i) => l.kind === 'dq' ? `Q${i + 1}: “${l.q}”` : `Q${i + 1}: ‘${l.q}’ (single quotes: thought / recalled speech / a named term — for a term use speaker "-")`).join('\n'));
   try {
     const res = await callOpenRouter({
-      model, temperature: 0,
+      // ใช้โมเดลตรวจ (แรงกว่าโมเดลแปลราคาถูก) — ระบุผู้พูด/ถอดชื่อไทยแม่นกว่า · Flash Lite บางรุ่นถอดชื่อเป็นอักษรเกาหลี ("카일")
+      model: getProofreadModel(ws, model), temperature: 0,
       max_tokens: Math.max(6000, lines.length * 80 + 3000),   // เผื่อโมเดลที่คิดก่อนตอบ (reasoning)
       messages: [{ role: 'user', content: prompt }],
     });
     const raw = (res.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
-    const arr = JSON.parse(raw.slice(raw.indexOf('['), raw.lastIndexOf(']') + 1));
+    let arr, names = [];
+    const ob = raw.indexOf('{'), ab = raw.indexOf('[');
+    if (ob >= 0 && (ab < 0 || ob < ab)) {   // รูปแบบใหม่ {lines, names}
+      const o = JSON.parse(raw.slice(ob, raw.lastIndexOf('}') + 1));
+      arr = o.lines; names = Array.isArray(o.names) ? o.names : [];
+    } else arr = JSON.parse(raw.slice(ab, raw.lastIndexOf(']') + 1));   // โมเดลบางตัวยังตอบเป็น array เดิม
     if (!Array.isArray(arr)) return null;
-    return lines.map(({ q, kind, pos }, i) => {
+    // ชื่อที่ยังไม่อยู่ในคลังศัพท์ → ให้ตัวแปลมีตัวสะกดไทย (ตอนแรกของเรื่องคลังว่าง → โมเดลมักทิ้งชื่อเกาหลีไว้ เช่น "อา리아")
+    const known = new Set(glossChars.map(g => g.korean));
+    names = names.filter(n => n && typeof n.korean === 'string' && typeof n.thai === 'string' && n.korean.trim() && n.thai.trim()
+      && !known.has(n.korean.trim()) && text.includes(n.korean.trim()) && !/[\uac00-\ud7a3\u3131-\u318e]/.test(n.thai))
+      .slice(0, 20).map(n => ({ korean: n.korean.trim(), thai: n.thai.trim(), gender: n.gender === 'male' || n.gender === 'female' ? n.gender : 'unknown' }));
+    const out = lines.map(({ q, kind, pos }, i) => {
       const e = arr.find(x => +x.q === i + 1) || {};
       const sp = String(e.speaker || '').trim();
       // ผู้พูดตรงกับตัวละครใน glossary ที่ระบุเพศ → ใช้เพศจาก glossary เสมอ
@@ -283,6 +298,8 @@ async function buildSpeakerMap(text, model, ws = S.currentWs) {
       const gender = g ? g.gender : (e.gender === 'male' || e.gender === 'female' ? e.gender : 'unknown');
       return { q, kind, pos, speaker: sp || '?', gender };
     });
+    out.names = names;
+    return out;
   } catch (e) {
     console.warn('[speakerMap]', e);
     return null;
@@ -298,18 +315,33 @@ function speakerMapPromptBlock(map, ws = S.currentWs) {
     const g = (ws?.glossary || []).find(c => c.korean && (m.speaker.includes(c.korean) || c.korean.includes(m.speaker)));
     sheet.set(g?.thai || m.speaker, m.gender);
   }
+  // ชื่อใหม่จากแผนที่ (ไม่อยู่ในคลัง): ใช้ชื่อไทยแทนชื่อเกาหลีในตารางสรรพนาม
+  const nm = map.names || [];
+  for (const [k, g] of [...sheet]) { const n = nm.find(x => x.korean === k || k.includes(x.korean)); if (n) { sheet.delete(k); sheet.set(n.thai, g); } }
+  for (const n of nm) if ((n.gender === 'male' || n.gender === 'female') && !sheet.has(n.thai)) sheet.set(n.thai, n.gender);
+  const namesTxt = nm.map(n => `${n.korean} → ${n.thai}`).join(' · ');
   const sheetTxt = [...sheet].map(([n, g]) => `${n} = ${g === 'male' ? 'ชาย → เขา' : 'หญิง → เธอ/นาง'}`).join(' · ');
-  const end = g => g === 'male' ? 'ครับ/ขอรับ, self: ผม' : g === 'female' ? 'ค่ะ/คะ, self: ฉัน/ดิฉัน' : 'no gendered particle';
-  const lines = map.filter(m => m.speaker && m.speaker !== '-' && m.speaker !== '?').map(m => {
-    const q = m.q.length > 40 ? m.q.slice(0, 40) + '…' : m.q;
-    return `${m.kind === 'sq' ? `‘${q}’ (thought/recalled)` : `“${q}”`} → ${m.speaker} (${m.gender}) → ${end(m.gender)}`;
+  // ระดับภาษาเกาหลี: สุภาพ (요/니다) → ใส่ ครับ/ค่ะ · ภาษาปกติ (반말/하다체) → ไม่ใส่หางเสียง (ขุนนางคุยกับคนรับใช้, อาจารย์สั่งศิษย์)
+  const end = (g, lv) => {
+    if (g !== 'male' && g !== 'female') return 'no gendered particle';
+    const self = g === 'male' ? 'ผม/ข้า' : 'ฉัน/ข้า';
+    if (lv === 'plain') return `plain speech → no ครับ/ค่ะ, self: ${self}`;
+    return g === 'male' ? 'polite → ครับ/ขอรับ, self: ผม' : 'polite → ค่ะ/คะ, self: ฉัน/ดิฉัน';
+  };
+  const lines = map.filter(m => m.speaker && m.speaker !== '-' && m.speaker !== '?').map((m, i) => {
+    // ไม่ใส่ข้อความบทพูดเกาหลีในแผนที่ — ทดสอบแล้ว (Gemini 3.5 Flash Lite) มีบทพูดเกาหลีใน prompt → โมเดลทิ้งบทพูดเป็นเกาหลี 1/5 · ใส่แค่ลำดับ → 0/5
+    const lv = m.kind === 'sq' ? 'plain' : koSpeechLevel(m.q);
+    const n = nm.find(x => m.speaker.includes(x.korean));
+    return `${i + 1}. ${m.kind === 'sq' ? '‘…’ thought' : '“…”'} → ${m.speaker}${n ? ` = ${n.thai}` : ''} (${m.gender}) → ${end(m.gender, lv)}`;
   });
-  if (!lines.length) return '';
+  if (!lines.length && !namesTxt) return '';
   return `━━━━━━━━━━━━━━━━━━━━
-DIALOGUE SPEAKER MAP (pre-identified from the Korean source — one entry per quoted line, in order)
+DIALOGUE SPEAKER MAP (pre-identified from the source — entry N = the N-th quoted line in the text, in order of appearance)
 ━━━━━━━━━━━━━━━━━━━━
-Use it for each line's speaker, self-pronoun and polite particle. Keep every quoted line as its own quote, in the same order, with the same quote marks (“…” stays “…”, ‘…’ stays ‘…’).
-${lines.join('\n')}${sheetTxt ? `
+Use it to choose each line's self-pronoun and polite particle while you TRANSLATE every quoted line into Thai — each quote stays a separate quote, in the same order, with the same kind of quote marks (“…” → “…”, ‘…’ → ‘…’).
+${lines.join('\n')}${namesTxt ? `
+
+NAMES (not yet in the glossary — write them in Thai exactly like this): ${namesTxt}` : ''}${sheetTxt ? `
 
 3RD-PERSON PRONOUNS IN NARRATION (must match gender): ${sheetTxt}` : ''}`;
 }
@@ -317,6 +349,14 @@ ${lines.join('\n')}${sheetTxt ? `
 // แทรกแผนที่ผู้พูดก่อน {text} (ถ้า prompt ไม่มี {text} → ต่อท้าย)
 function applySpeakerMap(systemPrompt, map) {
   return injectPromptBlock(systemPrompt, speakerMapPromptBlock(map));
+}
+
+// ระดับภาษาของบทพูดเกาหลี: 'polite' (존댓말 …요/…니다/…니까/…시오) หรือ 'plain' (반말/하다체)
+function koSpeechLevel(q) {
+  const sents = String(q || '').replace(/[“”"‘’'「」『』]/g, '').split(/[.!?…~,]+\s*/)
+    .map(x => x.replace(/[\s.!?…~,\-—)]+$/, '')).filter(Boolean);
+  if (!sents.length) return 'polite';
+  return sents.some(x => /(요|니다|니까|시오|소서|옵니다|나이다)$/.test(x)) ? 'polite' : 'plain';
 }
 
 // แปลงคำลงท้าย/คำแทนตัวในบทพูด 1 บรรทัดให้ตรงเพศผู้พูด — คืนข้อความใหม่ (ไม่เปลี่ยนถ้าตรงอยู่แล้ว)
@@ -349,6 +389,24 @@ function fixQuoteGender(q, gender) {
          .replace(/ดิฉัน|อิฉัน/g, 'ผม');
   }
   return t;
+}
+
+// ชื่อเกาหลีหลุดมาในคำแปล ("레온มองลงไป") → แทนด้วยชื่อไทยจากคลังศัพท์/แผนที่ผู้พูด (เฉพาะชื่อเต็มที่ไม่ติดอักษรเกาหลีอื่น)
+function repairHangulNames(thaiText, map, ws = S.currentWs) {
+  const t = String(thaiText || '');
+  if (!/[\uac00-\ud7a3]/.test(t)) return { text: t, fixes: [] };
+  const pairs = new Map();
+  for (const g of (ws?.glossary || [])) if (g.korean && g.thai && !/[\uac00-\ud7a3]/.test(g.thai)) pairs.set(g.korean, g.thai);
+  for (const n of (map?.names || [])) if (!pairs.has(n.korean)) pairs.set(n.korean, n.thai);
+  const fixes = [];
+  const text = t.replace(/[\uac00-\ud7a3]+/g, run => {
+    if (pairs.has(run)) { fixes.push({ from: run, to: pairs.get(run), name: true }); return pairs.get(run); }
+    // ชื่อ + คำชี้ (은/는/이/가/을/를/의/에게/와/과/도) ที่โมเดลคัดลอกมาทั้งก้อน
+    const m = run.match(/^(.+?)(은|는|이|가|을|를|의|에게|와|과|도)$/);
+    if (m && pairs.has(m[1])) { fixes.push({ from: run, to: pairs.get(m[1]), name: true }); return pairs.get(m[1]); }
+    return run;
+  });
+  return { text, fixes };
 }
 
 // ใช้แผนที่ผู้พูดแก้คำแปลไทย — แก้เฉพาะเมื่อจับคู่บทพูดไทยกับต้นฉบับตามลำดับได้แน่นอน:
@@ -419,9 +477,13 @@ function _fixMatched(text, re, pairOf, map, fixes) {
     return open + fixed + close;
   });
 }
+const _META_NOTE_RE = /[ \t]*\*?[\[(](?:หมายเหตุ|โน้ต|Note|TN|T\/N)[^\])\n]*(?:ต้นฉบับ|source|Korean|เกาหลี|อภิธาน|glossary|คลังศัพท์|กฎ)[^\])\n]*[\])]\*?/gi;
 function applySpeakerFixes(thaiText, map) {
-  const out = { text: thaiText, fixes: [], aligned: false };
-  if (!map?.length || !thaiText) return out;
+  const rn = repairHangulNames(thaiText, map);   // ชื่อเกาหลีที่หลุดมา → ชื่อไทย (ทำก่อนจับคู่บทพูด)
+  const out = { text: rn.text, fixes: rn.fixes, aligned: false };
+  // หมายเหตุผู้แปลที่โมเดลแทรกเอง เรื่องต้นฉบับ/คลังศัพท์/กฎ (เช่น "*[หมายเหตุ: ต้นฉบับใช้คำว่า 그 …]*") → ตัดทิ้ง
+  out.text = out.text.replace(_META_NOTE_RE, m => { out.fixes.push({ from: m.trim(), to: '', note: true }); return ''; });
+  if (!map?.length || !out.text) return out;
   const dqMap = map.filter(m => m.kind !== 'sq'), sqMap = map.filter(m => m.kind === 'sq');
   const count = re => [...out.text.matchAll(re)].length;
   if (count(_TH_DQ_RE) === dqMap.length) {
@@ -455,7 +517,8 @@ const _GENDER_TOKENS_RE = /ของเขา|ของเธอ|ของนา
 const _PRON_COMPOUND_RE = /ภูเขา|หุบเขา|เขาวงกต|ยอดเขา|เทือกเขา|เชิงเขา|ไหล่เขา|ตีนเขา|นางฟ้า|นางสาว|นางกำนัล|นางเอก|นางร้าย|นางพญา|นางสนม|นางใน|นางงาม|นางพยาบาล|นางแบบ|นางเงือก|นางไม้/g;
 
 function _stripGender(t) {
-  return String(t).replace(_PRON_COMPOUND_RE, m => '#'.repeat(m.length)).replace(_GENDER_TOKENS_RE, '').replace(/\s+/g, '');
+  // เทียบเฉพาะอักษรไทย/ตัวเลข — ให้ตัวตรวจลบขยะที่โมเดลแปลทิ้งไว้ได้ (เช่น "เขาC" → "เธอ") แต่ห้ามแก้คำไทยอื่น
+  return String(t).replace(_PRON_COMPOUND_RE, m => '#'.repeat(m.length)).replace(_GENDER_TOKENS_RE, '').replace(/[^\u0e00-\u0e7f0-9#]/g, '');
 }
 
 // ทิศทางการแก้: 'female' ถ้าคำบอกเพศหญิงเพิ่ม/ชายลด, 'male' กลับกัน, null ถ้าไม่ชัด
@@ -479,8 +542,9 @@ function _genderCandidates(thaiText, ws) {
     if (!hasM && !hasF) continue;
     // ชื่อตัวละครในย่อหน้านี้หรือ 3 ย่อหน้าก่อนหน้า (ประธานที่ถูกละมักถูกเอ่ยชื่อไว้ก่อนหน้าไม่ไกล)
     const ctx = paras.slice(Math.max(0, k - 6), k + 1).filter(x => x.trim()).slice(-4).join('\n');
-    const f = chars.some(c => c.gender === 'female' && ctx.includes(c.thai));
-    const m = chars.some(c => c.gender === 'male' && ctx.includes(c.thai));
+    const named = c => c.thai.split(/\s+/).some(w => w.length >= 2 && ctx.includes(w));   // ชื่อหลายคำ: ตรงคำใดคำหนึ่งก็พอ
+    const f = chars.some(c => c.gender === 'female' && named(c));
+    const m = chars.some(c => c.gender === 'male' && named(c));
     if ((hasM && f) || (hasF && m)) out.push(k);
   }
   return out;
@@ -504,11 +568,12 @@ async function genderProofread(srcText, thaiText, model, ws = S.currentWs) {
   const kParas = srcText.split('\n');
   const tNon = paras.map((p, i) => p.trim() ? i : -1).filter(i => i >= 0);
   const kNon = kParas.map((p, i) => p.trim() ? i : -1).filter(i => i >= 0);
-  const korFor = k => {   // ย่อหน้าเกาหลีช่วงเดียวกัน (เทียบตามลำดับย่อหน้า ±1)
+  const korFor = (k, back = 2) => {   // ย่อหน้าเกาหลีช่วงเดียวกัน (เทียบตามลำดับย่อหน้า)
     const r = tNon.indexOf(k) / Math.max(1, tNon.length - 1);
     const c = Math.round(r * (kNon.length - 1));
-    return kNon.slice(Math.max(0, c - 2), c + 3).map(i => kParas[i]).join('\n');
+    return kNon.slice(Math.max(0, c - back), c + 3).map(i => kParas[i]).join('\n');
   };
+  const thaiBefore = k => tNon.slice(Math.max(0, tNon.indexOf(k) - 3), tNon.indexOf(k)).map(i => paras[i]).join('\n');
   const glossChars = (ws?.glossary || []).filter(g => g.type === 'character' && g.korean && (g.gender === 'male' || g.gender === 'female'));
   const chars = glossChars.map(g => `- ${g.korean} = ${g.thai} (${g.gender === 'male' ? 'ชาย → เขา' : 'หญิง → เธอ/นาง'})`).join('\n');
   const items = cand.map((k, n) => `#${n + 1}\nKOREAN:\n${korFor(k)}\nTHAI:\n${paras[k]}`).join('\n\n');
@@ -555,13 +620,17 @@ ${items}`;
     }
     if (!proposals.length) { res.text = paras.join('\n'); return res; }
     // รอบ 2: ถามแยกโดยไม่บอกคำแก้ — "คำที่ทำเครื่องหมายหมายถึงใคร" · รับเฉพาะเมื่อเพศของคนนั้น = ทิศทางที่แก้
+    // บริบทย้อนหลังกว้างกว่ารอบ 1 — ประธานที่ถูกละ (เช่น "ถูกโน้มน้าว") มักอยู่หลายย่อหน้าก่อน
     const vPrompt = `Korean→Thai web-novel check. For each item, decide WHO the marked Thai word ⟦…⟧ refers to, using the Korean passage.
+The Korean often omits the subject: find the sentence that matches the marked Thai line, then trace back through the earlier sentences to see whose thoughts/actions it continues.
+Watch the role: in "X was persuaded by Y" the person is X (the one persuaded), not Y. In a possessive like "แม่⟦ของเธอ⟧" (her mother) the person is the OWNER (whose mother), never the mother herself.
+The Korean source can contain a gender typo (그 used for a woman, 그녀 for a man) — still answer with the character the word refers to.
 CHARACTERS:
 ${chars}
 
-Return ONLY JSON: [{"n":1,"person":"Korean name from CHARACTERS, or unknown"}]
+Return ONLY JSON: [{"n":1,"reason":"one short sentence","person":"Korean name from CHARACTERS, or unknown"}]
 
-${proposals.map((x, i) => `#${i + 1}\nKOREAN:\n${korFor(x.k)}\nTHAI:\n${x.marked}`).join('\n\n')}`;
+${proposals.map((x, i) => `#${i + 1}\nKOREAN:\n${korFor(x.k, 5)}\nTHAI (earlier lines):\n${thaiBefore(x.k)}\nTHAI (marked line):\n${x.marked}`).join('\n\n')}`;
     const v = await callOpenRouter({ model: pModel, temperature: 0, max_tokens: 4000, messages: [{ role: 'user', content: vPrompt }] });
     const vraw = (v.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
     const varr = JSON.parse(vraw.slice(vraw.indexOf('['), vraw.lastIndexOf(']') + 1) || '[]');
@@ -584,6 +653,11 @@ ${proposals.map((x, i) => `#${i + 1}\nKOREAN:\n${korFor(x.k)}\nTHAI:\n${x.marked
 function sanitizeGlossaryEntry(entry) {
   if (!entry || /[\u3131-\u318e\uac00-\ud7a3\u4e00-\u9fff\u3040-\u30ff]/.test(String(entry.thai || ''))) return null;
   if (entry.type !== 'character' || !['male', 'female', 'neutral'].includes(entry.gender)) delete entry.gender;
+  // AI บางครั้งคืนชื่อซ้ำสองรอบ ("세피아 세피아" = "เซเปีย เซเปีย") → ยุบเหลือชื่อเดียว
+  for (const f of ['korean', 'thai']) {
+    const m = String(entry[f] || '').trim().match(/^(.+?)(?:\s+\1)+$/);
+    if (m) entry[f] = m[1];
+  }
   return entry;
 }
 
@@ -631,8 +705,10 @@ async function autoExtractGlossaryAfterTranslation(sourceText, model, chapterInf
     }
 
     let added = 0, genderFilled = 0;
-    terms.forEach(term => {
-      if (!term.korean || !term.thai) return;
+    terms.forEach(raw => {
+      if (!raw.korean || !raw.thai) return;
+      const term = sanitizeGlossaryEntry({ ...raw });
+      if (!term) return;
       const existingEntry = S.currentWs.glossary.find(g => g.korean === term.korean);
       if (existingEntry) {
         // เติมเพศให้ตัวละครเดิมที่ยังไม่มีเพศ
@@ -643,8 +719,7 @@ async function autoExtractGlossaryAfterTranslation(sourceText, model, chapterInf
         return;
       }
       // แนบ source chapter info ถ้ามี
-      const entry = sanitizeGlossaryEntry({ ...term });
-      if (!entry) return;
+      const entry = term;
       if (chapterInfo?.title) {
         entry.sourceChapterId    = chapterInfo.id    || null;
         entry.sourceChapterTitle = chapterInfo.title;
@@ -764,7 +839,9 @@ async function translateAllStream(text) {
 
     cursor.remove();
     if (inTok || outTok) addCosts(inTok, outTok, options.model);
-    if (looksUntranslated(fullText)) throw new Error('AI ส่งต้นฉบับกลับมาโดยไม่แปล — กดแปลอีกครั้ง หรือเปลี่ยนโมเดล');
+    const se = stripSourceEcho(text, fullText);   // ตอบสองภาษา → ตัดบรรทัดเกาหลีที่คัดลอกทิ้ง
+    if (se.removed) { fullText = se.text; txtEl.textContent = fullText; }
+    if (se.missing > 0 || (se.removed && !fullText.trim()) || looksUntranslated(fullText)) throw new Error('AI ส่งต้นฉบับกลับมาโดยไม่แปล — กดแปลอีกครั้ง หรือเปลี่ยนโมเดล');
     if (looksIncomplete(text, fullText)) throw new Error('คำแปลสั้นผิดปกติ — น่าจะถูกตัดกลางคันหรือตกหล่น · กดแปลอีกครั้ง');
 
     if (options.useMemory && fullText) _mcSet(cacheKey, fullText);
@@ -1066,7 +1143,9 @@ async function translateChunked(text, options) {
 
         cursor.remove();
         if (inTok || outTok) addCosts(inTok, outTok, options.model);
-        if (looksUntranslated(chunkFull)) throw new Error('AI ส่งต้นฉบับกลับมาโดยไม่แปล');
+        const se = stripSourceEcho(chunk, chunkFull);   // ตอบสองภาษา → ตัดบรรทัดเกาหลีที่คัดลอกทิ้ง
+        if (se.removed) { chunkFull = se.text; txtEl.textContent = chunkFull; }
+        if (se.missing > 0 || (se.removed && !chunkFull.trim()) || looksUntranslated(chunkFull)) throw new Error('AI ส่งต้นฉบับกลับมาโดยไม่แปล');
         if (looksIncomplete(chunk, chunkFull)) throw new Error('คำแปลสั้นผิดปกติ (ถูกตัดกลางคัน/ตกหล่น)');
 
         if (options.useMemory && chunkFull) _mcSet(cacheKey, chunkFull);

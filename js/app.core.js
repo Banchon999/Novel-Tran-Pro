@@ -223,7 +223,7 @@ SPEECH PARTICLE RULES (คำลงท้าย ครับ/ค่ะ) — CRIT
 • If the speaker or their gender is unclear, do NOT guess: use a gender-neutral ending (นะ, จ้ะ, or no particle) instead.
 • Forms of address follow the gender of the person ADDRESSED (공자님/도련님 → คุณชาย · 아가씨/영애 → คุณหนู · 부인 → ท่านหญิง/คุณนาย); never call a male character คุณหนู or a female one คุณชาย.
 • Narration pronouns follow each character's gender: male → เขา · female → เธอ/นาง — check the glossary before every เขา/เธอ/นาง.
-• If the Korean source itself uses a wrong-gender pronoun for a character whose gender is in the glossary (a typo such as 그녀 for a male), follow the glossary gender.`;
+• If the Korean source itself uses a wrong-gender pronoun for a character whose gender is in the glossary (a typo such as 그녀 for a male), follow the glossary gender — silently: never add notes, brackets or explanations to the translation.`;
 
 // แทรกบล็อกกฎเข้า prompt ของ preset — วางต่อจาก {glossary} (ห่างจากต้นฉบับ)
 // เดิมวางก่อน {text} ซึ่งใน preset ที่มีหัวข้อ "KOREAN SOURCE" ก่อน {text} บล็อกจะไปอยู่ใต้หัวข้อนั้น
@@ -256,6 +256,24 @@ function looksUntranslated(text) {
   const cjk = (t.match(/[\uac00-\ud7a3\u3131-\u318e\u4e00-\u9fff\u3040-\u30ff]/g) || []).length;
   const thai = (t.match(/[\u0e00-\u0e7f]/g) || []).length;
   return cjk > 50 && cjk / Math.max(1, cjk + thai) > 0.3;
+}
+
+// โมเดลบางตัว (เช่น Gemini 3 Flash) ตอบสองภาษา: บรรทัดเกาหลีต้นฉบับสลับกับคำแปล → ตัดบรรทัดที่คัดลอกจากต้นฉบับทิ้ง
+// คืน { text, removed, missing } — missing = จำนวนย่อหน้าที่ขาดเมื่อเทียบต้นฉบับ (มีแต่บรรทัดเกาหลี ไม่มีคำแปล)
+// หมายเหตุ: ทดลองแล้วการต่อท้าย prompt ว่า "ห้ามคัดลอกภาษาเกาหลี" ทำให้โมเดลตอบสองภาษามากขึ้น → แก้ที่ผลลัพธ์แทน
+function stripSourceEcho(src, out) {
+  const norm = s => String(s).replace(/\s+/g, '');
+  const SRC = norm(src);
+  let removed = 0;
+  const kept = String(out || '').split('\n').filter(l => {
+    const h = (l.match(/[\uac00-\ud7a3]/g) || []).length, th = (l.match(/[\u0e00-\u0e7f]/g) || []).length;
+    if (h > 3 && h > th && SRC.includes(norm(l))) { removed++; return false; }
+    return true;
+  });
+  if (!removed) return { text: out, removed: 0, missing: 0 };
+  const text = kept.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  const cnt = s => String(s).split('\n').filter(x => x.trim()).length;
+  return { text, removed, missing: Math.max(0, cnt(src) - cnt(text)) };
 }
 
 // แทรกบล็อกกฎ Consistency เข้า systemPrompt (ก่อน {text}) เมื่อ workspace เปิดใช้งาน

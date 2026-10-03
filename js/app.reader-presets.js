@@ -40,7 +40,7 @@ async function translateChapterCore(ch, {
   const _timer = startAbortTimer(_ctrl, getTimeoutMs('full'));
 
   let inTok = 0, outTok = 0;
-  let fullText = '';
+  let fullText = '', echoGap = false;
   try {
     // AI ส่งต้นฉบับกลับมาโดยไม่แปล → ลองใหม่ 1 ครั้ง
     for (let attempt = 0; attempt < 2; attempt++) {
@@ -51,7 +51,9 @@ async function translateChapterCore(ch, {
         _ctrl.signal
       );
       if (inTok || outTok) { addCosts(inTok, outTok, useModel); inTok = outTok = 0; }
-      if (!looksUntranslated(fullText) && !looksIncomplete(srcPrepared, fullText)) break;
+      const se = stripSourceEcho(srcPrepared, fullText);
+      fullText = se.text; echoGap = se.missing > 0 || (se.removed > 0 && !fullText.trim());
+      if (!echoGap && !looksUntranslated(fullText) && !looksIncomplete(srcPrepared, fullText)) break;
     }
   } catch (e) {
     // หมดเวลา → error ปกติ (ให้ prefetch ลองใหม่ / แจ้งผู้ใช้) — ไม่ปนกับการกดยกเลิก
@@ -63,8 +65,8 @@ async function translateChapterCore(ch, {
     if (inTok || outTok) addCosts(inTok, outTok, useModel);
   }
 
-  if (!fullText || !fullText.trim()) throw new Error('AI ส่งผลลัพธ์ว่าง');
-  if (looksUntranslated(fullText)) throw new Error('AI ส่งต้นฉบับกลับมาโดยไม่แปล (ลองแล้ว 2 ครั้ง) — ลองเปลี่ยนโมเดลหรือแปลใหม่');
+  if ((!fullText || !fullText.trim()) && !echoGap) throw new Error('AI ส่งผลลัพธ์ว่าง');
+  if (echoGap || looksUntranslated(fullText)) throw new Error('AI ส่งต้นฉบับกลับมาโดยไม่แปล (ลองแล้ว 2 ครั้ง) — ลองเปลี่ยนโมเดลหรือแปลใหม่');
   if (looksIncomplete(srcPrepared, fullText)) throw new Error('คำแปลสั้นผิดปกติ — น่าจะถูกตัดกลางคันหรือตกหล่น (ลองแล้ว 2 ครั้ง) — ลองแปลใหม่หรือเปลี่ยนโมเดล');
 
   if (presetBase.polish) {
