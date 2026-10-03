@@ -477,7 +477,8 @@ function _genderCandidates(thaiText, ws) {
     const narr = p.replace(/[“"「‘][^“”"「」‘’]*[”"」’]/g, ' ').replace(_PRON_COMPOUND_RE, ' ');
     const hasM = /เขา/.test(narr), hasF = /(เธอ|นาง|หล่อน)/.test(narr);
     if (!hasM && !hasF) continue;
-    const ctx = (paras[k - 1] || '') + '\n' + p;
+    // ชื่อตัวละครในย่อหน้านี้หรือ 3 ย่อหน้าก่อนหน้า (ประธานที่ถูกละมักถูกเอ่ยชื่อไว้ก่อนหน้าไม่ไกล)
+    const ctx = paras.slice(Math.max(0, k - 6), k + 1).filter(x => x.trim()).slice(-4).join('\n');
     const f = chars.some(c => c.gender === 'female' && ctx.includes(c.thai));
     const m = chars.some(c => c.gender === 'male' && ctx.includes(c.thai));
     if ((hasM && f) || (hasF && m)) out.push(k);
@@ -519,31 +520,58 @@ ${chars}
 For each item, read the Korean and check the Thai paragraph. Fix ONLY gendered words that refer to the wrong person:
 third-person pronouns (เขา ↔ เธอ/นาง), self-pronouns (ผม/ฉัน/ดิฉัน), polite particles (ครับ/ค่ะ/คะ), forms of address (คุณชาย/คุณหนู).
 When the Korean omits the subject, work out from context who it is before deciding.
+The Korean source itself can contain a typo with the wrong gender (e.g. 그녀 used for a male character) — the CHARACTERS genders above always win; correct the Thai accordingly.
 Do NOT change any other word, spelling or punctuation.
 
-Return ONLY JSON: [{"n":1,"refers_to":"Korean name (as in CHARACTERS) of the person each changed word refers to","thai":"corrected paragraph"}]
-— include only items that needed a fix ([] if none). If you are not sure, leave the item out.
+Return ONLY JSON, one object per item that needed a fix ([] if none):
+[{"n":1,"thai":"corrected paragraph"}]
+Remember who each word points to — in "แม่ของเขา" the word เขา is the child, not the mother. If you are not sure, leave the item out.
 
 ${items}`;
+  const pModel = getProofreadModel(ws, model);
+  const findChar = who => { who = String(who || '').trim(); return who && glossChars.find(x => who.includes(x.korean) || x.korean.includes(who) || (x.thai && who.includes(x.thai))); };
   try {
-    const r = await callOpenRouter({ model: getProofreadModel(ws, model), temperature: 0, max_tokens: 8000, messages: [{ role: 'user', content: prompt }] });
+    // รอบ 1: เสนอคำแก้
+    const r = await callOpenRouter({ model: pModel, temperature: 0, max_tokens: 8000, messages: [{ role: 'user', content: prompt }] });
     const raw = (r.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
     const arr = JSON.parse(raw.slice(raw.indexOf('['), raw.lastIndexOf(']') + 1) || '[]');
+    const proposals = [];
     for (const e of Array.isArray(arr) ? arr : []) {
       const k = cand[+e.n - 1];
       if (k === undefined || typeof e.thai !== 'string') continue;
       const before = paras[k], after = e.thai.trim();
       if (!after || after === before.trim()) continue;
       if (_stripGender(before) !== _stripGender(after)) continue;   // แก้เกินคำบอกเพศ → ไม่รับ
-      // ทิศทางที่แก้ (ไปทางหญิง/ชาย) ต้องตรงกับเพศของคนที่ AI บอกว่าสรรพนามหมายถึง — กัน AI แก้ "เธอ" ที่ถูกเป็น "เขา"
-      const who = String(e.refers_to || '').trim();
-      const g = who && glossChars.find(c => who.includes(c.korean) || c.korean.includes(who) || (c.thai && who.includes(c.thai)));
       const dir = _genderDirection(before, after);
-      if (!g || !dir || dir !== g.gender) continue;
-      const lead = before.match(/^\s*/)[0];
-      paras[k] = lead + after;
-      res.fixes.push({ from: before.trim(), to: after });
+      if (!dir) continue;
+      // คำบอกเพศในย่อหน้าเดิมที่ถูกเปลี่ยน — หาจุดแรกที่ต่างกัน แล้วเลือกคำบอกเพศที่ครอบจุดนั้น
+      const lead = before.match(/^\s*/)[0].length, bt = before.slice(lead);
+      let p = 0; while (p < bt.length && p < after.length && bt[p] === after[p]) p++;
+      const toks = [...bt.matchAll(_GENDER_TOKENS_RE)];
+      const tok = toks.find(m => m.index <= p && p <= m.index + m[0].length) || toks.find(m => m.index >= p);
+      if (!tok) continue;
+      const at = lead + tok.index;
+      proposals.push({ k, before, after, dir, marked: before.slice(0, at) + '⟦' + tok[0] + '⟧' + before.slice(at + tok[0].length) });
     }
+    if (!proposals.length) { res.text = paras.join('\n'); return res; }
+    // รอบ 2: ถามแยกโดยไม่บอกคำแก้ — "คำที่ทำเครื่องหมายหมายถึงใคร" · รับเฉพาะเมื่อเพศของคนนั้น = ทิศทางที่แก้
+    const vPrompt = `Korean→Thai web-novel check. For each item, decide WHO the marked Thai word ⟦…⟧ refers to, using the Korean passage.
+CHARACTERS:
+${chars}
+
+Return ONLY JSON: [{"n":1,"person":"Korean name from CHARACTERS, or unknown"}]
+
+${proposals.map((x, i) => `#${i + 1}\nKOREAN:\n${korFor(x.k)}\nTHAI:\n${x.marked}`).join('\n\n')}`;
+    const v = await callOpenRouter({ model: pModel, temperature: 0, max_tokens: 4000, messages: [{ role: 'user', content: vPrompt }] });
+    const vraw = (v.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
+    const varr = JSON.parse(vraw.slice(vraw.indexOf('['), vraw.lastIndexOf(']') + 1) || '[]');
+    proposals.forEach((x, i) => {
+      const ans = (Array.isArray(varr) ? varr : []).find(a => +a.n === i + 1);
+      const g = ans && findChar(ans.person);
+      if (!g || g.gender !== x.dir) return;   // คำตอบรอบสองไม่ยืนยัน → ไม่แก้
+      paras[x.k] = x.before.match(/^\s*/)[0] + x.after;
+      res.fixes.push({ from: x.before.trim(), to: x.after, person: g.korean });
+    });
   } catch (e) {
     console.warn('[genderProofread]', e);
   }

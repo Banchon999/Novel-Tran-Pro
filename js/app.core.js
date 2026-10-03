@@ -222,7 +222,8 @@ SPEECH PARTICLE RULES (คำลงท้าย ครับ/ค่ะ) — CRIT
 • The particle must agree with the speaker's self-pronoun in the same line (ผม/กระผม → ครับ · ดิฉัน/อิฉัน → ค่ะ/คะ).
 • If the speaker or their gender is unclear, do NOT guess: use a gender-neutral ending (นะ, จ้ะ, or no particle) instead.
 • Forms of address follow the gender of the person ADDRESSED (공자님/도련님 → คุณชาย · 아가씨/영애 → คุณหนู · 부인 → ท่านหญิง/คุณนาย); never call a male character คุณหนู or a female one คุณชาย.
-• Narration pronouns follow each character's gender: male → เขา · female → เธอ/นาง — check the glossary before every เขา/เธอ/นาง.`;
+• Narration pronouns follow each character's gender: male → เขา · female → เธอ/นาง — check the glossary before every เขา/เธอ/นาง.
+• If the Korean source itself uses a wrong-gender pronoun for a character whose gender is in the glossary (a typo such as 그녀 for a male), follow the glossary gender.`;
 
 // แทรกบล็อกกฎเข้า prompt ของ preset — วางต่อจาก {glossary} (ห่างจากต้นฉบับ)
 // เดิมวางก่อน {text} ซึ่งใน preset ที่มีหัวข้อ "KOREAN SOURCE" ก่อน {text} บล็อกจะไปอยู่ใต้หัวข้อนั้น
