@@ -433,16 +433,26 @@ function parseGlossaryCSV(text) {
   const delim = lines[0].includes('\t') ? '\t' : ',';
   const rows = [];
   // ข้ามบรรทัดแรก (header) ถ้ามี Korean/korean/เกาหลี
-  const firstLow = lines[0].toLowerCase();
+  const firstLow = lines[0].replace(/^\uFEFF/, '').toLowerCase();
   const startIdx = (firstLow.includes('korean') || firstLow.includes('เกาหลี') || firstLow.includes('kr')) ? 1 : 0;
+  // มี header → อ่านคอลัมน์ตามชื่อ (ไฟล์ที่ Export ออกไปแล้วเลือกคอลัมน์ไม่ครบ ก็ import กลับได้ถูกช่อง)
+  // ไม่มี header → ลำดับเดิม Korean,Thai,Type,Gender,Note
+  const idx = { korean: 0, thai: 1, type: 2, gender: 3, note: 4 };
+  if (startIdx) {
+    const hd = splitCSVLine(lines[0].replace(/^\uFEFF/, ''), delim).map(h => h.trim().toLowerCase());
+    const find = (...names) => hd.findIndex(h => names.some(n => h === n || h.startsWith(n)));
+    const m = { korean: find('korean', 'เกาหลี', 'kr'), thai: find('thai', 'ไทย', 'th'), type: find('type', 'ประเภท'), gender: find('gender', 'เพศ'), note: find('note', 'หมายเหตุ') };
+    if (m.korean >= 0 && m.thai >= 0) for (const k in m) idx[k] = m[k];
+  }
+  const at = (cols, k) => (idx[k] >= 0 ? (cols[idx[k]] || '') : '').trim();
   for (let i = startIdx; i < lines.length; i++) {
     const cols = splitCSVLine(lines[i], delim);
-    const korean = (cols[0] || '').trim();
-    const thai   = (cols[1] || '').trim();
+    const korean = at(cols, 'korean');
+    const thai   = at(cols, 'thai');
     if (!korean || !thai) continue;
-    const rawType   = (cols[2] || '').trim().toLowerCase();
-    const rawGender = (cols[3] || '').trim().toLowerCase();
-    const note      = (cols[4] || '').trim();
+    const rawType   = at(cols, 'type').toLowerCase();
+    const rawGender = at(cols, 'gender').toLowerCase();
+    const note      = at(cols, 'note');
     const type   = VALID_TYPES.has(rawType)   ? rawType   : 'term';
     const gender = VALID_GENDERS.has(rawGender) ? rawGender : '';
     const exists = S.currentWs.glossary.some(g => g.korean === korean);
@@ -574,8 +584,10 @@ async function importWorkspace(e) {
       showToast('⚠ JSON ถูกซ่อมแซมบางส่วน ข้อมูลอาจไม่ครบ', 'error');
     }
 
-    // ─ Multi-export bundle ─
-    if (parsed?._format === 'noveltrans-multi-export' && Array.isArray(parsed.workspaces)) {
+    // ─ Multi-export bundle / Backup ทั้งหมด (1-click) ─
+    // Backup ทั้งหมดเขียนเป็น { exportedAt, workspaces: [...] } ไม่มี _format → เดิม import ไม่ได้
+    if (Array.isArray(parsed)) parsed = { workspaces: parsed };
+    if (Array.isArray(parsed?.workspaces)) {
       let imported = 0;
       for (const ws of parsed.workspaces) {
         if (!ws.id || !ws.name) continue;
@@ -624,7 +636,24 @@ function tryRepairJson(text) {
     }
   }
   if (!stack.length) return null;
-  const closing = stack.reverse().map(c => c === '{' ? '}' : ']').join('');
-  try { return JSON.parse(t + closing); } catch { return null; }
+  const close = st => st.slice().reverse().map(c => c === '{' ? '}' : ']').join('');
+  try { return JSON.parse(t + close(stack)); } catch {}
+  // ถูกตัดกลาง string / กลาง key-value → ตัดกลับไปที่ comma สุดท้าย (นอก string) แล้วปิดวงเล็บตามระดับตรงนั้น
+  const st2 = []; let s2 = false, e2 = false; const cuts = [];
+  for (let i = 0; i < t.length; i++) {
+    const c = t[i];
+    if (e2) { e2 = false; continue; }
+    if (c === '\\' && s2) { e2 = true; continue; }
+    if (c === '"') { s2 = !s2; continue; }
+    if (s2) continue;
+    if (c === '{' || c === '[') st2.push(c);
+    else if (c === '}' || c === ']') st2.pop();
+    else if (c === ',') cuts.push([i, st2.slice()]);
+  }
+  for (let k = cuts.length - 1; k >= 0 && k >= cuts.length - 50; k--) {
+    const [i, st] = cuts[k];
+    try { return JSON.parse(t.slice(0, i) + close(st)); } catch {}
+  }
+  return null;
 }
 

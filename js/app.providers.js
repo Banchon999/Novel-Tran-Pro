@@ -12,11 +12,11 @@ const PROVIDERS = {
     keyHint: 'สมัครฟรีที่ openrouter.ai/keys — key เดียวใช้ได้หลายโมเดล',
     sse: 'openai',
     models: [
-      ['── Google ──', [['google/gemini-2.5-flash','Gemini 2.5 Flash 🔥'],['google/gemini-2.5-flash-lite','Gemini 2.5 Flash Lite'],['google/gemini-2.5-pro','Gemini 2.5 Pro'],['google/gemini-2.0-flash-001','Gemini 2.0 Flash'],['google/gemini-1.5-flash','Gemini 1.5 Flash']]],
+      ['── Google ──', [['google/gemini-3.1-flash-lite','Gemini 3.1 Flash Lite 💰 แนะนำ'],['google/gemini-3.5-flash-lite','Gemini 3.5 Flash Lite'],['google/gemini-3-flash-preview','Gemini 3 Flash Preview'],['google/gemini-3.5-flash','Gemini 3.5 Flash'],['google/gemini-2.5-flash','Gemini 2.5 Flash'],['google/gemini-2.5-flash-lite','Gemini 2.5 Flash Lite'],['google/gemini-2.5-pro','Gemini 2.5 Pro']]],
       ['── OpenAI ──', [['openai/gpt-5-nano','GPT-5 Nano ✨'],['openai/gpt-5','GPT-5'],['openai/gpt-4.1-nano','GPT-4.1 Nano'],['openai/gpt-4o-mini','GPT-4o Mini'],['openai/gpt-4o','GPT-4o'],['openai/gpt-oss-120b','GPT-OSS 120B']]],
       ['── DeepSeek ──', [['deepseek/deepseek-v3.2','DeepSeek V3.2 🆕'],['deepseek/deepseek-chat-v3-0324','DeepSeek V3 (Mar)'],['deepseek/deepseek-chat','DeepSeek V3'],['deepseek/deepseek-r1','DeepSeek R1']]],
-      ['── xAI ──', [['x-ai/grok-4','Grok 4'],['x-ai/grok-4-fast','Grok 4 Fast']]],
-      ['── อื่นๆ ──', [['anthropic/claude-haiku-4.5','Claude Haiku 4.5'],['anthropic/claude-3-haiku','Claude Haiku 3'],['meta-llama/llama-3.3-70b-instruct:free','Llama 3.3 70B (ฟรี)'],['meta-llama/llama-4-scout:free','Llama 4 Scout (ฟรี)']]],
+      ['── xAI ──', [['x-ai/grok-4.3','Grok 4.3'],['x-ai/grok-4.7','Grok 4.7']]],
+      ['── อื่นๆ ──', [['anthropic/claude-haiku-4.5','Claude Haiku 4.5'],['google/gemma-4-31b-it:free','Gemma 4 31B (ฟรี)'],['qwen/qwen3.8-27b:free','Qwen3.8 27B (ฟรี)']]],
     ],
     buildRequest({ model, messages, temperature, max_tokens, stream, key }) {
       return {
@@ -26,6 +26,8 @@ const PROVIDERS = {
       };
     },
     testEndpoint: key => ({ url: 'https://openrouter.ai/api/v1/models', headers: { 'Authorization': `Bearer ${key}` } }),
+    // ปุ่มทดสอบ key: /key คือ endpoint ที่ OpenRouter ระบุไว้สำหรับตรวจ key (ตอบเครดิตคงเหลือด้วย)
+    keyCheckEndpoint: key => ({ url: 'https://openrouter.ai/api/v1/key', headers: { 'Authorization': `Bearer ${key}` } }),
     extractText: d => d.choices?.[0]?.message?.content ?? '',
     extractUsage: d => ({ inTok: d.usage?.prompt_tokens || 0, outTok: d.usage?.completion_tokens || 0 }),
   },
@@ -335,6 +337,7 @@ async function onModelChange(v) {
 const _fetchedModels = {};      // provName → [{ id, label, context }]
 const _modelContextMap = {};    // model id → context window (tokens)
 const LS_KEY_MODELS = 'nt8_fetched_models';
+const _modelPriceMap = {};      // OpenRouter model id → { in, out } USD ต่อ 1M token (จาก 🔄 Fetch)
 
 // แปลง response ของแต่ละ provider → [{ id, label, context }]
 function parseModelsResponse(provName, json) {
@@ -353,11 +356,12 @@ function parseModelsResponse(provName, json) {
       return (json.data || []).map(m => ({ id: m.id, label: m.display_name || m.id, context: 200000 })).filter(m => m.id);
     }
     // openrouter / openai / deepseek → OpenAI-style { data: [{ id, name, context_length }] }
-    return (json.data || []).map(m => ({
-      id: m.id,
-      label: m.name ? `${m.name}` : m.id,
-      context: m.context_length || m.context_window || null,
-    })).filter(m => m.id);
+    return (json.data || []).map(m => {
+      // OpenRouter ส่งราคาจริง (USD ต่อ token) มาด้วย → เก็บไว้คิดต้นทุนแทนตารางในโค้ดที่ล้าสมัยได้
+      const pin = parseFloat(m.pricing?.prompt), pout = parseFloat(m.pricing?.completion);
+      if (provName === 'openrouter' && isFinite(pin) && isFinite(pout) && pin >= 0 && pout >= 0) _modelPriceMap[m.id] = { in: pin * 1e6, out: pout * 1e6 };
+      return { id: m.id, label: m.name ? `${m.name}` : m.id, context: m.context_length || m.context_window || null };
+    }).filter(m => m.id);
   } catch { return []; }
 }
 
@@ -388,7 +392,7 @@ async function fetchModels(provName) {
 
 function saveFetchedModelsCache() {
   try {
-    localStorage.setItem(LS_KEY_MODELS, JSON.stringify({ models: _fetchedModels, ctx: _modelContextMap }));
+    localStorage.setItem(LS_KEY_MODELS, JSON.stringify({ models: _fetchedModels, ctx: _modelContextMap, price: _modelPriceMap }));
   } catch {}
 }
 
@@ -397,6 +401,7 @@ function loadFetchedModelsCache() {
     const raw = JSON.parse(localStorage.getItem(LS_KEY_MODELS) || '{}');
     Object.assign(_fetchedModels, raw.models || {});
     Object.assign(_modelContextMap, raw.ctx || {});
+    Object.assign(_modelPriceMap, raw.price || {});
   } catch {}
 }
 
@@ -448,32 +453,29 @@ function estimateTokens(text) {
 }
 
 const MODEL_COSTS = {
-  // Google
-  'google/gemini-2.5-flash':           { in: 0.15,  out: 0.60 },
-  'google/gemini-2.5-flash-lite':      { in: 0.075, out: 0.30 },
-  'google/gemini-2.5-pro':             { in: 1.25,  out: 10.0 },
-  'google/gemini-2.0-flash-001':       { in: 0.10,  out: 0.40 },
-  'google/gemini-1.5-flash':           { in: 0.075, out: 0.30 },
-  // OpenAI
-  'openai/gpt-5-nano':                 { in: 0.15,  out: 0.60 },
-  'openai/gpt-5':                      { in: 5.00,  out: 25.0 },
-  'openai/gpt-4.1-nano':               { in: 0.10,  out: 0.40 },
-  'openai/gpt-4o-mini':                { in: 0.15,  out: 0.60 },
-  'openai/gpt-4o':                     { in: 2.50,  out: 10.0 },
-  'openai/gpt-oss-120b':               { in: 1.00,  out: 4.00 },
-  // DeepSeek
-  'deepseek/deepseek-v3.2':            { in: 0.14,  out: 0.28 },
-  'deepseek/deepseek-chat-v3-0324':    { in: 0.14,  out: 0.28 },
-  'deepseek/deepseek-chat':            { in: 0.14,  out: 0.28 },
-  'deepseek/deepseek-r1':              { in: 0.55,  out: 2.19 },
-  // xAI
-  'x-ai/grok-4':                       { in: 3.00,  out: 15.0 },
-  'x-ai/grok-4-fast':                  { in: 0.20,  out: 0.50 },
-  // Anthropic / Meta
-  'anthropic/claude-haiku-4.5':        { in: 0.80,  out: 4.00 },
-  'anthropic/claude-3-haiku':          { in: 0.25,  out: 1.25 },
-  'meta-llama/llama-3.3-70b-instruct:free': { in: 0, out: 0 },
-  'meta-llama/llama-4-scout:free':     { in: 0,     out: 0 },
+  // OpenRouter — ราคาจาก openrouter.ai/api/v1/models (2026-10-03) · กด 🔄 Fetch แล้วจะใช้ราคาล่าสุดแทน
+  'google/gemini-3.1-flash-lite':        { in: 0.25, out: 1.5 },
+  'google/gemini-3.5-flash-lite':        { in: 0.3, out: 2.5 },
+  'google/gemini-3-flash-preview':       { in: 0.5, out: 3 },
+  'google/gemini-3.5-flash':             { in: 1.5, out: 9 },
+  'google/gemini-2.5-flash':             { in: 0.3, out: 2.5 },
+  'google/gemini-2.5-flash-lite':        { in: 0.1, out: 0.4 },
+  'google/gemini-2.5-pro':               { in: 1.25, out: 10 },
+  'openai/gpt-5-nano':                   { in: 0.05, out: 0.4 },
+  'openai/gpt-5':                        { in: 1.25, out: 10 },
+  'openai/gpt-4.1-nano':                 { in: 0.1, out: 0.4 },
+  'openai/gpt-4o-mini':                  { in: 0.15, out: 0.6 },
+  'openai/gpt-4o':                       { in: 2.5, out: 10 },
+  'openai/gpt-oss-120b':                 { in: 0.037, out: 0.17 },
+  'deepseek/deepseek-v3.2':              { in: 0.28, out: 0.42 },
+  'deepseek/deepseek-chat-v3-0324':      { in: 0.29, out: 1.14 },
+  'deepseek/deepseek-chat':              { in: 0.2574, out: 1.0287 },
+  'deepseek/deepseek-r1':                { in: 0.7, out: 2.5 },
+  'x-ai/grok-4.3':                       { in: 1.25, out: 2.5 },
+  'x-ai/grok-4.7':                       { in: 2, out: 6 },
+  'anthropic/claude-haiku-4.5':          { in: 1, out: 5 },
+  'google/gemma-4-31b-it:free':          { in: 0, out: 0 },
+  'qwen/qwen3.8-27b:free':               { in: 0, out: 0 },
   // ── Direct providers (namespaced 'provider:model') ──
   'gemini:gemini-2.5-flash':           { in: 0.30,  out: 2.50 },
   'gemini:gemini-2.5-flash-lite':      { in: 0.10,  out: 0.40 },
@@ -494,7 +496,7 @@ const MODEL_COSTS = {
 
 function addCosts(inputTok, outputTok, model, provider) {
   const prov = provider || getProvider();
-  const rates = MODEL_COSTS[prov + ':' + model] || MODEL_COSTS[model] || { in: 0.1, out: 0.3 };  // fallback ใช้ค่ากลาง ไม่เกินจริง
+  const rates = MODEL_COSTS[prov + ':' + model] || (prov === 'openrouter' && _modelPriceMap[model]) || MODEL_COSTS[model] || { in: 0.1, out: 0.3 };  // fallback ใช้ค่ากลาง ไม่เกินจริง
   const usd = (inputTok / 1e6 * rates.in) + (outputTok / 1e6 * rates.out);
   // ─ Global cost ─
   S.costs.tokens.input += inputTok;

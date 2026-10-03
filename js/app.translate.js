@@ -64,7 +64,7 @@ function buildGlossaryStr(wsGlossary) {
   const entries = Object.entries(wsGlossary || {});
   if (!entries.length) return '(ไม่มี)';
   return entries.map(([k, v]) => {
-    const parts = [v.thai];
+    const parts = [fixAddressGender(k, v.thai)];   // แก้คำเรียกขานผิดเพศในคลังเดิมตอนส่งเข้า prompt
     if (v.type === 'character' && v.gender && v.gender !== 'neutral') {
       parts.push(`gender:${GENDER_MAP[v.gender] || v.gender}`);
       parts.push(PRONOUN_3RD[v.gender]);
@@ -653,6 +653,7 @@ ${proposals.map((x, i) => `#${i + 1}\nKOREAN:\n${korFor(x.k, 5)}\nTHAI (earlier 
 function sanitizeGlossaryEntry(entry) {
   if (!entry || /[\u3131-\u318e\uac00-\ud7a3\u4e00-\u9fff\u3040-\u30ff]/.test(String(entry.thai || ''))) return null;
   if (entry.type !== 'character' || !['male', 'female', 'neutral'].includes(entry.gender)) delete entry.gender;
+  entry.thai = fixAddressGender(entry.korean, entry.thai);
   // AI บางครั้งคืนชื่อซ้ำสองรอบ ("세피아 세피아" = "เซเปีย เซเปีย") → ยุบเหลือชื่อเดียว
   for (const f of ['korean', 'thai']) {
     const m = String(entry[f] || '').trim().match(/^(.+?)(?:\s+\1)+$/);
@@ -1266,6 +1267,13 @@ async function runQACheck() {
     const r = JSON.parse(txt.replace(/```json|```/g, '').trim());
     const msg = r.pass ? `✓ PASS (${r.score}/100): ${r.summary}` : `✗ FAIL (${r.score}/100): ${r.summary}`;
     showToast(msg, r.pass ? 'success' : 'error');
+    const st = document.getElementById('translationStats');
+    if (st) {
+      const issues = (Array.isArray(r.issues) ? r.issues : []).slice(0, 6)
+        .map(i => `• ${i.description || i.type || ''}${i.suggestion ? ' → ' + i.suggestion : ''}`);
+      st.style.whiteSpace = 'pre-wrap';
+      st.textContent = `QA ${msg}${issues.length ? '\n' + issues.join('\n') : ''}`;
+    }
   } catch (e) { showToast('QA ล้มเหลว: ' + e.message, 'error'); }
 }
 
@@ -1355,9 +1363,13 @@ async function testApiKey(provId) {
   if (!key) { result.textContent = '⚠ ใส่ key ก่อน'; result.style.color = 'var(--gold)'; return; }
   result.textContent = 'กำลังทดสอบ...'; result.style.color = 'var(--text-muted)';
   try {
-    const t = p.testEndpoint(key);
+    const t = (p.keyCheckEndpoint || p.testEndpoint)(key);
     const res = await fetch(t.url, { headers: t.headers });
-    if (res.ok) { result.textContent = '✓ Key ใช้งานได้'; result.style.color = '#4caf50'; }
+    if (res.ok) {
+      let extra = '';
+      try { const d = (await res.json())?.data; if (d && d.limit != null) extra = ` · เครดิตคงเหลือ $${(d.limit_remaining ?? (d.limit - (d.usage || 0))).toFixed(2)}`; } catch {}
+      result.textContent = '✓ Key ใช้งานได้' + extra; result.style.color = '#4caf50';
+    }
     else { result.textContent = `✗ Key ไม่ถูกต้อง (HTTP ${res.status})`; result.style.color = 'var(--crimson-light)'; }
   } catch { result.textContent = '✗ ทดสอบไม่สำเร็จ (เครือข่าย/CORS)'; result.style.color = 'var(--crimson-light)'; }
 }
@@ -1656,7 +1668,7 @@ function ctxRenderSummaries() {
         style="width:100%;box-sizing:border-box;background:var(--bg-deep);border:1px solid var(--border);
                border-radius:4px;padding:6px 8px;font-size:0.78rem;line-height:1.7;color:var(--text-secondary);
                resize:vertical;min-height:70px;font-family:inherit"
-        onchange="ctxUpdateSummary(${idx}, this.value)">${escHtml(s.text)}</textarea>
+        onchange="ctxUpdateSummary(${idx}, this.value)">${esc(s.text)}</textarea>
     </div>
   `).join('');
 }

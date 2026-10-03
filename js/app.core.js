@@ -341,7 +341,19 @@ Rules:
   • First-person Korean 나/저 does NOT indicate gender — look at surrounding context instead
   • CAUTION for chapter 1 / first appearance: If cues are ambiguous or mixed, assign "neutral" — it is BETTER to be neutral and correct later than to assign wrong gender permanently.
   • Only assign male/female when you are CONFIDENT from at least one clear signal above.
+- Forms of address carry the gender of the person ADDRESSED: 도련님/공자님 (young master, male) = คุณชาย · 아가씨/영애 (young lady, female) = คุณหนู · 부인 = ท่านหญิง/คุณนาย — never give a male form of address a female Thai word or vice versa
 - Return empty array [] if no new terms found`;
+
+// คำเรียกขานที่บอกเพศของ "คนที่ถูกเรียก" — AI คลังศัพท์เคยใส่ 도련님 = คุณหนู (ผิดเพศ) แล้วลามทุกตอน
+const ADDRESS_GENDER = [
+  { re: /^(도련님|공자님|도령님?|소공자님?|젊은 ?주인님)$/, bad: /คุณหนู|คุณหญิง|ท่านหญิง|คุณนาย/, thai: 'คุณชาย' },
+  { re: /^(아가씨|영애님?|공녀님?|아씨)$/, bad: /คุณชาย|ท่านชาย|นายน้อย/, thai: 'คุณหนู' },
+];
+function fixAddressGender(korean, thai) {
+  const k = String(korean || '').trim();
+  for (const a of ADDRESS_GENDER) if (a.re.test(k) && a.bad.test(String(thai || ''))) return a.thai;
+  return thai;
+}
 
 const CHAPTER_SUMMARY_PROMPT = `You are a Thai webnovel chapter summarizer. Summarize the key context from this Thai translation chapter.
 

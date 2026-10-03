@@ -1149,7 +1149,8 @@ function downloadBlob(blob, filename) {
   a.href = url; a.download = filename;
   document.body.appendChild(a); a.click();
   document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  // หน่วงการ revoke ไว้ — เผื่อเบราว์เซอร์มือถือบางตัวยังเริ่มดาวน์โหลดไม่ทันตอน revoke ทันทีหลัง click
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
 
 // ─── Utilities ───
@@ -1286,6 +1287,12 @@ function loadChapterSource(id) {
   if (!ch.sourceText) { showToast('ตอนนี้ไม่มีข้อความต้นฉบับ', 'error'); return; }
   document.getElementById('sourceText').value = ch.sourceText;
   updateSourceStats();
+  const tgt = document.getElementById('chapterSaveTarget');
+  if (tgt) tgt.value = ch.id;
+  if (ch.chunkProgress?.chunkSize) {   // มีงานแปลค้าง → ตั้ง chunk size เดิม (เหมือนปุ่ม ⚡ โหลดแปล ในหน้าตอน)
+    const cs = document.getElementById('chunkSize');
+    if (cs) cs.value = ch.chunkProgress.chunkSize;
+  }
   closeModal('modal-load-chapter');
   showToast(`โหลด "${ch.title}" แล้ว`, 'success');
 }
@@ -1513,6 +1520,8 @@ async function loadZip(arrayBuffer) {
 function htmlToText(html) {
   // Strip style/script blocks first
   let text = html
+    .replace(/<head[\s\S]*?<\/head>/gi, '')
+    .replace(/<title[\s\S]*?<\/title>/gi, '')
     .replace(/<style[\s\S]*?<\/style>/gi, '')
     .replace(/<script[\s\S]*?<\/script>/gi, '');
 
