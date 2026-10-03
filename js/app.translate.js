@@ -444,6 +444,113 @@ function applySpeakerFixes(thaiText, map) {
   return out;
 }
 
+// ═══════════════════════════════════════════════
+// ─── Gender Proofread (ตรวจเพศซ้ำหลังแปล — แก้ เขา/เธอ ในการบรรยาย) ───
+// ═══════════════════════════════════════════════
+// แผนที่ผู้พูดช่วยได้แค่บทพูด · ประโยคบรรยายที่ต้นฉบับละประธาน AI มักเติม "เขา" ให้ตัวละครหญิง
+// 1) local: หาย่อหน้าที่มีชื่อตัวละครเพศหนึ่ง แต่ใช้สรรพนามอีกเพศ (ในย่อหน้านั้นหรือก่อนหน้า)
+// 2) ส่งเฉพาะย่อหน้าเหล่านั้น + ต้นฉบับเกาหลีช่วงเดียวกันให้ AI ตรวจ
+// 3) รับคำแก้เฉพาะเมื่อเปลี่ยน "แค่คำบอกเพศ" — ถ้าลบคำบอกเพศออกแล้วข้อความต้องเหมือนเดิมทุกตัวอักษร
+const _GENDER_TOKENS_RE = /ของเขา|ของเธอ|ของนาง|เขา|เธอ|นาง|หล่อน|ครับผม|ครับ|ขอรับ|เจ้าค่ะ|ค่ะ|คะ|เพคะ|พ่ะย่ะค่ะ|กระผม|ดิฉัน|อิฉัน|ผม|ฉัน|คุณชาย|คุณหนู|ท่านชาย|ท่านหญิง|ลูกชาย|ลูกสาว/g;
+const _PRON_COMPOUND_RE = /ภูเขา|หุบเขา|เขาวงกต|ยอดเขา|เทือกเขา|เชิงเขา|ไหล่เขา|ตีนเขา|นางฟ้า|นางสาว|นางกำนัล|นางเอก|นางร้าย|นางพญา|นางสนม|นางใน|นางงาม|นางพยาบาล|นางแบบ|นางเงือก|นางไม้/g;
+
+function _stripGender(t) {
+  return String(t).replace(_PRON_COMPOUND_RE, m => '#'.repeat(m.length)).replace(_GENDER_TOKENS_RE, '').replace(/\s+/g, '');
+}
+
+// ทิศทางการแก้: 'female' ถ้าคำบอกเพศหญิงเพิ่ม/ชายลด, 'male' กลับกัน, null ถ้าไม่ชัด
+function _genderDirection(before, after) {
+  const cnt = (t, re) => (String(t).replace(_PRON_COMPOUND_RE, ' ').match(re) || []).length;
+  const F = /เธอ|นาง|หล่อน|ค่ะ|คะ|เจ้าค่ะ|เพคะ|ดิฉัน|คุณหนู|ท่านหญิง/g, M = /เขา|ครับ|ขอรับ|พ่ะย่ะค่ะ|ผม|กระผม|คุณชาย|ท่านชาย/g;
+  const d = (cnt(after, F) - cnt(before, F)) - (cnt(after, M) - cnt(before, M));
+  return d > 0 ? 'female' : d < 0 ? 'male' : null;
+}
+
+function _genderCandidates(thaiText, ws) {
+  const chars = (ws?.glossary || []).filter(g => g.type === 'character' && g.thai && (g.gender === 'male' || g.gender === 'female'));
+  if (!chars.length) return [];
+  const paras = thaiText.split('\n');
+  const out = [];
+  for (let k = 0; k < paras.length && out.length < 25; k++) {
+    const p = paras[k];
+    if (!p.trim()) continue;
+    const narr = p.replace(/[“"「‘][^“”"「」‘’]*[”"」’]/g, ' ').replace(_PRON_COMPOUND_RE, ' ');
+    const hasM = /เขา/.test(narr), hasF = /(เธอ|นาง|หล่อน)/.test(narr);
+    if (!hasM && !hasF) continue;
+    const ctx = (paras[k - 1] || '') + '\n' + p;
+    const f = chars.some(c => c.gender === 'female' && ctx.includes(c.thai));
+    const m = chars.some(c => c.gender === 'male' && ctx.includes(c.thai));
+    if ((hasM && f) || (hasF && m)) out.push(k);
+  }
+  return out;
+}
+
+// โมเดลตรวจเพศ: ต้องอ่านบริบทเก่งกว่าโมเดลแปลราคาถูก (Flash Lite แก้ผิดได้) → ค่าเริ่มต้นบน OpenRouter = Gemini 3 Flash Preview
+const DEFAULT_PROOFREAD_MODEL = 'google/gemini-3-flash-preview';
+function getProofreadModel(ws, translateModel) {
+  const v = ws?.settings?.proofreadModel;
+  if (v && v !== 'same') return v;
+  if (v === 'same') return translateModel;
+  return (ws?.settings?.aiProvider || 'openrouter') === 'openrouter' ? DEFAULT_PROOFREAD_MODEL : translateModel;
+}
+
+async function genderProofread(srcText, thaiText, model, ws = S.currentWs) {
+  const res = { text: thaiText, fixes: [] };
+  if (!speakerMapEnabled(ws) || !thaiText || !srcText) return res;
+  const cand = _genderCandidates(thaiText, ws);
+  if (!cand.length) return res;
+  const paras = thaiText.split('\n');
+  const kParas = srcText.split('\n');
+  const tNon = paras.map((p, i) => p.trim() ? i : -1).filter(i => i >= 0);
+  const kNon = kParas.map((p, i) => p.trim() ? i : -1).filter(i => i >= 0);
+  const korFor = k => {   // ย่อหน้าเกาหลีช่วงเดียวกัน (เทียบตามลำดับย่อหน้า ±1)
+    const r = tNon.indexOf(k) / Math.max(1, tNon.length - 1);
+    const c = Math.round(r * (kNon.length - 1));
+    return kNon.slice(Math.max(0, c - 2), c + 3).map(i => kParas[i]).join('\n');
+  };
+  const glossChars = (ws?.glossary || []).filter(g => g.type === 'character' && g.korean && (g.gender === 'male' || g.gender === 'female'));
+  const chars = glossChars.map(g => `- ${g.korean} = ${g.thai} (${g.gender === 'male' ? 'ชาย → เขา' : 'หญิง → เธอ/นาง'})`).join('\n');
+  const items = cand.map((k, n) => `#${n + 1}\nKOREAN:\n${korFor(k)}\nTHAI:\n${paras[k]}`).join('\n\n');
+  const prompt = `You proofread a Korean→Thai web-novel translation for GENDER errors only.
+
+CHARACTERS (gender is authoritative):
+${chars}
+
+For each item, read the Korean and check the Thai paragraph. Fix ONLY gendered words that refer to the wrong person:
+third-person pronouns (เขา ↔ เธอ/นาง), self-pronouns (ผม/ฉัน/ดิฉัน), polite particles (ครับ/ค่ะ/คะ), forms of address (คุณชาย/คุณหนู).
+When the Korean omits the subject, work out from context who it is before deciding.
+Do NOT change any other word, spelling or punctuation.
+
+Return ONLY JSON: [{"n":1,"refers_to":"Korean name (as in CHARACTERS) of the person each changed word refers to","thai":"corrected paragraph"}]
+— include only items that needed a fix ([] if none). If you are not sure, leave the item out.
+
+${items}`;
+  try {
+    const r = await callOpenRouter({ model: getProofreadModel(ws, model), temperature: 0, max_tokens: 8000, messages: [{ role: 'user', content: prompt }] });
+    const raw = (r.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
+    const arr = JSON.parse(raw.slice(raw.indexOf('['), raw.lastIndexOf(']') + 1) || '[]');
+    for (const e of Array.isArray(arr) ? arr : []) {
+      const k = cand[+e.n - 1];
+      if (k === undefined || typeof e.thai !== 'string') continue;
+      const before = paras[k], after = e.thai.trim();
+      if (!after || after === before.trim()) continue;
+      if (_stripGender(before) !== _stripGender(after)) continue;   // แก้เกินคำบอกเพศ → ไม่รับ
+      // ทิศทางที่แก้ (ไปทางหญิง/ชาย) ต้องตรงกับเพศของคนที่ AI บอกว่าสรรพนามหมายถึง — กัน AI แก้ "เธอ" ที่ถูกเป็น "เขา"
+      const who = String(e.refers_to || '').trim();
+      const g = who && glossChars.find(c => who.includes(c.korean) || c.korean.includes(who) || (c.thai && who.includes(c.thai)));
+      const dir = _genderDirection(before, after);
+      if (!g || !dir || dir !== g.gender) continue;
+      const lead = before.match(/^\s*/)[0];
+      paras[k] = lead + after;
+      res.fixes.push({ from: before.trim(), to: after });
+    }
+  } catch (e) {
+    console.warn('[genderProofread]', e);
+  }
+  res.text = paras.join('\n');
+  return res;
+}
+
 // gender ใช้ได้เฉพาะ type=character และต้องเป็นค่าที่รู้จัก — ใช้ร่วมกันทั้ง auto-glossary หลังแปลและแบบกดเอง
 // คืน null ถ้าคำแปลไทยมีอักษรเกาหลี/จีน/ญี่ปุ่นปน (เช่น "เซ피อา") — ห้ามเข้าคลัง ไม่งั้นจะลามไปทุกตอน
 function sanitizeGlossaryEntry(entry) {
@@ -649,6 +756,12 @@ async function translateAllStream(text) {
     // แก้คำลงท้าย/คำแทนตัวที่ผิดเพศผู้พูด (ตามแผนที่ผู้พูด)
     const spFix = applySpeakerFixes(fullText, spMap);
     if (spFix.fixes.length) { fullText = spFix.text; txtEl.textContent = fullText; }
+    // ตรวจเพศซ้ำในการบรรยาย (เขา/เธอ)
+    if (spMap) {
+      updateProgress(98, 'ตรวจเพศในคำแปล...');
+      const gp = await genderProofread(text, fullText, options.model);
+      if (gp.fixes.length) { fullText = gp.text; txtEl.textContent = fullText; spFix.fixes.push(...gp.fixes); }
+    }
 
     setStage('translate', 'done');
     setStage('done', 'done');
@@ -995,7 +1108,20 @@ async function translateChunked(text, options) {
     const _chunkChInfo = S.editingChapterId
       ? (() => { const c = S.currentWs?.chapters?.find(ch => ch.id === S.editingChapterId); return c ? { id: c.id, title: c.title, chapterNum: c.chapterNum } : null; })()
       : null;
-    const _fullTranslation = completedTranslations.join('\n\n');
+    let _fullTranslation = completedTranslations.join('\n\n');
+    // ตรวจเพศซ้ำในการบรรยาย (เขา/เธอ) ทั้งตอน
+    if (speakerMapEnabled() && extractSourceQuotes(text).length) {
+      const gp = await genderProofread(text, _fullTranslation, options.model);
+      if (gp.fixes.length) {
+        _fullTranslation = gp.text;
+        output.innerHTML = '';
+        const el = document.createElement('div'); el.className = 'segment-text'; el.style.whiteSpace = 'pre-wrap'; el.textContent = _fullTranslation;
+        output.appendChild(el);
+        const _gCh = S.editingChapterId && S.currentWs?.chapters?.find(ch => ch.id === S.editingChapterId);
+        if (_gCh) { _gCh.translation = _fullTranslation; lsSaveWorkspace(S.currentWs).catch(() => {}); }
+        document.getElementById('translationStats').textContent += ` · แก้เพศ ${gp.fixes.length} จุด`;
+      }
+    }
     autoExtractGlossaryAfterTranslation(text, options.model, _chunkChInfo, _fullTranslation);
     // Context Memory: generate summary (non-blocking)
     if (_chunkChInfo && _fullTranslation) {

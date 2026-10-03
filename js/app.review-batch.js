@@ -1051,6 +1051,10 @@ async function startBatchChapters() {
         const spFix2 = applySpeakerFixes(fullText, allMap);
         if (spFix2.fixes.length) { fullText = spFix2.text; spFixCount += spFix2.fixes.length; }
       }
+      if (fullText && speakerMapEnabled() && extractSourceQuotes(src).length) {
+        const gp = await genderProofread(src, fullText, model);
+        if (gp.fixes.length) { fullText = gp.text; spFixCount += gp.fixes.length; }
+      }
       ch.translation = fullText; ch.status = 'translated'; ch.wordCount = fullText.length; ch.updatedAt = Date.now();
       await lsSaveWorkspace(S.currentWs);
       addLog(log, `✓ #${ch.chapterNum||'?'} "${ch.title}" — ${fullText.length.toLocaleString()} ตัวอักษร${spFixCount ? ` · แก้ ครับ/ค่ะ ตามผู้พูด ${spFixCount} จุด` : ''}`, 'success');

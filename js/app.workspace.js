@@ -238,6 +238,8 @@ function renderWsSettings() {
   if (clRef) clRef.value = w.settings?.consistencySelfRef || 'auto';
   const smEl = document.getElementById('wsSpeakerMap');
   if (smEl) smEl.checked = w.settings?.speakerMap !== false;
+  const pmEl = document.getElementById('wsProofreadModel');
+  if (pmEl) pmEl.value = w.settings?.proofreadModel || ((w.settings?.aiProvider || 'openrouter') === 'openrouter' ? 'google/gemini-3-flash-preview' : 'same');
   renderPresetSelect();
   // Context Memory settings
   const ctx = wsGetContext(w);
@@ -267,6 +269,7 @@ async function saveWsSettings() {
     consistencyLock: !!document.getElementById('wsConsistencyLock')?.checked,
     consistencySelfRef: document.getElementById('wsConsistencySelfRef')?.value || 'auto',
     speakerMap: document.getElementById('wsSpeakerMap') ? document.getElementById('wsSpeakerMap').checked : true,
+    proofreadModel: document.getElementById('wsProofreadModel')?.value || S.currentWs.settings?.proofreadModel,
     batchChunkMode: document.getElementById('wsBatchChunkMode')?.value || 'off',
     batchChunkSize: Math.max(1000, Math.min(20000, parseInt(document.getElementById('wsBatchChunkSize')?.value) || 3000)),
   };

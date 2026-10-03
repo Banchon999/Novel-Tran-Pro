@@ -81,7 +81,9 @@ async function translateChapterCore(ch, {
   // แก้คำลงท้าย/คำแทนตัวที่ผิดเพศผู้พูด (ตามแผนที่ผู้พูด)
   const spFix = applySpeakerFixes(fullText, spMap);
   if (spFix.fixes.length) fullText = spFix.text;
-  ch.speakerFixes = spFix.fixes.length;
+  const gp = spMap ? await genderProofread(srcPrepared, fullText, useModel, ws) : { text: fullText, fixes: [] };
+  fullText = gp.text;
+  ch.speakerFixes = spFix.fixes.length + gp.fixes.length;
 
   ch.translation = fullText;
   ch.status      = 'translated';
