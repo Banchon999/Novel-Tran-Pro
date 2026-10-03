@@ -217,7 +217,12 @@ const _TH_DQ_RE     = /([“"「])([^“”"「」\n]{1,600})([”"」])/g;
 const _TH_ANY_RE    = /([“"「‘])([^“”"「」‘’\n]{1,600})([”"」’])/g;
 
 function extractSourceLines(text) {
-  return [...String(text || '').matchAll(_SRC_LINE_RE)].map(m => m[1] !== undefined ? { q: m[1], kind: 'dq' } : { q: m[2], kind: 'sq' });
+  const t = String(text || ''), len = Math.max(1, t.length);
+  return [...t.matchAll(_SRC_LINE_RE)].map(m => ({
+    q: m[1] !== undefined ? m[1] : m[2],
+    kind: m[1] !== undefined ? 'dq' : 'sq',
+    pos: m.index / len,              // ตำแหน่งสัมพัทธ์ในตอน (0–1) — ใช้จับคู่กับบทพูดไทย
+  }));
 }
 // มีบทพูด “…” อย่างน้อย 1 บรรทัดไหม (ไม่มี → ไม่ต้องเรียก AI ระบุผู้พูด)
 function extractSourceQuotes(text) {
@@ -270,13 +275,13 @@ async function buildSpeakerMap(text, model, ws = S.currentWs) {
     const raw = (res.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
     const arr = JSON.parse(raw.slice(raw.indexOf('['), raw.lastIndexOf(']') + 1));
     if (!Array.isArray(arr)) return null;
-    return lines.map(({ q, kind }, i) => {
+    return lines.map(({ q, kind, pos }, i) => {
       const e = arr.find(x => +x.q === i + 1) || {};
       const sp = String(e.speaker || '').trim();
       // ผู้พูดตรงกับตัวละครใน glossary ที่ระบุเพศ → ใช้เพศจาก glossary เสมอ
       const g = sp && glossChars.find(c => (c.gender === 'male' || c.gender === 'female') && (sp.includes(c.korean) || c.korean.includes(sp) || (c.thai && sp.includes(c.thai))));
       const gender = g ? g.gender : (e.gender === 'male' || e.gender === 'female' ? e.gender : 'unknown');
-      return { q, kind, speaker: sp || '?', gender };
+      return { q, kind, pos, speaker: sp || '?', gender };
     });
   } catch (e) {
     console.warn('[speakerMap]', e);
@@ -284,8 +289,16 @@ async function buildSpeakerMap(text, model, ws = S.currentWs) {
   }
 }
 
-function speakerMapPromptBlock(map) {
+function speakerMapPromptBlock(map, ws = S.currentWs) {
   if (!map?.length) return '';
+  // ตารางสรรพนามบุรุษที่ 3 ของตัวละครที่พูดในตอนนี้ (จาก glossary + แผนที่ผู้พูด) — กันบรรยาย "เขา" กับตัวละครหญิง
+  const sheet = new Map();
+  for (const g of (ws?.glossary || [])) if (g.type === 'character' && (g.gender === 'male' || g.gender === 'female') && map.some(m => m.speaker && (m.speaker.includes(g.korean) || g.korean.includes(m.speaker)))) sheet.set(g.thai || g.korean, g.gender);
+  for (const m of map) if ((m.gender === 'male' || m.gender === 'female') && m.speaker && m.speaker !== '-' && m.speaker !== '?' && ![...sheet.keys()].some(k => k.includes(m.speaker))) {
+    const g = (ws?.glossary || []).find(c => c.korean && (m.speaker.includes(c.korean) || c.korean.includes(m.speaker)));
+    sheet.set(g?.thai || m.speaker, m.gender);
+  }
+  const sheetTxt = [...sheet].map(([n, g]) => `${n} = ${g === 'male' ? 'ชาย → เขา' : 'หญิง → เธอ/นาง'}`).join(' · ');
   const end = g => g === 'male' ? 'ครับ/ขอรับ, self: ผม' : g === 'female' ? 'ค่ะ/คะ, self: ฉัน/ดิฉัน' : 'no gendered particle';
   const lines = map.filter(m => m.speaker && m.speaker !== '-' && m.speaker !== '?').map(m => {
     const q = m.q.length > 40 ? m.q.slice(0, 40) + '…' : m.q;
@@ -296,7 +309,9 @@ function speakerMapPromptBlock(map) {
 DIALOGUE SPEAKER MAP (pre-identified from the Korean source — one entry per quoted line, in order)
 ━━━━━━━━━━━━━━━━━━━━
 Use it for each line's speaker, self-pronoun and polite particle. Keep every quoted line as its own quote, in the same order, with the same quote marks (“…” stays “…”, ‘…’ stays ‘…’).
-${lines.join('\n')}`;
+${lines.join('\n')}${sheetTxt ? `
+
+3RD-PERSON PRONOUNS IN NARRATION (must match gender): ${sheetTxt}` : ''}`;
 }
 
 // แทรกแผนที่ผู้พูดก่อน {text} (ถ้า prompt ไม่มี {text} → ต่อท้าย)
@@ -353,18 +368,82 @@ function _fixByRegex(text, re, map, fixes) {
     return open + fixed + close;
   });
 }
+// จับคู่บทพูดไทยกับต้นฉบับตามตำแหน่งในเนื้อเรื่อง (DP แบบเรียงลำดับ ข้ามได้) — ใช้เมื่อจำนวนไม่ตรง
+// (AI รวม/แยกบทพูด หรือเปลี่ยน ‘…’ เป็น “…”) · รับเฉพาะคู่ที่ตำแหน่งใกล้กันและความยาวสมเหตุสมผล
+function _endClass(t) {
+  const x = String(t).trim();
+  return /[?？]$/.test(x) ? '?' : /[!！]$/.test(x) ? '!' : /(…|\.\.\.|⋯)$/.test(x) ? '…' : '.';
+}
+function _alignByPosition(src, th, names = []) {
+  const n = src.length, m = th.length, GAP = 0.035;
+  const cost = (i, j) => {
+    const s = src[i], t = th[j];
+    const r = t.len / Math.max(1, s.q.length);
+    let c = Math.abs(s.pos - t.pos);
+    if (r < 0.5 || r > 6) c += 0.05;                               // ความยาวไม่สมเหตุสมผล
+    if (_endClass(s.q) !== _endClass(t.b)) c += 0.012;             // ? ! … ท้ายประโยคไม่ตรง
+    for (const nm of names) {                                       // ชื่อตัวละครในบทพูด
+      const inS = s.q.includes(nm.korean), inT = nm.thai && t.b.includes(nm.thai);
+      if (inS && inT) c -= 0.008; else if (inS !== !!inT) c += 0.008;
+    }
+    return Math.max(0, c);
+  };
+  const D = Array.from({ length: n + 1 }, () => new Float64Array(m + 1));
+  const B = Array.from({ length: n + 1 }, () => new Uint8Array(m + 1));
+  for (let i = 1; i <= n; i++) { D[i][0] = i * GAP; B[i][0] = 1; }
+  for (let j = 1; j <= m; j++) { D[0][j] = j * GAP; B[0][j] = 2; }
+  for (let i = 1; i <= n; i++) for (let j = 1; j <= m; j++) {
+    const a = D[i - 1][j - 1] + cost(i - 1, j - 1), b = D[i - 1][j] + GAP, c = D[i][j - 1] + GAP;
+    if (a <= b && a <= c) { D[i][j] = a; B[i][j] = 0; } else if (b <= c) { D[i][j] = b; B[i][j] = 1; } else { D[i][j] = c; B[i][j] = 2; }
+  }
+  const raw = [];
+  for (let i = n, j = m; i > 0 || j > 0;) {
+    const k = B[i][j];
+    if (i > 0 && j > 0 && k === 0) { raw.push([j - 1, i - 1, cost(i - 1, j - 1)]); i--; j--; }
+    else if (i > 0 && (k === 1 || j === 0)) i--; else j--;
+  }
+  raw.reverse();
+  // รับเฉพาะคู่ที่มั่นใจ: ต้นทุนต่ำ และคู่ข้างเคียงก็จับคู่ติดกันแบบ 1:1 (ไม่มีการข้ามรอบตัว)
+  const pairs = new Map();
+  raw.forEach(([j, i, c], k) => {
+    const prev = raw[k - 1], next = raw[k + 1];
+    const tight = (!prev || (prev[0] === j - 1 && prev[1] === i - 1)) && (!next || (next[0] === j + 1 && next[1] === i + 1));
+    if (c < 0.02 && tight) pairs.set(j, i);
+  });
+  return pairs;
+}
+function _fixMatched(text, re, pairOf, map, fixes) {
+  let j = 0;
+  return text.replace(re, (all, open, body, close) => {
+    const si = pairOf(j++);
+    if (si === undefined) return all;
+    const m = map[si];
+    const fixed = fixQuoteGender(body, m.gender);
+    if (fixed !== body) fixes.push({ speaker: m.speaker, gender: m.gender, from: body, to: fixed });
+    return open + fixed + close;
+  });
+}
 function applySpeakerFixes(thaiText, map) {
   const out = { text: thaiText, fixes: [], aligned: false };
   if (!map?.length || !thaiText) return out;
   const dqMap = map.filter(m => m.kind !== 'sq'), sqMap = map.filter(m => m.kind === 'sq');
   const count = re => [...out.text.matchAll(re)].length;
   if (count(_TH_DQ_RE) === dqMap.length) {
+    // จำนวนตรง → จับคู่ตามลำดับแบบแน่นอน
     out.aligned = true;
-    out.text = _fixByRegex(out.text, _TH_DQ_RE, dqMap, out.fixes);
-    if (sqMap.length && count(_TH_SQ_RE) === sqMap.length) out.text = _fixByRegex(out.text, _TH_SQ_RE, sqMap, out.fixes);
-  } else if (count(_TH_ANY_RE) === map.length) {
-    out.aligned = true;
-    out.text = _fixByRegex(out.text, _TH_ANY_RE, map, out.fixes);
+    out.text = _fixMatched(out.text, _TH_DQ_RE, j => j, dqMap, out.fixes);
+    if (sqMap.length && count(_TH_SQ_RE) === sqMap.length) out.text = _fixMatched(out.text, _TH_SQ_RE, j => j, sqMap, out.fixes);
+    return out;
+  }
+  if (map.every(m => typeof m.pos === 'number')) {
+    const len = Math.max(1, out.text.length);
+    const th = [...out.text.matchAll(_TH_ANY_RE)].map(x => ({ pos: x.index / len, len: x[2].length, b: x[2] }));
+    const names = (S.currentWs?.glossary || []).filter(g => g.type === 'character' && g.korean && g.thai);
+    const pairs = _alignByPosition(map, th, names);
+    if (pairs.size) {
+      out.aligned = 'partial';
+      out.text = _fixMatched(out.text, _TH_ANY_RE, j => pairs.get(j), map, out.fixes);
+    }
   }
   return out;
 }
