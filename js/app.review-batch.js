@@ -996,6 +996,8 @@ async function startBatchChapters() {
       const csp = getStyleById(styleId)?.prompt || null;
       const batchPreset = getActivePreset(S.currentWs);
       const src = prepareSourceForTranslation(ch.sourceText);
+      // ลงคลังศัพท์ใหม่ของตอนนี้ก่อนแปล (เดิม batch ดึงคลังครั้งเดียวตอนจบ จากต้นฉบับแค่ 8,000 ตัวอักษรแรก)
+      await preExtractTerms(src, model, { id: ch.id, title: ch.title, chapterNum: ch.chapterNum });
       // ── แบ่ง chunk ตามโหมดที่ตั้งไว้ (off=ทั้งตอน, smart=เฉพาะตอนยาว, fixed=ทุกตอน) ──
       const chChunks = getBatchChunks(src, batchChunkMode, batchChunkSize);
       const multi = chChunks.length > 1;
@@ -1024,7 +1026,7 @@ async function startBatchChapters() {
         try {
           for (let attempt = 0; attempt < 2; attempt++) {   // ส่งต้นฉบับกลับมาโดยไม่แปล → ลองใหม่ 1 ครั้ง
             part = await aiStream(
-              { model, temperature: batchPreset.temperature ?? 0.65, max_tokens: Math.max(2000, Math.ceil(chunk.length * 2)), messages: [{role:'user',content:prompt}] },
+              { model, temperature: translateTemp(batchPreset.temperature ?? 0.65), max_tokens: Math.max(2000, Math.ceil(chunk.length * 2)), messages: [{role:'user',content:prompt}] },
               d => { part += d; }, (inp,out) => { inTok=inp; outTok=out; }, S.abortCtrl.signal
             );
             const se = stripSourceEcho(chunk, part);
@@ -1048,7 +1050,7 @@ async function startBatchChapters() {
         try {
           const fg = getSmartGlossary(src, S.glossaryData);
           const fgStr = buildGlossaryStr(fg.reduce((acc, g) => { acc[g.korean] = { thai: g.thai, type: g.type, note: g.note, gender: g.gender }; return acc; }, {}));
-          const pr = await callOpenRouter({ model, messages:[{role:'user',content:POLISH_PROMPT.replace('{glossary}',fgStr).replace('{text}',fullText)}], temperature:0.5, max_tokens:Math.max(4000,Math.ceil(fullText.length*1.2)) });
+          const pr = await callOpenRouter({ model, messages:[{role:'user',content:POLISH_PROMPT.replace('{glossary}',fgStr).replace('{text}',fullText)}], temperature:translateTemp(0.5), max_tokens:Math.max(4000,Math.ceil(fullText.length*1.2)) });
           fullText = pr.choices?.[0]?.message?.content?.trim() || fullText;
         } catch {}
         const spFix2 = applySpeakerFixes(fullText, allMap);
@@ -1063,6 +1065,8 @@ async function startBatchChapters() {
       addLog(log, `✓ #${ch.chapterNum||'?'} "${ch.title}" — ${fullText.length.toLocaleString()} ตัวอักษร${spFixCount ? ` · แก้ ครับ/ค่ะ ตามผู้พูด ${spFixCount} จุด` : ''}`, 'success');
       const _pHigh = particleHighCount(fullText);
       if (_pHigh) addLog(log, `  ↳ ⚠ ครับ/ค่ะ น่าสงสัย ${_pHigh} จุด — ดูใน 🚻 สรรพนาม/ครับ-ค่ะ (แท็บคลังศัพท์)`, 'error');
+      const _miss = glossaryMisses(ch.sourceText, fullText);
+      if (_miss.length) addLog(log, `  ↳ ⚠ ไม่ตรงคลังศัพท์ ${_miss.length} คำ: ${_miss.slice(0, 6).map(m => `${m.korean}→${m.thai}`).join(', ')}${_miss.length > 6 ? ' …' : ''}`, 'error');
 
       // ── สรุปตอนที่เพิ่งแปลเสร็จทันที เพื่อให้ตอนถัดไปใน batch ได้ context ต่อเนื่อง ──
       // (เฟส 1 สรุปได้เฉพาะตอนที่แปลก่อนเริ่ม batch — ตอนที่แปลใหม่ใน loop ต้องสรุปที่นี่)

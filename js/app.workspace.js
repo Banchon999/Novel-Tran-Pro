@@ -238,6 +238,10 @@ function renderWsSettings() {
   if (clRef) clRef.value = w.settings?.consistencySelfRef || 'auto';
   const smEl = document.getElementById('wsSpeakerMap');
   if (smEl) smEl.checked = w.settings?.speakerMap !== false;
+  const stEl = document.getElementById('wsStableTemp');
+  if (stEl) stEl.checked = w.settings?.stableTemp !== false;
+  wsTempHint();
+  renderStyleSheetFields(w);
   const pmEl = document.getElementById('wsProofreadModel');
   if (pmEl) pmEl.value = w.settings?.proofreadModel || ((w.settings?.aiProvider || 'openrouter') === 'openrouter' ? 'google/gemini-3-flash-preview' : 'same');
   renderPresetSelect();
@@ -250,6 +254,30 @@ function renderWsSettings() {
   if (ctxOptionsEl)  ctxOptionsEl.style.display = ctx.enabled ? 'block' : 'none';
   if (ctxMaxTokEl)   ctxMaxTokEl.value = String(ctx.maxTokens || 1500);
   ctxUpdateStatusBadge(w);
+}
+
+// ── คู่มือการแปล (Style Sheet) — ช่องกรอกตาม STYLE_SHEET_FIELDS ──
+function renderStyleSheetFields(w = S.currentWs) {
+  const box = document.getElementById('wsStyleSheetFields');
+  if (!box) return;
+  const ss = w?.styleSheet || {};
+  box.innerHTML = STYLE_SHEET_FIELDS.map(([k, label, , ph]) => `
+    <div>
+      <div style="font-size:0.74rem;color:var(--text-secondary);margin-bottom:3px">${esc(label)}</div>
+      <textarea id="ss-${k}" class="editor-ta" rows="3" style="min-height:58px;font-size:0.8rem" placeholder="${esc(ph)}">${esc(ss[k] || '')}</textarea>
+    </div>`).join('');
+}
+function readStyleSheetFields() {
+  const out = {};
+  for (const [k] of STYLE_SHEET_FIELDS) { const v = document.getElementById('ss-' + k)?.value.trim(); if (v) out[k] = v; }
+  return out;
+}
+// คำเตือน temperature สูง (เมื่อไม่ได้เปิดแปลแบบคงที่)
+function wsTempHint() {
+  const t = parseFloat(document.getElementById('wsTemp')?.value);
+  const stable = document.getElementById('wsStableTemp')?.checked;
+  const el = document.getElementById('wsTempWarn');
+  if (el) el.style.display = (!stable && t > 0.5) ? 'block' : 'none';
 }
 
 async function saveWsSettings() {
@@ -269,10 +297,12 @@ async function saveWsSettings() {
     consistencyLock: !!document.getElementById('wsConsistencyLock')?.checked,
     consistencySelfRef: document.getElementById('wsConsistencySelfRef')?.value || 'auto',
     speakerMap: document.getElementById('wsSpeakerMap') ? document.getElementById('wsSpeakerMap').checked : true,
+    stableTemp: document.getElementById('wsStableTemp') ? document.getElementById('wsStableTemp').checked : true,
     proofreadModel: document.getElementById('wsProofreadModel')?.value || S.currentWs.settings?.proofreadModel,
     batchChunkMode: document.getElementById('wsBatchChunkMode')?.value || 'off',
     batchChunkSize: Math.max(1000, Math.min(20000, parseInt(document.getElementById('wsBatchChunkSize')?.value) || 3000)),
   };
+  if (document.getElementById('wsStyleSheetFields')) S.currentWs.styleSheet = readStyleSheetFields();
   const presetSel = document.getElementById('wsPresetSelect');
   if (presetSel) S.currentWs.presetId = presetSel.value || (S.currentWs.presets?.[0]?.id || '');
   await lsSaveWorkspace(S.currentWs);
