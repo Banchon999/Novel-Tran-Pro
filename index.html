@@ -341,7 +341,12 @@
           </div>
           <div class="sf-group">
             <div class="sf-label">Temperature <span id="wsTempVal">0.7</span></div>
-            <input type="range" id="wsTemp" min="0" max="1" step="0.1" value="0.7" class="range-input" oninput="document.getElementById('wsTempVal').textContent=this.value"/>
+            <input type="range" id="wsTemp" min="0" max="1" step="0.1" value="0.7" class="range-input" oninput="document.getElementById('wsTempVal').textContent=this.value;wsTempHint()"/>
+            <label class="toggle-mini" style="gap:8px;cursor:pointer;margin-top:6px">
+              <input type="checkbox" id="wsStableTemp" checked onchange="wsTempHint()"/>
+              <span style="font-size:0.78rem;color:var(--text-secondary)">🎯 แปลแบบคงที่ — ตอนแปลใช้ temperature ไม่เกิน 0.3 ให้เลือกคำเหมือนกันทุกตอน (แนะนำ)</span>
+            </label>
+            <div id="wsTempWarn" style="display:none;font-size:0.70rem;color:var(--crimson-light);margin-top:4px">⚠ Temperature สูงกว่า 0.5 → AI สุ่มเลือกคำต่างกันในแต่ละตอน (ทับศัพท์บ้าง แปลบ้าง) — แนะนำเปิด "แปลแบบคงที่"</div>
           </div>
           <div class="sf-group">
             <div class="sf-label">ความยาว Context จากตอน/chunk ก่อนหน้า</div>
@@ -405,6 +410,20 @@
               </div>
               <div style="font-size:0.70rem;color:var(--text-muted);margin-top:6px">เมื่อต้นฉบับไม่ระบุสรรพนาม จะใช้คำที่เลือกนี้คงที่ตลอดทั้งตอน · "อัตโนมัติ" = อิงเพศตัวละครจาก glossary (male→ผม, female→ฉัน)</div>
             </div>
+          </div>
+
+          <!-- ── คู่มือการแปลของนิยาย (Style Sheet + Voice) ── -->
+          <div class="sf-group" style="border-top:1px solid var(--border);padding-top:10px;margin-top:2px">
+            <div class="sf-label" style="margin-bottom:6px">
+              📘 คู่มือการแปลของนิยาย
+              <span style="font-size:0.70rem;color:var(--text-muted);font-weight:400"> — การตัดสินใจที่ AI ต้องยึดทุกตอน ให้อ่านเหมือนนักแปลคนเดียว</span>
+            </div>
+            <div id="wsStyleSheetFields" style="display:flex;flex-direction:column;gap:8px"></div>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px">
+              <button class="btn btn-secondary btn-sm" id="wsStyleDraftBtn" onclick="draftStyleSheet()">🤖 ร่างคู่มือจากตอนที่แปลแล้ว</button>
+              <span id="wsStyleDraftStatus" style="font-size:0.72rem;color:var(--text-muted)"></span>
+            </div>
+            <div style="font-size:0.70rem;color:var(--text-muted);margin-top:6px">ช่องที่เว้นว่างจะไม่ถูกส่งให้ AI · AI ร่างเติมเฉพาะช่องที่ว่าง → ตรวจ/แก้แล้วกด 💾 บันทึก ด้านล่าง · ใช้กับทุกการแปล (แท็บแปล, Batch, อ่าน/แก้ไข, อ่านเต็มจอ)</div>
           </div>
 
           <!-- ── Speaker Map (ระบุผู้พูดก่อนแปล) ── -->
