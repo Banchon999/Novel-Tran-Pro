@@ -204,7 +204,8 @@ ${contextStr}`);
 
 function buildTranslatePrompt({ sourceText, glossaryStr = '', contextStr = '', styleNote = '', ws = null, mtlDraft = '', speakerMap = null }) {
   const preset = getActivePreset(ws);
-  return applyContext(applySpeakerMap(applyParticleRules(applyStyleSheet(applyConsistencyLock(preset.systemPrompt, ws), ws)), speakerMap), contextStr)
+  // langify ทำท้ายสุด: บล็อกกฎที่แทรกภายหลัง (ครับ/ค่ะ, เพศ) มีตัวอย่างภาษาเกาหลี — ตัดออกเมื่อต้นฉบับไม่ใช่เกาหลี
+  return langify(applyContext(applySpeakerMap(applyParticleRules(applyStyleSheet(applyConsistencyLock(applyLangNotes(preset.systemPrompt, ws), ws), ws)), speakerMap), contextStr), ws)
     .replace('{style_note}', styleNote ? `STYLE GUIDE:\n${styleNote}\n` : '')
     .replace('{glossary}',   glossaryStr || '(ไม่มี)')
     .replace('{context}',   contextStr)
@@ -299,6 +300,10 @@ function looksIncomplete(src, out) {
 // AI ส่งต้นฉบับกลับมาโดยไม่แปล? (อักษรเกาหลี/จีน/ญี่ปุ่นเกิน 30% ของตัวอักษรทั้งหมด)
 function looksUntranslated(text) {
   const t = String(text || '');
+  if (getSourceLang().code === 'en') {   // ต้นฉบับอังกฤษ: อักษรละตินเกินครึ่ง = ไม่ได้แปล
+    const lat = (t.match(/[A-Za-z]/g) || []).length, th = (t.match(/[\u0e00-\u0e7f]/g) || []).length;
+    return lat > 200 && lat / Math.max(1, lat + th) > 0.5;
+  }
   const cjk = (t.match(/[\uac00-\ud7a3\u3131-\u318e\u4e00-\u9fff\u3040-\u30ff]/g) || []).length;
   const thai = (t.match(/[\u0e00-\u0e7f]/g) || []).length;
   return cjk > 50 && cjk / Math.max(1, cjk + thai) > 0.3;
@@ -311,8 +316,9 @@ function stripSourceEcho(src, out) {
   const norm = s => String(s).replace(/\s+/g, '');
   const SRC = norm(src);
   let removed = 0;
+  const srcRe = getSourceLang().scriptG;   // เกาหลี/จีน/ละติน ตามภาษาต้นฉบับของเรื่อง
   const kept = String(out || '').split('\n').filter(l => {
-    const h = (l.match(/[\uac00-\ud7a3]/g) || []).length, th = (l.match(/[\u0e00-\u0e7f]/g) || []).length;
+    const h = (l.match(srcRe) || []).length, th = (l.match(/[\u0e00-\u0e7f]/g) || []).length;
     if (h > 3 && h > th && SRC.includes(norm(l))) { removed++; return false; }
     return true;
   });
@@ -393,8 +399,8 @@ Rules:
 
 // คำเรียกขานที่บอกเพศของ "คนที่ถูกเรียก" — AI คลังศัพท์เคยใส่ 도련님 = คุณหนู (ผิดเพศ) แล้วลามทุกตอน
 const ADDRESS_GENDER = [
-  { re: /^(도련님|공자님|도령님?|소공자님?|젊은 ?주인님)$/, bad: /คุณหนู|คุณหญิง|ท่านหญิง|คุณนาย/, thai: 'คุณชาย' },
-  { re: /^(아가씨|영애님?|공녀님?|아씨)$/, bad: /คุณชาย|ท่านชาย|นายน้อย/, thai: 'คุณหนู' },
+  { re: /^(도련님|공자님|도령님?|소공자님?|젊은 ?주인님|公子|少爷|少主|young (?:master|lord))$/i, bad: /คุณหนู|คุณหญิง|ท่านหญิง|คุณนาย/, thai: 'คุณชาย' },
+  { re: /^(아가씨|영애님?|공녀님?|아씨|小姐|young lady|miss)$/i, bad: /คุณชาย|ท่านชาย|นายน้อย/, thai: 'คุณหนู' },
 ];
 // ข้อความแบบ "도련님 = คุณหนู" ในคู่มือการแปล → แก้คำไทยให้ตรงเพศ (ใช้กับคู่มือที่ AI ร่าง/ผู้ใช้เขียน)
 function fixAddressGenderText(text) {
@@ -562,3 +568,111 @@ async function migrateFromLocalStorage() {
 
 function genId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
 
+
+// ═══════════════════════════════════════════════
+// ─── ภาษาต้นฉบับ (เกาหลี / จีน / อังกฤษ) ───
+// ws.settings.sourceLang — ไม่ได้ตั้ง → เดาจากต้นฉบับของตอนในเรื่อง (นิยายเก่า = เกาหลี)
+// prompt ทุกตัวเขียนสำหรับเกาหลี → langify(): เปลี่ยนชื่อภาษา + ตัดบรรทัดตัวอย่างภาษาเกาหลีออก + เติมกฎของภาษานั้น
+// ═══════════════════════════════════════════════
+const SOURCE_LANGS = {
+  ko: { code: 'ko', name: 'Korean',  th: 'เกาหลี', short: 'KO', script: /[가-힣]/,  scriptG: /[가-힣]/g,
+        placeholder: 'วางข้อความภาษาเกาหลีที่นี่...' },
+  zh: { code: 'zh', name: 'Chinese', th: 'จีน',    short: 'ZH', script: /[一-鿿㐀-䶿]/, scriptG: /[一-鿿㐀-䶿]/g,
+        placeholder: 'วางข้อความภาษาจีนที่นี่...' },
+  en: { code: 'en', name: 'English', th: 'อังกฤษ', short: 'EN', script: /[A-Za-z]/, scriptG: /[A-Za-z]/g,
+        placeholder: 'Paste English text here... (วางข้อความภาษาอังกฤษ)' },
+};
+
+// เดาภาษาจากตัวอักษรที่พบมากสุด (คานะญี่ปุ่นยังไม่รองรับ → null)
+function detectSourceLang(text) {
+  const t = String(text || '').slice(0, 6000);
+  const n = re => (t.match(re) || []).length;
+  const ko = n(/[가-힣]/g), kana = n(/[぀-ヿ]/g), han = n(/[一-鿿㐀-䶿]/g), lat = n(/[A-Za-z]/g);
+  if (ko >= 20 && ko >= han) return 'ko';
+  if (kana >= 20 && kana * 3 >= han) return null;
+  if (han >= 20) return 'zh';
+  if (lat >= 80) return 'en';
+  return null;
+}
+
+function getSourceLang(ws = (typeof S !== 'undefined' ? S.currentWs : null)) {
+  const code = ws?.settings?.sourceLang;
+  if (SOURCE_LANGS[code]) return SOURCE_LANGS[code];
+  let sample = (ws?.chapters || []).filter(c => c.sourceText).slice(0, 3).map(c => c.sourceText.slice(0, 2000)).join('\n');
+  // ยังไม่มีตอน → ดูจากช่องต้นฉบับในแท็บแปล
+  if (!sample && typeof document !== 'undefined') sample = document.getElementById('sourceText')?.value || '';
+  return SOURCE_LANGS[detectSourceLang(sample)] || SOURCE_LANGS.ko;
+}
+
+// กฎเฉพาะภาษา — ใส่ใน prompt แปล และ prompt สกัดคำ
+const LANG_NOTES = {
+  zh: {
+    translate: `━━━━━━━━━━━━━━━━━━━━
+SOURCE LANGUAGE: CHINESE (Chinese → Thai web novel)
+━━━━━━━━━━━━━━━━━━━━
+• Names: transliterate from Mandarin the way Thai publishers of Chinese novels do (林动 → หลินต้ง, 苏柔 → ซูโหรว). Never leave Chinese characters in the Thai.
+• Sects, realms, techniques, artifacts, places: follow the glossary; if absent, translate the meaning in the established Thai จีนกำลังภายใน style (宗 → สำนัก, 阁 → หอ, 境 → ขอบเขต/ขั้น, 丹 → โอสถ/ยาเม็ด) and keep it identical every time.
+• Forms of address follow the gender of the person ADDRESSED: 公子/少爷/少主 → คุณชาย (male) · 小姐/姑娘 → คุณหนู/แม่นาง (female) — never call a male คุณหนู or a female คุณชาย.
+• Other forms of address: 师兄 ศิษย์พี่ · 师弟 ศิษย์น้อง · 师姐 ศิษย์พี่หญิง · 师妹 ศิษย์น้องหญิง · 师父/师尊 ท่านอาจารย์ · 前辈 ผู้อาวุโส · 公子 คุณชาย · 姑娘/小姐 แม่นาง/คุณหนู · 大人 ใต้เท้า.
+• 他 = male (เขา) · 她 = female (นาง/เธอ, follow the style already used) · Chinese has no polite particles: choose ครับ/ค่ะ (or none) from the speaker's gender and the situation.
+• Idioms (成语) and cultivation jargon: render the meaning naturally in Thai; do not translate word by word.`,
+    glossary: `- Gender cues (Chinese): 他/男/哥/兄/师兄/父/爷/公子/少爷/王/皇帝 = male | 她/女/姐/妹/师姐/师妹/母/娘/姑娘/小姐/公主/皇后 = female
+- Names: Thai transliteration from Mandarin (林动 = หลินต้ง); sects/realms/techniques: meaning-based Thai in the wuxia/xianxia tradition (天剑宗 = สำนักกระบี่สวรรค์, 筑基境 = ขอบเขตสร้างรากฐาน)
+- Terms are usually 2–6 characters with no spaces; extract the full term exactly as it appears in the text`,
+  },
+  en: {
+    translate: `━━━━━━━━━━━━━━━━━━━━
+SOURCE LANGUAGE: ENGLISH (English → Thai web novel)
+━━━━━━━━━━━━━━━━━━━━
+• Translate meaning, not word order: restructure English sentences into natural Thai prose; avoid "ถูก…" passives and literal "มัน" unless natural.
+• Names: Thai transliteration following the glossary (keep one spelling); titles Mr./Lady/Sir/Lord/Your Majesty → นาย/เลดี้ หรือ ท่านหญิง/เซอร์/ท่านลอร์ด/ฝ่าบาท as fits the setting.
+• Forms of address follow the gender of the person ADDRESSED: "Young master"/"Young lord" → คุณชาย (male) · "Young lady"/"Miss" → คุณหนู (female) — never call a male คุณหนู or a female คุณชาย.
+• he/him/his = male (เขา) · she/her = female (เธอ/นาง) · English has no polite particles: choose ครับ/ค่ะ (or none) from the speaker's gender and the situation.
+• Keep system/status-window text in [ ] and game terms consistent with the glossary (Level, Skill, Status → เลเวล, สกิล, สเตตัส unless the glossary says otherwise).
+• Do not leave English words in the Thai unless they are proper nouns the glossary keeps in English.`,
+    glossary: `- Gender cues (English): he/him/his/Mr/Sir/Lord/King/Prince/brother/father = male | she/her/Ms/Mrs/Miss/Lady/Queen/Princess/sister/mother = female
+- Extract proper nouns (characters, places, organizations, skills, items, titles) and recurring genre/system terms — not common English words
+- Keep the English term exactly as written (original capitalization)`,
+  },
+};
+
+// เปลี่ยน prompt ที่เขียนสำหรับเกาหลี → ภาษาต้นฉบับของเรื่อง
+// dropKorean: ตัดบรรทัดที่มีตัวอักษรเกาหลี (ตัวอย่าง/กฎเฉพาะเกาหลี) — ใช้กับ "แม่แบบ" ก่อนใส่ข้อความจริงเท่านั้น
+function langify(tpl, ws, { dropKorean = true } = {}) {
+  const L = getSourceLang(ws);
+  if (L.code === 'ko' || typeof tpl !== 'string') return tpl;
+  let t = tpl;
+  if (dropKorean) t = t.split('\n').filter(l => !/[가-힣]/.test(l) || /\{[a-z_]+\}/.test(l)).join('\n');
+  return t.replace(/\bKOREAN\b/g, L.name.toUpperCase()).replace(/\bKorean\b/g, L.name)
+          .replace(/เกาหลี/g, L.th).replace(/\[KO\]/g, `[${L.short}]`);
+}
+
+function applyLangNotes(systemPrompt, ws) {
+  const L = getSourceLang(ws);
+  const note = LANG_NOTES[L.code]?.translate;
+  if (!note || typeof systemPrompt !== 'string' || systemPrompt.includes('SOURCE LANGUAGE:')) return systemPrompt;
+  return injectPromptBlock(systemPrompt, note);
+}
+
+// prompt สกัดคำ: แปลงภาษา + กฎเฉพาะภาษา (ใส่ก่อนบรรทัด "Return empty array")
+function langifyGlossaryPrompt(tpl, ws) {
+  const L = getSourceLang(ws);
+  let t = langify(tpl, ws);
+  const extra = LANG_NOTES[L.code]?.glossary;
+  if (extra && !t.includes(extra)) {
+    const i = t.lastIndexOf('- Return empty array');
+    t = i >= 0 ? t.slice(0, i) + extra + '\n' + t.slice(i) : t + '\n' + extra;
+  }
+  return t;
+}
+
+// AI บางตัวเปลี่ยนชื่อ key ตามภาษา ("chinese"/"source"/"term" แทน "korean") → เดิมถูกทิ้งหมดแล้วขึ้น "ไม่พบคำ"
+const _TERM_KEYS = ['korean', 'source', 'original', 'chinese', 'english', 'japanese', 'term', 'word', 'name', 'zh', 'en', 'ko', 'src', 'source_term', 'sourceTerm'];
+const _THAI_KEYS = ['thai', 'th', 'translation', 'thai_translation', 'thaiTranslation', 'target'];
+function normalizeTermKeys(t) {
+  if (!t || typeof t !== 'object') return t;
+  if (!t.korean) for (const k of _TERM_KEYS) if (typeof t[k] === 'string' && t[k].trim()) { t.korean = t[k].trim(); break; }
+  if (!t.thai) for (const k of _THAI_KEYS) if (typeof t[k] === 'string' && t[k].trim()) { t.thai = t[k].trim(); break; }
+  if (typeof t.korean === 'string') t.korean = t.korean.trim();
+  return t;
+}

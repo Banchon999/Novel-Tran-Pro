@@ -269,7 +269,7 @@ async function buildSpeakerMap(text, model, ws = S.currentWs) {
   const glossChars = (ws?.glossary || []).filter(g => g.type === 'character' && g.korean);
   const chars = glossChars.filter(g => text.includes(g.korean))
     .map(g => `- ${g.korean} = ${g.thai}${g.gender === 'male' || g.gender === 'female' ? ` (${g.gender})` : ''}`).join('\n') || '(none)';
-  const prompt = SPEAKER_MAP_PROMPT
+  const prompt = langify(SPEAKER_MAP_PROMPT, ws)
     .replace('{characters}', chars)
     .replace('{n}', String(lines.length))
     .replace('{text}', text)
@@ -291,8 +291,8 @@ async function buildSpeakerMap(text, model, ws = S.currentWs) {
     if (!Array.isArray(arr)) return null;
     // ชื่อที่ยังไม่อยู่ในคลังศัพท์ → ให้ตัวแปลมีตัวสะกดไทย (ตอนแรกของเรื่องคลังว่าง → โมเดลมักทิ้งชื่อเกาหลีไว้ เช่น "อา리아")
     const known = new Set(glossChars.map(g => g.korean));
-    names = names.filter(n => n && typeof n.korean === 'string' && typeof n.thai === 'string' && n.korean.trim() && n.thai.trim()
-      && !known.has(n.korean.trim()) && text.includes(n.korean.trim()) && !/[\uac00-\ud7a3\u3131-\u318e]/.test(n.thai))
+    names = names.map(normalizeTermKeys).filter(n => n && typeof n.korean === 'string' && typeof n.thai === 'string' && n.korean.trim() && n.thai.trim()
+      && !known.has(n.korean.trim()) && text.includes(n.korean.trim()) && !/[\uac00-\ud7a3\u3131-\u318e\u4e00-\u9fff]/.test(n.thai))
       .slice(0, 20).map(n => ({ korean: n.korean.trim(), thai: n.thai.trim(), gender: n.gender === 'male' || n.gender === 'female' ? n.gender : 'unknown' }));
     const out = lines.map(({ q, kind, pos }, i) => {
       const e = arr.find(x => +x.q === i + 1) || {};
@@ -398,6 +398,7 @@ function fixQuoteGender(q, gender) {
 // ชื่อเกาหลีหลุดมาในคำแปล ("레온มองลงไป") → แทนด้วยชื่อไทยจากคลังศัพท์/แผนที่ผู้พูด (เฉพาะชื่อเต็มที่ไม่ติดอักษรเกาหลีอื่น)
 function repairHangulNames(thaiText, map, ws = S.currentWs) {
   const t = String(thaiText || '');
+  if (getSourceLang(ws).code === 'zh') return _repairHanNames(t, map, ws);
   if (!/[\uac00-\ud7a3]/.test(t)) return { text: t, fixes: [] };
   const pairs = new Map();
   for (const g of (ws?.glossary || [])) if (g.korean && g.thai && !/[\uac00-\ud7a3]/.test(g.thai)) pairs.set(g.korean, g.thai);
@@ -410,6 +411,20 @@ function repairHangulNames(thaiText, map, ws = S.currentWs) {
     if (m && pairs.has(m[1])) { fixes.push({ from: run, to: pairs.get(m[1]), name: true }); return pairs.get(m[1]); }
     return run;
   });
+  return { text, fixes };
+}
+
+// ต้นฉบับจีน: ชื่อ/คำจีนหลุดมาในคำแปล ("林动มองไป") → แทนด้วยคำไทยจากคลัง/แผนที่ผู้พูด (คำยาวก่อน)
+function _repairHanNames(t, map, ws) {
+  if (!/[\u4e00-\u9fff]/.test(t)) return { text: t, fixes: [] };
+  const pairs = new Map();
+  for (const g of (ws?.glossary || [])) if (g.korean && g.thai && /[\u4e00-\u9fff]/.test(g.korean) && !/[\u4e00-\u9fff]/.test(g.thai)) pairs.set(g.korean, g.thai);
+  for (const n of (map?.names || [])) if (!pairs.has(n.korean)) pairs.set(n.korean, n.thai);
+  const fixes = [];
+  let text = t;
+  for (const [k, v] of [...pairs].sort((a, b) => b[0].length - a[0].length)) {
+    if (text.includes(k)) { fixes.push({ from: k, to: v, name: true }); text = text.split(k).join(v); }
+  }
   return { text, fixes };
 }
 
@@ -601,7 +616,7 @@ ${items}`;
   const findChar = who => { who = String(who || '').trim(); return who && glossChars.find(x => who.includes(x.korean) || x.korean.includes(who) || (x.thai && who.includes(x.thai))); };
   try {
     // รอบ 1: เสนอคำแก้
-    const r = await callOpenRouter({ model: pModel, temperature: 0, max_tokens: 8000, messages: [{ role: 'user', content: prompt }] });
+    const r = await callOpenRouter({ model: pModel, temperature: 0, max_tokens: 8000, messages: [{ role: 'user', content: langify(prompt, ws) }] });
     const raw = (r.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
     const arr = JSON.parse(raw.slice(raw.indexOf('['), raw.lastIndexOf(']') + 1) || '[]');
     const proposals = [];
@@ -635,7 +650,7 @@ ${chars}
 Return ONLY JSON: [{"n":1,"reason":"one short sentence","person":"Korean name from CHARACTERS, or unknown"}]
 
 ${proposals.map((x, i) => `#${i + 1}\nKOREAN:\n${korFor(x.k, 5)}\nTHAI (earlier lines):\n${thaiBefore(x.k)}\nTHAI (marked line):\n${x.marked}`).join('\n\n')}`;
-    const v = await callOpenRouter({ model: pModel, temperature: 0, max_tokens: 4000, messages: [{ role: 'user', content: vPrompt }] });
+    const v = await callOpenRouter({ model: pModel, temperature: 0, max_tokens: 4000, messages: [{ role: 'user', content: langify(vPrompt, ws) }] });
     const vraw = (v.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
     const varr = JSON.parse(vraw.slice(vraw.indexOf('['), vraw.lastIndexOf(']') + 1) || '[]');
     proposals.forEach((x, i) => {
@@ -695,7 +710,54 @@ CHAPTER SAMPLES ([KO] Korean source, [TH] existing Thai translation if any):
 const _KO_PARTICLE_RE = /(에게서|께서는|께서|에서는|에서|에게는|에게|한테|으로는|으로|로서|부터|까지|처럼|보다|이라는|라는|이라고|라고|이란|란|과는|와는|과|와|은|는|이|가|을|를|의|에는|에|도|만|로)$/;
 const _KO_VERBISH_RE = /(다|요|고|며|면|지만|는데|니까|면서|어서|아서|았|었|겠|했|해|하게|하는|하고|한다|된다|된|던|죠|까|네|군|자)$/;
 const _KO_STOP = new Set('그녀 그는 그것 이것 저것 우리 자신 정말 지금 다시 그리고 하지만 그런데 그래서 무슨 어떻게 이렇게 그렇게 아니 순간 하나 모두 이미 아직 조금 사람 생각 때문 정도 모습 얼굴 목소리 시작 앞으로 그대로 마치 역시 이제 오늘 내가 네가 당신 너무 아주 가장 바로 모든 어느 누구 무엇 여기 거기 저기 그때 이번 다음 하나 둘'.split(' '));
-function sourceTermStats(chapters, glossary = [], limit = 60) {
+function sourceTermStats(chapters, glossary = [], limit = 60, lang = getSourceLang().code) {
+  if (lang === 'zh') return _rankTermStats(_zhTermTally(chapters), chapters, glossary, limit);
+  if (lang === 'en') return _rankTermStats(_enTermTally(chapters), chapters, glossary, limit);
+  return _koTermStats(chapters, glossary, limit);
+}
+// จีน: ไม่มีเว้นวรรค → นับ n-gram 2–4 ตัวอักษร (ตัดที่มีคำไวยากรณ์ เช่น 的/了/是) และทิ้งชิ้นส่วนที่อยู่ในคำยาวกว่าซึ่งพบเกือบเท่ากัน
+const _ZH_FUNC = /[的了着是在不这那我你他她它们也就都很和与之而把被从对向到说道看来去上下中个一有没还又再已吗呢吧啊呀么啦得地过给让将会能要可以]/;
+function _zhTermTally(chapters) {
+  const tally = new Map();
+  (chapters || []).filter(c => c?.sourceText?.trim()).forEach((c, i) => {
+    for (const run of String(c.sourceText).match(/[\u4e00-\u9fff]{2,}/g) || []) {
+      for (let n = 2; n <= 4; n++) for (let k = 0; k + n <= run.length; k++) {
+        const w = run.slice(k, k + n);
+        if (_ZH_FUNC.test(w)) continue;
+        const t = tally.get(w) || { ko: w, count: 0, chs: new Set() };
+        t.count++; t.chs.add(i); tally.set(w, t);
+      }
+    }
+  });
+  const arr = [...tally.values()].filter(t => t.count >= 3);
+  // ตัดชิ้นส่วน: "天剑" ที่อยู่ใน "天剑宗" ซึ่งพบ ≥ 80% ของจำนวนครั้ง
+  return arr.filter(t => !arr.some(o => o.ko.length > t.ko.length && o.ko.includes(t.ko) && o.count >= t.count * 0.8));
+}
+// อังกฤษ: วลีตัวพิมพ์ใหญ่ 1–3 คำ (ชื่อเฉพาะ) ตัดคำขึ้นต้นประโยคทั่วไป
+const _EN_STOP = new Set('The A An I He She It They We You His Her Its Their Our My Your This That These Those There Here Then When What Why How Where Who But And Or So If As At In On Of To For With From By Not No Yes Oh Well Now Just Still Even After Before Once While Because Although Though Yet Mr Mrs Ms Miss Sir Chapter'.split(' '));
+function _enTermTally(chapters) {
+  const tally = new Map();
+  (chapters || []).filter(c => c?.sourceText?.trim()).forEach((c, i) => {
+    for (const m of String(c.sourceText).match(/\b[A-Z][a-zA-Z'’-]+(?:\s+(?:of\s+(?:the\s+)?)?[A-Z][a-zA-Z'’-]+){0,2}\b/g) || []) {
+      const words = m.replace(/['’]s$/, '').trim().split(/\s+/);
+      while (words.length && _EN_STOP.has(words[0])) words.shift();   // "The Sword Saint" → "Sword Saint"
+      const w = words.join(' ');
+      if (!w || _EN_STOP.has(w) || w.length < 3) continue;
+      const t = tally.get(w) || { ko: w, count: 0, chs: new Set() };
+      t.count++; t.chs.add(i); tally.set(w, t);
+    }
+  });
+  return [...tally.values()].filter(t => t.count >= 3);
+}
+function _rankTermStats(list, chapters, glossary, limit) {
+  const nCh = (chapters || []).filter(c => c?.sourceText?.trim()).length;
+  const minCh = nCh >= 3 ? 2 : 1;
+  const gl = new Map((glossary || []).filter(g => g.korean).map(g => [g.korean.trim(), g]));
+  return list.filter(t => t.chs.size >= minCh)
+    .sort((a, b) => (b.chs.size * b.count) - (a.chs.size * a.count)).slice(0, limit)
+    .map(t => ({ ko: t.ko, count: t.count, chapters: t.chs.size, thai: gl.get(t.ko)?.thai || '' }));
+}
+function _koTermStats(chapters, glossary = [], limit = 60) {
   const tally = new Map();
   const list = (chapters || []).filter(c => c?.sourceText?.trim());
   list.forEach((c, i) => {
@@ -754,7 +816,7 @@ async function draftStyleSheet() {
   if (status) status.textContent = `🤖 คำนวณจากต้นฉบับ ${all.length} ตอน (คำวนซ้ำ ${terms.length} คำ) + ตัวอย่าง ${picks.length} ตอน + คลัง ${ws.glossary?.length || 0} คำ...`;
   try {
     const res = await callOpenRouter({ model, temperature: 0.2, max_tokens: 8000,
-      messages: [{ role: 'user', content: STYLE_SHEET_DRAFT_PROMPT.replace('{glossary}', () => glossary).replace('{stats}', () => stats).replace('{samples}', () => samples) }] });
+      messages: [{ role: 'user', content: langify(STYLE_SHEET_DRAFT_PROMPT, ws).replace('{glossary}', () => glossary).replace('{stats}', () => stats).replace('{samples}', () => samples) }] });
     const raw = String(res.choices?.[0]?.message?.content || '').replace(/```json|```/g, '');
     const a = raw.indexOf('{'), b = raw.lastIndexOf('}');
     let obj = null;
@@ -835,7 +897,7 @@ async function autoExtractGlossaryAfterTranslation(sourceText, model, chapterInf
     ? `THAI TRANSLATION (use Thai pronouns เขา/เธอ/ผม/ฉัน etc. to help infer character gender):\n${translationText.slice(0, 3000)}`
     : '';
 
-  const basePrompt = (() => { try { return agGetPrompt(); } catch { return AUTOGLOSSARY_PROMPT; } })();
+  const basePrompt = (() => { try { return agGetPrompt(); } catch { return langifyGlossaryPrompt(AUTOGLOSSARY_PROMPT, S.currentWs); } })();
   const prompt = basePrompt
     .replace('{existing}', existing)
     .replace('{text}', sourceText.slice(0, 8000))
@@ -862,6 +924,7 @@ async function autoExtractGlossaryAfterTranslation(sourceText, model, chapterInf
 
     let added = 0, genderFilled = 0, rejected = 0;
     terms.forEach(raw => {
+      normalizeTermKeys(raw);
       if (!raw?.korean || !raw?.thai) return;
       const term = sanitizeGlossaryEntry({ ...raw });
       if (!term) { rejected++; return; }
@@ -1418,7 +1481,7 @@ async function runQACheck() {
   showToast('กำลังตรวจ QA...', '');
   try {
     const glossaryStr = buildGlossaryStr(getOptions().wsGlossary);
-    const prompt = QA_PROMPT
+    const prompt = langify(QA_PROMPT, S.currentWs)
       .replace('{glossary}', glossaryStr)
       .replace('{source}', source)
       .replace('{translation}', translation);

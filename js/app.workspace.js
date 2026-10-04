@@ -120,6 +120,7 @@ async function selectWorkspace(id) {
   document.getElementById('noWsMsg').style.display = 'none';
   document.getElementById('wsContent').className = 'ws-content-visible';
   setWsHeader(ws);
+  updateLangUI(ws);
 
   renderProviderUI();
   checkHealth();
@@ -179,7 +180,7 @@ async function createWorkspace() {
     glossary: [],
     customStyles: [],
     presets: [],
-    settings: { translateModel: 'deepseek/deepseek-chat', temperature: 0.7 },
+    settings: { translateModel: 'deepseek/deepseek-chat', temperature: 0.7, ...(SOURCE_LANGS[document.getElementById('newWsLang')?.value] ? { sourceLang: document.getElementById('newWsLang').value } : {}) },
     createdAt: Date.now(),
   };
   ensureWsStylesPresets(ws);
@@ -212,6 +213,10 @@ function renderWsSettings() {
   const w = S.currentWs;
   document.getElementById('wsEditName').value = w.name || '';
   document.getElementById('wsEditDesc').value = w.description || '';
+  const sl = document.getElementById('wsSourceLang');
+  if (sl) sl.value = SOURCE_LANGS[w.settings?.sourceLang] ? w.settings.sourceLang : '';
+  const det = document.getElementById('wsLangDetected');
+  if (det) det.textContent = `— ตอนนี้ใช้: ${getSourceLang(w).th}`;
   S._coverDraft = undefined;   // undefined = ไม่เปลี่ยน · null = ลบปก · {cover,thumb} = ปกใหม่
   renderCoverPicker('wsCover', w.name, w.cover);
   renderProviderUI();
@@ -305,12 +310,16 @@ async function saveWsSettings() {
     proofreadModel: document.getElementById('wsProofreadModel')?.value || S.currentWs.settings?.proofreadModel,
     batchChunkMode: document.getElementById('wsBatchChunkMode')?.value || 'off',
     batchChunkSize: Math.max(1000, Math.min(20000, parseInt(document.getElementById('wsBatchChunkSize')?.value) || 3000)),
+    sourceLang: document.getElementById('wsSourceLang')?.value || '',
   };
   if (document.getElementById('wsStyleSheetFields')) S.currentWs.styleSheet = readStyleSheetFields();
   const presetSel = document.getElementById('wsPresetSelect');
   if (presetSel) S.currentWs.presetId = presetSel.value || (S.currentWs.presets?.[0]?.id || '');
   await lsSaveWorkspace(S.currentWs);
   setWsHeader(S.currentWs);
+  updateLangUI(S.currentWs);
+  const det = document.getElementById('wsLangDetected');
+  if (det) det.textContent = `— ตอนนี้ใช้: ${getSourceLang(S.currentWs).th}`;
   await loadWorkspaceList();
   showToast('บันทึกแล้ว ✓', 'success');
 }
@@ -804,4 +813,13 @@ function coverNameInput(prefix, name) {
   const draft = prefix === 'newWsCover' ? S._newWsCover : S._coverDraft;
   const current = draft === null ? null : (draft?.cover || (prefix === 'wsCover' ? S.currentWs?.cover : null));
   if (!current) renderCoverPicker(prefix, name, null);
+}
+
+// ป้าย/placeholder ตามภาษาต้นฉบับของเรื่อง
+function updateLangUI(ws = S.currentWs) {
+  const L = getSourceLang(ws);
+  const ta = document.getElementById('sourceText');
+  if (ta) ta.placeholder = L.placeholder;
+  const pt = document.querySelector('#tab-translate .t-pane .pane-title');
+  if (pt) pt.textContent = `ต้นฉบับ · ${L.short}`;
 }

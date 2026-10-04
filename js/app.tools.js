@@ -378,6 +378,7 @@ async function runAutoGlossary() {
         if (repaired || cut) partial++;
         if (Array.isArray(terms)) {
           terms.forEach(t => {
+            normalizeTermKeys(t);
             if (t?.korean && !seenKorean.has(t.korean)) {
               seenKorean.add(t.korean);
               // Attach source chapter info
@@ -899,7 +900,7 @@ async function aiFixSubstrConsistency() {
 
   let decisions = null;
   try {
-    const prompt = DUP_FIX_PROMPT.replace('{pairs}', JSON.stringify(pairData, null, 2));
+    const prompt = langify(DUP_FIX_PROMPT, S.currentWs).replace('{pairs}', JSON.stringify(pairData, null, 2));
     const res = await callOpenRouter({ model, messages: [{ role: 'user', content: prompt }], temperature: 0.1, max_tokens: 2000 });
     let cleaned = (res.choices?.[0]?.message?.content || '').trim()
       .replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/, '').trim()
@@ -1021,7 +1022,7 @@ function agResetPrompt() {
 }
 
 function agGetPrompt() {
-  return localStorage.getItem('nt8_ag_prompt') || _agDefaultPrompt;
+  return langifyGlossaryPrompt(localStorage.getItem('nt8_ag_prompt') || _agDefaultPrompt, S.currentWs);
 }
 
 // ─── Clean Source Text (ลบ Base64 / ขยะ) ───
@@ -1083,7 +1084,7 @@ function normalizeKoreanSlang(text) {
 }
 
 function prepareSourceForTranslation(text) {
-  return normalizeKoreanSlang(text);
+  return getSourceLang().code === 'ko' ? normalizeKoreanSlang(text) : String(text || '');
 }
 
 function cleanSourceText() {

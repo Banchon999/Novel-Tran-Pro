@@ -267,8 +267,8 @@
         </select>
         <select id="glossarySortSelect" class="mini-select" onchange="filterGlossary()">
           <option value="default">เรียง: เพิ่มล่าสุด</option>
-          <option value="korean-az">เกาหลี A→Z</option>
-          <option value="korean-za">เกาหลี Z→A</option>
+          <option value="korean-az">ต้นฉบับ A→Z</option>
+          <option value="korean-za">ต้นฉบับ Z→A</option>
           <option value="thai-az">ไทย ก→ฮ</option>
           <option value="type">ตามประเภท</option>
         </select>
@@ -292,7 +292,7 @@
       </div>
       <div class="glossary-table-wrap">
         <table class="glossary-table">
-          <thead><tr><th class="td-check"><input type="checkbox" title="เลือกทั้งหมด (ตาม filter)" onchange="glToggleSelectAll(this.checked)"/></th><th>เกาหลี</th><th>ไทย</th><th>ประเภท</th><th>เพศ</th><th>หมายเหตุ</th><th>ตอนที่พบ</th><th></th></tr></thead>
+          <thead><tr><th class="td-check"><input type="checkbox" title="เลือกทั้งหมด (ตาม filter)" onchange="glToggleSelectAll(this.checked)"/></th><th>ต้นฉบับ</th><th>ไทย</th><th>ประเภท</th><th>เพศ</th><th>หมายเหตุ</th><th>ตอนที่พบ</th><th></th></tr></thead>
           <tbody id="glossaryTableBody"></tbody>
         </table>
       </div>
@@ -316,6 +316,14 @@
         <div class="settings-form">
           <div class="sf-group"><div class="sf-label">ชื่อนิยาย</div><input id="wsEditName" type="text" class="text-input" oninput="coverNameInput('wsCover', this.value)"/></div>
           <div class="sf-group"><div class="sf-label">คำอธิบาย</div><input id="wsEditDesc" type="text" class="text-input"/></div>
+          <div class="sf-group"><div class="sf-label">ภาษาต้นฉบับ <span id="wsLangDetected" style="font-size:0.72rem;color:var(--text-muted)"></span></div>
+            <select id="wsSourceLang" class="select-input">
+              <option value="">อัตโนมัติ (ตรวจจากต้นฉบับ)</option>
+              <option value="ko">เกาหลี → ไทย</option>
+              <option value="zh">จีน → ไทย</option>
+              <option value="en">อังกฤษ → ไทย</option>
+            </select>
+            <div style="font-size:0.72rem;color:var(--text-muted)">ใช้กำหนด prompt แปล, การสกัดคำศัพท์ และการตรวจคำแปล ให้ตรงกับภาษาของนิยาย</div></div>
           <div class="sf-group"><div class="sf-label">ภาพปก</div>
           <div class="cover-picker">
             <div id="wsCoverPreview" class="cover-preview"></div>
@@ -527,6 +535,13 @@
     <div class="modal-body">
       <div class="sf-group"><div class="sf-label">ชื่อนิยาย *</div><input id="newWsName" type="text" class="text-input" placeholder="เช่น การกลับมาของเทพดาบ" oninput="coverNameInput('newWsCover', this.value)"/></div>
       <div class="sf-group"><div class="sf-label">คำอธิบาย</div><input id="newWsDesc" type="text" class="text-input" placeholder="ไม่บังคับ"/></div>
+      <div class="sf-group"><div class="sf-label">ภาษาต้นฉบับ</div>
+            <select id="newWsLang" class="select-input">
+              <option value="">อัตโนมัติ (ตรวจจากต้นฉบับ)</option>
+              <option value="ko">เกาหลี → ไทย</option>
+              <option value="zh">จีน → ไทย</option>
+              <option value="en">อังกฤษ → ไทย</option>
+            </select></div>
       <div class="sf-group"><div class="sf-label">ภาพปก <span style="color:var(--text-muted);font-size:0.72rem">(ไม่บังคับ)</span></div>
           <div class="cover-picker">
             <div id="newWsCoverPreview" class="cover-preview"></div>
@@ -591,7 +606,7 @@
   <div class="modal">
     <div class="modal-header"><span id="glossaryModalTitle">＋ เพิ่มคำศัพท์</span><button class="icon-btn" onclick="closeModal('modal-add-glossary')">✕</button></div>
     <div class="modal-body">
-      <div class="sf-group"><div class="sf-label">ภาษาเกาหลี *</div><input id="gKorean" type="text" class="text-input" placeholder="검제"/></div>
+      <div class="sf-group"><div class="sf-label">คำต้นฉบับ *</div><input id="gKorean" type="text" class="text-input" placeholder="เช่น 검제 / 林动 / Leon"/></div>
       <div class="sf-group"><div class="sf-label">ภาษาไทย *</div><input id="gThai" type="text" class="text-input" placeholder="จักรพรรดิดาบ"/></div>
       <div class="sf-group"><div class="sf-label">ประเภท</div>
         <select id="gType" class="select-input" onchange="document.getElementById('gGenderGroup').style.display=this.value==='character'?'':'none';if(this.value!=='character')document.getElementById('gGender').value=''">
@@ -634,7 +649,7 @@
       </div>
       <div class="sf-group"><div class="sf-label">Prompt *</div><textarea id="stylePrompt" class="editor-ta" rows="5" placeholder="เช่น: แปลแบบสำนวนไทยกำลังภายใน ใช้คำศัพท์ย้อนยุค..."></textarea></div>
       <div class="sf-group">
-        <div class="sf-label">ทดสอบ (ข้อความเกาหลี)</div>
+        <div class="sf-label">ทดสอบ (ข้อความต้นฉบับ)</div>
         <textarea id="styleTestText" class="editor-ta" rows="2" placeholder="그는 검을 들었다..."></textarea>
         <button class="btn btn-secondary btn-sm" style="margin-top:6px" onclick="previewStyle()">▶ ทดสอบ</button>
         <div id="stylePreviewResult" class="style-preview-box" style="display:none"></div>
@@ -681,8 +696,8 @@
       <!-- Manual input -->
       <div id="agPanelManual">
         <div class="sf-group">
-          <div class="sf-label">ข้อความเกาหลีต้นฉบับ</div>
-          <textarea id="agSourceText" class="editor-ta" rows="6" placeholder="วางข้อความเกาหลีที่นี่เพื่อให้ AI วิเคราะห์คำศัพท์..."></textarea>
+          <div class="sf-label">ข้อความต้นฉบับ</div>
+          <textarea id="agSourceText" class="editor-ta" rows="6" placeholder="วางข้อความต้นฉบับที่นี่เพื่อให้ AI วิเคราะห์คำศัพท์..."></textarea>
         </div>
       </div>
 
@@ -1206,7 +1221,7 @@
       <div style="display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap">
         <span style="font-size:0.8rem;color:var(--text-muted);min-width:60px;padding-top:2px">คอลัมน์</span>
         <div style="display:flex;gap:10px;flex-wrap:wrap">
-          <label class="toggle-mini"><input type="checkbox" id="gexColKorean" checked onchange="glossaryExportPreview()"/> เกาหลี</label>
+          <label class="toggle-mini"><input type="checkbox" id="gexColKorean" checked onchange="glossaryExportPreview()"/> ต้นฉบับ</label>
           <label class="toggle-mini"><input type="checkbox" id="gexColThai" checked onchange="glossaryExportPreview()"/> ไทย</label>
           <label class="toggle-mini"><input type="checkbox" id="gexColType" checked onchange="glossaryExportPreview()"/> ประเภท</label>
           <label class="toggle-mini"><input type="checkbox" id="gexColGender" checked onchange="glossaryExportPreview()"/> เพศ</label>
@@ -1246,7 +1261,7 @@
       </select>
       <div id="inheritPreviewInfo" style="font-size:0.78rem;color:var(--text-muted);margin-bottom:8px"></div>
       <label style="display:flex;align-items:center;gap:8px;font-size:0.82rem;margin-bottom:6px;cursor:pointer">
-        <input type="checkbox" id="inheritSkipDup" checked> ข้ามคำที่ซ้ำกัน (Korean เหมือนกัน)
+        <input type="checkbox" id="inheritSkipDup" checked> ข้ามคำที่ซ้ำกัน (คำต้นฉบับเหมือนกัน)
       </label>
       <label style="display:flex;align-items:center;gap:8px;font-size:0.82rem;cursor:pointer">
         <input type="checkbox" id="inheritCharsOnly"> Import เฉพาะตัวละคร (character)
@@ -1323,7 +1338,7 @@
     </div>
     <div class="modal-body">
       <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:10px">
-        รูปแบบ CSV: <code>Korean, Thai, Type, Gender, Note</code> (header บรรทัดแรกถูกข้าม)<br>
+        รูปแบบ CSV: <code>Korean, Thai, Type, Gender, Note</code> (คอลัมน์ Korean = คำต้นฉบับ ใช้ได้ทุกภาษา · header บรรทัดแรกถูกข้าม)<br>
         Type: character / title / rank / term / honorific / place / skill / item / clan / monster<br>
         Gender: male / female / neutral (เว้นว่างได้ถ้าไม่ใช่ตัวละคร)
       </div>
