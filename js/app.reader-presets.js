@@ -29,7 +29,7 @@ async function translateChapterCore(ch, {
   const spMap        = await buildSpeakerMap(srcPrepared, model || ws.settings?.translateModel || document.getElementById('translateModel')?.value || 'google/gemini-2.5-flash', ws);
   // บริบท = สรุปเรื่อง (Context Memory) + ท้ายคำแปลตอนก่อน (ตัวอย่างสำนวน ให้คำเรียก/สำนวนต่อเนื่อง)
   const contextStr   = [ctxGetPromptText(ws), prevChapterTail(ch, ws)].filter(Boolean).join('\n\n');
-  const systemPrompt = applyContext(applySpeakerMap(applyParticleRules(applyStyleSheet(applyConsistencyLock(presetBase.systemPrompt, ws), ws)), spMap), contextStr);
+  const systemPrompt = langify(applyContext(applySpeakerMap(applyParticleRules(applyStyleSheet(applyConsistencyLock(applyLangNotes(presetBase.systemPrompt, ws), ws), ws)), spMap), contextStr), ws);
   const temperature  = translateTemp(presetBase.temperature, ws);
   const useModel = model || ws.settings?.translateModel || document.getElementById('translateModel')?.value || 'google/gemini-2.5-flash';
 

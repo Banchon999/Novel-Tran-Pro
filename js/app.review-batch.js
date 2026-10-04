@@ -1224,8 +1224,23 @@ function clearTranslation() {
 async function copyTranslation() {
   const text = document.getElementById('translationOutput').innerText.trim();
   if (!text || text === 'คำแปลจะปรากฏที่นี่...') { showToast('ยังไม่มีคำแปล', 'error'); return; }
-  try { await navigator.clipboard.writeText(text); showToast('คัดลอกแล้ว ✓', 'success'); }
-  catch { showToast('คัดลอกล้มเหลว', 'error'); }
+  const ok = await copyTextToClipboard(text);
+  showToast(ok ? 'คัดลอกแล้ว ✓' : 'คัดลอกล้มเหลว', ok ? 'success' : 'error');
+}
+// navigator.clipboard ใช้ได้เฉพาะ HTTPS/localhost — เปิดผ่าน IP ในวง LAN (เช่น Simple HTTP Server) ต้อง fallback เป็น execCommand
+async function copyTextToClipboard(text) {
+  let ok = false;
+  if (navigator.clipboard && window.isSecureContext) {
+    try { await navigator.clipboard.writeText(text); ok = true; } catch {}
+  }
+  if (!ok) {
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.setAttribute('readonly', ''); ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0;pointer-events:none';
+    document.body.appendChild(ta); ta.select(); ta.setSelectionRange(0, text.length);
+    try { ok = document.execCommand('copy'); } catch { ok = false; }
+    ta.remove();
+  }
+  return ok;
 }
 function addLog(el, msg, cls) {
   const d = document.createElement('div');
@@ -1238,7 +1253,10 @@ function esc(str) {
   if (!str) return '';
   const d = document.createElement('div'); d.textContent = str; return d.innerHTML;
 }
-function openModal(id) { document.getElementById(id).classList.add('open'); }
+function openModal(id) {
+  document.getElementById(id).classList.add('open');
+  if (id === 'modal-new-ws' && typeof renderCoverPicker === 'function') { S._newWsCover = null; renderCoverPicker('newWsCover', document.getElementById('newWsName')?.value || '', null); }
+}
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
 
 let _toastTimer = null;
@@ -1405,6 +1423,8 @@ async function parseEpub(file) {
   for (const spineId of spineIds) {
     const item = itemsMap[spineId];
     if (!item) { skippedCount++; continue; }
+    // หน้าปก/หน้าชื่อเรื่อง/สารบัญ ไม่ใช่ตอน (รวม EPUB ที่ export จากแอปนี้เอง)
+    if (/^(cover|titlepage|title-page|nav|toc)$/i.test(spineId)) { skippedCount++; continue; }
     if (item.mediaType && !item.mediaType.includes('html')) { skippedCount++; continue; }
 
     const filePath = opfDir + item.href;

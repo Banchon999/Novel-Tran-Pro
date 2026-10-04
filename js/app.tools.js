@@ -224,7 +224,7 @@ let _exportSelFormat = 'txt';
 function openExportSelect(format) {
   if (!S.currentWs) return;
   _exportSelFormat = format;
-  const fmtLabel = { txt: 'TXT', docx: 'DOCX', zip: 'ZIP' }[format] || format.toUpperCase();
+  const fmtLabel = { txt: 'TXT', docx: 'DOCX', zip: 'ZIP', epub: 'EPUB' }[format] || format.toUpperCase();
   document.getElementById('exportSelectTitle').textContent = `📤 เลือกตอน — Export ${fmtLabel}`;
   document.getElementById('exportSelConfirmBtn').textContent = `📤 Export ${fmtLabel}`;
   const chapters = [...S.currentWs.chapters].sort((a, b) => (a.chapterNum || 0) - (b.chapterNum || 0));
@@ -283,6 +283,8 @@ function confirmExportSelected() {
     const buf = buildDocxZip(docXml);
     downloadBlob(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }), `${name}_selected.docx`);
     showToast('Export DOCX สำเร็จ ✓', 'success');
+  } else if (_exportSelFormat === 'epub') {
+    exportEpubFor(chapters, '_selected');
   } else if (_exportSelFormat === 'zip') {
     const files = {};
     chapters.forEach(ch => {
@@ -376,6 +378,7 @@ async function runAutoGlossary() {
         if (repaired || cut) partial++;
         if (Array.isArray(terms)) {
           terms.forEach(t => {
+            normalizeTermKeys(t);
             if (t?.korean && !seenKorean.has(t.korean)) {
               seenKorean.add(t.korean);
               // Attach source chapter info
@@ -897,7 +900,7 @@ async function aiFixSubstrConsistency() {
 
   let decisions = null;
   try {
-    const prompt = DUP_FIX_PROMPT.replace('{pairs}', JSON.stringify(pairData, null, 2));
+    const prompt = langify(DUP_FIX_PROMPT, S.currentWs).replace('{pairs}', JSON.stringify(pairData, null, 2));
     const res = await callOpenRouter({ model, messages: [{ role: 'user', content: prompt }], temperature: 0.1, max_tokens: 2000 });
     let cleaned = (res.choices?.[0]?.message?.content || '').trim()
       .replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/, '').trim()
@@ -1019,7 +1022,7 @@ function agResetPrompt() {
 }
 
 function agGetPrompt() {
-  return localStorage.getItem('nt8_ag_prompt') || _agDefaultPrompt;
+  return langifyGlossaryPrompt(localStorage.getItem('nt8_ag_prompt') || _agDefaultPrompt, S.currentWs);
 }
 
 // ─── Clean Source Text (ลบ Base64 / ขยะ) ───
@@ -1081,7 +1084,7 @@ function normalizeKoreanSlang(text) {
 }
 
 function prepareSourceForTranslation(text) {
-  return normalizeKoreanSlang(text);
+  return getSourceLang().code === 'ko' ? normalizeKoreanSlang(text) : String(text || '');
 }
 
 function cleanSourceText() {
@@ -1690,4 +1693,144 @@ ${sheetRows}
     showToast('Export XLSX สำเร็จ ✓ (เปิดด้วย Excel/Sheets ได้)', 'success');
     return;
   }
+}
+
+// ═══════════════════════════════════════════════
+// ─── Export EPUB (EPUB 3 + toc.ncx สำหรับเครื่องอ่านรุ่นเก่า) ───
+// ใช้ buildZipBuffer เดิม (stored) · mimetype ต้องเป็นไฟล์แรก · ปกจาก ws.cover หรือสร้างจากชื่อเรื่อง
+// ═══════════════════════════════════════════════
+function _epubEsc(s) {
+  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '');
+}
+
+function _dataUrlToBytes(dataUrl) {
+  const m = String(dataUrl || '').match(/^data:([^;,]+)?(;base64)?,(.*)$/s);
+  if (!m) return null;
+  if (!m[2]) return new TextEncoder().encode(decodeURIComponent(m[3]));
+  const bin = atob(m[3]);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+// เนื้อหาตอน → ย่อหน้า <p> (บรรทัดว่างคั่นย่อหน้า · บรรทัดเดี่ยวก็เป็นย่อหน้าเช่นกัน แบบนิยายเว็บ)
+function _epubParagraphs(text) {
+  return String(text || '').replace(/\r\n?/g, '\n').split('\n')
+    .map(l => l.trim()).filter(Boolean)
+    .map(l => `<p>${_epubEsc(l)}</p>`).join('\n');
+}
+
+function buildEpub(ws, chapters, opts = {}) {
+  const title = ws?.name || 'NovelTrans';
+  const uid = 'urn:noveltrans:' + String(ws?.id || genId()).replace(/[^\w-]/g, '');
+  const modified = new Date().toISOString().replace(/\.\d+Z$/, 'Z');
+  const coverDataUrl = opts.coverDataUrl || ws?.cover || '';
+  const coverBytes = coverDataUrl ? _dataUrlToBytes(coverDataUrl) : null;
+  const coverMime = (coverDataUrl.match(/^data:([^;,]+)/) || [])[1] || 'image/jpeg';
+  const coverExt = coverMime === 'image/png' ? 'png' : 'jpg';
+  const xhtml = (t, body, extraHead = '') => `<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" xml:lang="th" lang="th">
+<head><meta charset="utf-8"/><title>${_epubEsc(t)}</title><link rel="stylesheet" type="text/css" href="style.css"/>${extraHead}</head>
+<body>
+${body}
+</body>
+</html>`;
+  const chs = chapters.map((ch, i) => ({
+    id: 'ch' + String(i + 1).padStart(4, '0'),
+    file: 'ch' + String(i + 1).padStart(4, '0') + '.xhtml',
+    title: (ch.title || `ตอนที่ ${ch.chapterNum || i + 1}`).trim(),
+    text: ch.translation || '',
+  }));
+
+  const files = {};
+  files['mimetype'] = 'application/epub+zip';
+  files['META-INF/container.xml'] = `<?xml version="1.0" encoding="UTF-8"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+<rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles>
+</container>`;
+  files['OEBPS/style.css'] = `body{font-family:"Noto Serif Thai","Sarabun",serif;line-height:1.8;margin:0 4%;}
+h1,h2{font-family:"Noto Sans Thai","Sarabun",sans-serif;line-height:1.4;text-align:center;margin:1.5em 0 1.2em;}
+h2{font-size:1.25em;}
+p{margin:0 0 .6em;text-indent:1.5em;text-align:left;}
+.cover{margin:0;padding:0;text-align:center;}
+.cover img{max-width:100%;max-height:100vh;}
+.titlepage{text-align:center;margin-top:30%;}
+.titlepage .desc{margin-top:2em;font-size:.9em;text-indent:0;}
+nav ol{list-style:none;padding:0;} nav li{margin:.4em 0;}`;
+  if (coverBytes) {
+    files[`OEBPS/images/cover.${coverExt}`] = coverBytes;
+    files['OEBPS/cover.xhtml'] = xhtml(title, `<div class="cover"><img src="images/cover.${coverExt}" alt="${_epubEsc(title)}"/></div>`);
+  }
+  files['OEBPS/title.xhtml'] = xhtml(title, `<div class="titlepage"><h1>${_epubEsc(title)}</h1>${ws?.description ? `<p class="desc">${_epubEsc(ws.description)}</p>` : ''}</div>`);
+  files['OEBPS/nav.xhtml'] = xhtml('สารบัญ', `<nav epub:type="toc" id="toc"><h1>สารบัญ</h1><ol>
+${chs.map(c => `<li><a href="${c.file}">${_epubEsc(c.title)}</a></li>`).join('\n')}
+</ol></nav>`);
+  files['OEBPS/toc.ncx'] = `<?xml version="1.0" encoding="UTF-8"?>
+<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1" xml:lang="th">
+<head><meta name="dtb:uid" content="${uid}"/><meta name="dtb:depth" content="1"/><meta name="dtb:totalPageCount" content="0"/><meta name="dtb:maxPageNumber" content="0"/></head>
+<docTitle><text>${_epubEsc(title)}</text></docTitle>
+<navMap>
+${chs.map((c, i) => `<navPoint id="np${i + 1}" playOrder="${i + 1}"><navLabel><text>${_epubEsc(c.title)}</text></navLabel><content src="${c.file}"/></navPoint>`).join('\n')}
+</navMap>
+</ncx>`;
+  for (const c of chs) files['OEBPS/' + c.file] = xhtml(c.title, `<section epub:type="chapter"><h2>${_epubEsc(c.title)}</h2>\n${_epubParagraphs(c.text)}</section>`);
+
+  const manifest = [
+    `<item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>`,
+    `<item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>`,
+    `<item id="css" href="style.css" media-type="text/css"/>`,
+    coverBytes ? `<item id="cover-image" href="images/cover.${coverExt}" media-type="${coverMime}" properties="cover-image"/>` : '',
+    coverBytes ? `<item id="cover" href="cover.xhtml" media-type="application/xhtml+xml"/>` : '',
+    `<item id="titlepage" href="title.xhtml" media-type="application/xhtml+xml"/>`,
+    ...chs.map(c => `<item id="${c.id}" href="${c.file}" media-type="application/xhtml+xml"/>`),
+  ].filter(Boolean).join('\n');
+  const spine = [
+    coverBytes ? `<itemref idref="cover" linear="yes"/>` : '',
+    `<itemref idref="titlepage"/>`,
+    ...chs.map(c => `<itemref idref="${c.id}"/>`),
+  ].filter(Boolean).join('\n');
+  files['OEBPS/content.opf'] = `<?xml version="1.0" encoding="UTF-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="bookid" xml:lang="th">
+<metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+<dc:identifier id="bookid">${uid}</dc:identifier>
+<dc:title>${_epubEsc(title)}</dc:title>
+<dc:language>th</dc:language>
+<dc:creator>${_epubEsc(ws?.author || 'NovelTrans')}</dc:creator>
+${ws?.description ? `<dc:description>${_epubEsc(ws.description)}</dc:description>` : ''}
+<meta property="dcterms:modified">${modified}</meta>
+${coverBytes ? '<meta name="cover" content="cover-image"/>' : ''}
+</metadata>
+<manifest>
+${manifest}
+</manifest>
+<spine toc="ncx">
+${spine}
+</spine>
+</package>`;
+  return buildZipBuffer(files);
+}
+
+async function exportEpubFor(chapters, suffix = '') {
+  const ws = S.currentWs;
+  if (!ws) return;
+  const list = chapters.filter(ch => (ch.translation || '').trim());
+  if (!list.length) { showToast('ยังไม่มีตอนที่แปลแล้ว — EPUB ใส่เฉพาะตอนที่มีคำแปล', 'error'); return; }
+  let coverDataUrl = ws.cover || '';
+  if (!coverDataUrl && typeof generateCoverDataUrl === 'function') {
+    try { coverDataUrl = await generateCoverDataUrl(ws.name); } catch {}
+  }
+  const buf = buildEpub(ws, list, { coverDataUrl });
+  const safe = String(ws.name || 'novel').replace(/[\\/:*?"<>|]/g, '_');
+  downloadBlob(new Blob([buf], { type: 'application/epub+zip' }), `${safe}${suffix}.epub`);
+  const skipped = chapters.length - list.length;
+  showToast(`Export EPUB สำเร็จ ✓ ${list.length} ตอน${skipped ? ` (ข้ามที่ยังไม่แปล ${skipped})` : ''}`, 'success');
+}
+
+function exportWorkspaceEPUB() {
+  if (!S.currentWs) return;
+  const chapters = [...(S.currentWs.chapters || [])].sort((a, b) => (a.chapterNum || 0) - (b.chapterNum || 0));
+  closeModal('modal-export');
+  return exportEpubFor(chapters);
 }
