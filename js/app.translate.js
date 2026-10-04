@@ -663,13 +663,16 @@ function parseJsonArrayLoose(raw) {
   return { arr: [], broken: true };
 }
 
-// ─── 🤖 ร่างคู่มือการแปล (Style Sheet) จากตอนที่แปลแล้ว + คลังศัพท์ ───
-// AI สรุป "การตัดสินใจ" ที่ใช้อยู่จริง (ทับศัพท์/แปล, คำประจำเรื่อง, น้ำเสียง) · ถ้าแต่ละตอนไม่ตรงกัน ให้เลือกแบบที่ตรงคลัง/ใช้บ่อยกว่า
+// ─── 🤖 ร่างคู่มือการแปล (Style Sheet) จากต้นฉบับทุกตอน + ตอนที่แปลแล้ว + คลังศัพท์ ───
+// คำนวณจากต้นฉบับ (local): คำเกาหลีที่วนซ้ำหลายตอน + รูปแบบเครื่องหมาย → ให้ AI ตัดสินนโยบายไว้ล่วงหน้า
+// ตอนที่แปลแล้ว (ถ้ามี) บอก "การตัดสินใจ" ที่ใช้อยู่จริง · ถ้าแต่ละตอนไม่ตรงกัน ให้เลือกแบบที่ตรงคลัง/ใช้บ่อยกว่า
 // เติมเฉพาะช่องที่ว่าง — ผู้ใช้ตรวจ/แก้แล้วกดบันทึกเอง (ไม่บันทึกทับให้)
 const STYLE_SHEET_DRAFT_PROMPT = `You are the lead translator of a Korean→Thai web-novel series. Write the series TRANSLATION STYLE SHEET in Thai so that every future chapter reads as if one translator did it.
 
-Base it on what the existing translations and the glossary ACTUALLY do. When chapters disagree (e.g. one chapter transliterates a term and another translates it), pick the rendering used in the glossary, otherwise the more frequent one, and state it as the rule.
-Be concrete and short: bullet lines starting with "• ", max 8 bullets per section, use "เกาหลี = ไทย" pairs where useful. Do not invent characters or terms that do not appear below.
+Base it on the Korean source and on what the existing translations and the glossary ACTUALLY do. When chapters disagree (e.g. one chapter transliterates a term and another translates it), pick the rendering used in the glossary, otherwise the more frequent one, and state it as the rule.
+SOURCE STATISTICS lists Korean words that recur across many chapters (computed from the whole source). For every one that is a real proper noun or genre/system term (not ordinary vocabulary), decide ONE Thai rendering now — the glossary's if it has one, else transliterate or translate following the per-category policy — and list it as "เกาหลี = ไทย" under terms, so chapters not yet translated stay consistent. Ignore ordinary words in that list.
+Use the source's format markers to define how thoughts, system messages and sound effects are written.
+Be concrete and short: bullet lines starting with "• ", max 8 bullets per section (terms may have up to 25), use "เกาหลี = ไทย" pairs where useful. Do not invent characters or terms that do not appear below.
 
 Return ONLY JSON (no markdown):
 {"translit":"…","terms":"…","narration":"…","format":"…","voices":"…"}
@@ -682,26 +685,76 @@ Return ONLY JSON (no markdown):
 GLOSSARY:
 {glossary}
 
-TRANSLATED CHAPTERS (Korean source → Thai translation):
+SOURCE STATISTICS:
+{stats}
+
+CHAPTER SAMPLES ([KO] Korean source, [TH] existing Thai translation if any):
 {samples}`;
+
+// คำเกาหลีที่วนซ้ำในต้นฉบับ (ตัดคำชี้ เช่น 은/는/이/가/을/를/의/에게 ออก, ตัดกริยา/คำทั่วไป) → [{ko, count, chapters}]
+const _KO_PARTICLE_RE = /(에게서|께서는|께서|에서는|에서|에게는|에게|한테|으로는|으로|로서|부터|까지|처럼|보다|이라는|라는|이라고|라고|이란|란|과는|와는|과|와|은|는|이|가|을|를|의|에는|에|도|만|로)$/;
+const _KO_VERBISH_RE = /(다|요|고|며|면|지만|는데|니까|면서|어서|아서|았|었|겠|했|해|하게|하는|하고|한다|된다|된|던|죠|까|네|군|자)$/;
+const _KO_STOP = new Set('그녀 그는 그것 이것 저것 우리 자신 정말 지금 다시 그리고 하지만 그런데 그래서 무슨 어떻게 이렇게 그렇게 아니 순간 하나 모두 이미 아직 조금 사람 생각 때문 정도 모습 얼굴 목소리 시작 앞으로 그대로 마치 역시 이제 오늘 내가 네가 당신 너무 아주 가장 바로 모든 어느 누구 무엇 여기 거기 저기 그때 이번 다음 하나 둘'.split(' '));
+function sourceTermStats(chapters, glossary = [], limit = 60) {
+  const tally = new Map();
+  const list = (chapters || []).filter(c => c?.sourceText?.trim());
+  list.forEach((c, i) => {
+    for (const run of String(c.sourceText).match(/[가-힣]{2,}/g) || []) {
+      let w = run;
+      const m = w.match(_KO_PARTICLE_RE);
+      if (m && w.length - m[0].length >= 2) w = w.slice(0, -m[0].length);
+      if (w.length < 2 || w.length > 8 || _KO_STOP.has(w) || _KO_VERBISH_RE.test(w)) continue;
+      const t = tally.get(w) || { ko: w, count: 0, chs: new Set() };
+      t.count++; t.chs.add(i); tally.set(w, t);
+    }
+  });
+  const minCh = list.length >= 3 ? 2 : 1;
+  const gl = new Map((glossary || []).filter(g => g.korean).map(g => [g.korean.trim(), g]));
+  return [...tally.values()]
+    .filter(t => t.count >= 3 && t.chs.size >= minCh)
+    .sort((a, b) => (b.chs.size * b.count) - (a.chs.size * a.count))
+    .slice(0, limit)
+    .map(t => ({ ko: t.ko, count: t.count, chapters: t.chs.size, thai: gl.get(t.ko)?.thai || '' }));
+}
+
+// เครื่องหมายที่ต้นฉบับใช้ (นับบรรทัด) → ใช้กำหนดรูปแบบ ความคิด/ข้อความระบบ/เสียง
+function sourceFormatStats(chapters) {
+  const MARKS = [['“…” / "…"', /^[“"]/], ['‘…’ / \'…\'', /^[‘']/], ['[…]', /^\[/], ['『…』', /^『/], ['「…」', /^「/], ['【…】', /^【/], ['<…> / 《…》', /^[<《〈]/], ['(…)', /^[(（]/], ['*…*', /^\*/]];
+  const n = Object.fromEntries(MARKS.map(([k]) => [k, 0]));
+  for (const c of chapters || []) for (const line of String(c?.sourceText || '').split('\n')) {
+    const l = line.trim(); if (!l) continue;
+    for (const [k, re] of MARKS) if (re.test(l)) { n[k]++; break; }
+  }
+  return Object.entries(n).filter(([, v]) => v > 0).map(([k, v]) => `${k} ${v} บรรทัด`).join(' · ') || '(ไม่มีเครื่องหมายพิเศษ)';
+}
 
 async function draftStyleSheet() {
   const ws = S.currentWs;
   if (!ws) return;
   const status = document.getElementById('wsStyleDraftStatus');
   const btn = document.getElementById('wsStyleDraftBtn');
-  const done = _getSortedChapters().filter(c => c.translation?.trim() && c.sourceText?.trim());
-  if (!done.length) { showToast('ยังไม่มีตอนที่แปลแล้ว — แปลก่อนอย่างน้อย 1 ตอน', 'error'); return; }
-  // ตัวอย่างกระจายทั้งเรื่อง: ตอนแรก กลาง ล่าสุด (สูงสุด 3 ตอน)
-  const picks = [...new Set([done[0], done[Math.floor((done.length - 1) / 2)], done[done.length - 1]])];
-  const samples = picks.map(c => `### ตอน #${c.chapterNum || '?'} ${c.title || ''}\n[KO]\n${c.sourceText.trim().slice(0, 2200)}\n[TH]\n${c.translation.trim().slice(0, 2600)}`).join('\n\n');
+  const all = _getSortedChapters().filter(c => c.sourceText?.trim());
+  if (!all.length) { showToast('ยังไม่มีต้นฉบับ — เพิ่มตอนก่อนอย่างน้อย 1 ตอน', 'error'); return; }
+  const done = all.filter(c => c.translation?.trim());
+  const pending = all.filter(c => !c.translation?.trim());
+  // ตัวอย่างกระจายทั้งเรื่อง: ตอนที่แปลแล้ว แรก/กลาง/ล่าสุด (สูงสุด 3) + ต้นฉบับที่ยังไม่แปล แรก/ล่าสุด (สูงสุด 2)
+  const spread = (arr, n) => [...new Set(n >= 3 ? [arr[0], arr[Math.floor((arr.length - 1) / 2)], arr[arr.length - 1]] : [arr[0], arr[arr.length - 1]])].filter(Boolean);
+  const picks = [...spread(done, 3), ...spread(pending, done.length ? 2 : 3)];
+  const samples = picks.map(c => `### ตอน #${c.chapterNum || '?'} ${c.title || ''}\n[KO]\n${c.sourceText.trim().slice(0, 2200)}` +
+    (c.translation?.trim() ? `\n[TH]\n${c.translation.trim().slice(0, 2600)}` : '\n[TH] (ยังไม่แปล)')).join('\n\n');
+  const terms = sourceTermStats(all, ws.glossary);
+  const srcChars = all.reduce((n, c) => n + c.sourceText.length, 0);
+  const stats = `ต้นฉบับ ${all.length} ตอน (${srcChars.toLocaleString()} ตัวอักษร) · แปลแล้ว ${done.length} ตอน\n` +
+    `เครื่องหมายขึ้นบรรทัด: ${sourceFormatStats(all)}\n` +
+    `คำที่วนซ้ำ (คำ ×ครั้ง /ตอน → คำแปลในคลัง หรือ NEW):\n` +
+    (terms.map(t => `${t.ko} ×${t.count} /${t.chapters} → ${t.thai ? fixAddressGender(t.ko, t.thai) : 'NEW'}`).join('\n') || '(ไม่พบ)');
   const glossary = (ws.glossary || []).slice(0, 150).map(g => `${g.korean} = ${fixAddressGender(g.korean, g.thai)} (${g.type || ''}${g.gender ? '/' + g.gender : ''}${g.note ? ' · ' + String(g.note).slice(0, 40) : ''})`).join('\n') || '(ไม่มี)';
   const model = getProofreadModel(ws, ws.settings?.translateModel || document.getElementById('translateModel')?.value);
   if (btn) btn.disabled = true;
-  if (status) status.textContent = `🤖 กำลังอ่าน ${picks.length} ตอน + คลัง ${ws.glossary?.length || 0} คำ...`;
+  if (status) status.textContent = `🤖 คำนวณจากต้นฉบับ ${all.length} ตอน (คำวนซ้ำ ${terms.length} คำ) + ตัวอย่าง ${picks.length} ตอน + คลัง ${ws.glossary?.length || 0} คำ...`;
   try {
     const res = await callOpenRouter({ model, temperature: 0.2, max_tokens: 8000,
-      messages: [{ role: 'user', content: STYLE_SHEET_DRAFT_PROMPT.replace('{glossary}', glossary).replace('{samples}', samples) }] });
+      messages: [{ role: 'user', content: STYLE_SHEET_DRAFT_PROMPT.replace('{glossary}', () => glossary).replace('{stats}', () => stats).replace('{samples}', () => samples) }] });
     const raw = String(res.choices?.[0]?.message?.content || '').replace(/```json|```/g, '');
     const a = raw.indexOf('{'), b = raw.lastIndexOf('}');
     let obj = null;
