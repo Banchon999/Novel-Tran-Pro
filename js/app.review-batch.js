@@ -1224,8 +1224,23 @@ function clearTranslation() {
 async function copyTranslation() {
   const text = document.getElementById('translationOutput').innerText.trim();
   if (!text || text === 'คำแปลจะปรากฏที่นี่...') { showToast('ยังไม่มีคำแปล', 'error'); return; }
-  try { await navigator.clipboard.writeText(text); showToast('คัดลอกแล้ว ✓', 'success'); }
-  catch { showToast('คัดลอกล้มเหลว', 'error'); }
+  const ok = await copyTextToClipboard(text);
+  showToast(ok ? 'คัดลอกแล้ว ✓' : 'คัดลอกล้มเหลว', ok ? 'success' : 'error');
+}
+// navigator.clipboard ใช้ได้เฉพาะ HTTPS/localhost — เปิดผ่าน IP ในวง LAN (เช่น Simple HTTP Server) ต้อง fallback เป็น execCommand
+async function copyTextToClipboard(text) {
+  let ok = false;
+  if (navigator.clipboard && window.isSecureContext) {
+    try { await navigator.clipboard.writeText(text); ok = true; } catch {}
+  }
+  if (!ok) {
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.setAttribute('readonly', ''); ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0;pointer-events:none';
+    document.body.appendChild(ta); ta.select(); ta.setSelectionRange(0, text.length);
+    try { ok = document.execCommand('copy'); } catch { ok = false; }
+    ta.remove();
+  }
+  return ok;
 }
 function addLog(el, msg, cls) {
   const d = document.createElement('div');
