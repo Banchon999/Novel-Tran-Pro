@@ -638,7 +638,7 @@ function renderDupPanel() {
     const more  = pairs.length - shown.length;
     html += '<div style="margin-bottom:4px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
       '<span>🔍 <strong>คำซ้อน ' + pairs.length + ' คู่</strong> — อาจ inject ผิด</span>' +
-      '<button id="dupAiResolveBtn" onclick="aiResolveSubstrDups()" style="background:linear-gradient(135deg,#7a5820,#c9a84c);color:#0c0800;border:none;padding:2px 10px;border-radius:4px;cursor:pointer;font-size:0.72rem;font-weight:600">🤖 ให้ AI จัดการ</button>' +
+      '<button id="dupAiResolveBtn" onclick="aiResolveSubstrDups()" style="background:var(--accent);color:var(--accent-ink);border:none;padding:2px 10px;border-radius:4px;cursor:pointer;font-size:0.72rem;font-weight:600">🤖 ให้ AI จัดการ</button>' +
       '<button id="dupFixBtn" onclick="aiFixSubstrConsistency()" title="ตรวจคู่ที่คำแปลของส่วนซ้อนไม่ตรงกัน แล้วแก้ทั้งสองให้ใช้คำเดียวกัน" style="background:linear-gradient(135deg,#2a5d4c,#4cc9a0);color:#04120c;border:none;padding:2px 10px;border-radius:4px;cursor:pointer;font-size:0.72rem;font-weight:600">🔧 แก้คำแปลให้ตรงกัน</button>' +
       '</div>';
     html += '<div id="dupAiStatus" style="font-size:0.74rem;color:var(--gold);min-height:16px"></div>';
@@ -1250,7 +1250,7 @@ function brFrLive() {
   document.querySelectorAll('.bulk-rename-input').forEach(inp => { inp.style.background = ''; inp.style.borderBottomColor = ''; });
   targets.forEach(inp => {
     const hits = (inp.value.match(regex) || []).length;
-    if (hits) { total += hits; rows++; inp.style.background = 'rgba(201,168,76,0.1)'; inp.style.borderBottomColor = 'var(--gold)'; }
+    if (hits) { total += hits; rows++; inp.style.background = 'rgba(91,140,255,0.1)'; inp.style.borderBottomColor = 'var(--gold)'; }
   });
   if (total) { info.textContent = `พบ ${total} จุดใน ${rows} ตอน`; info.style.color = 'var(--gold)'; }
   else { info.textContent = 'ไม่พบ'; info.style.color = 'var(--crimson-light)'; }
@@ -1298,18 +1298,19 @@ function brFrDeleteMatches() {
 const THEME_KEY = 'nt_theme_v1';
 
 const THEME_DEFAULTS = {
-  accent:       '#c9a84c',
-  bgVoid:       '#080b0f',
-  bgSurface:    '#111520',
-  textPrimary:  '#d8dde8',
-  textSecondary:'#8090a8',
-  crimson:      '#c23048',
-  fontBody:     "'Noto Sans Thai','Noto Serif Thai',sans-serif",
+  accent:       '#5B8CFF',
+  bgVoid:       '#111214',
+  bgSurface:    '#18191C',
+  textPrimary:  '#EDEDEF',
+  textSecondary:'#A8AAB2',
+  crimson:      '#F07070',
+  fontBody:     "'IBM Plex Sans Thai','Noto Sans Thai',sans-serif",
   fontSize:     '15',
-  radius:       '6',
+  radius:       '8',
 };
 
 const THEME_PRESETS = {
+  'pro': { ...THEME_DEFAULTS },
   'dark-gold': {
     accent:'#c9a84c', bgVoid:'#080b0f', bgSurface:'#111520',
     textPrimary:'#d8dde8', textSecondary:'#8090a8', crimson:'#c23048',

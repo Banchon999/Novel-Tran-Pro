@@ -359,11 +359,11 @@ function _updateBackupWarning() {
 
   if (ts === 0) {
     el.style.display = 'flex';
-    el.innerHTML = `⚠ ยังไม่เคย Backup — ข้อมูลอาจหายถ้าเบราว์เซอร์ล้างข้อมูล &nbsp;<button class="btn-xs" onclick="exportAllWorkspacesJSON()" style="background:var(--gold);color:#000;font-weight:600">💾 Backup ทันที</button>`;
+    el.innerHTML = `<span class="bw-text">ยังไม่เคยสำรองข้อมูล — ข้อมูลอาจหายถ้าเบราว์เซอร์ล้างข้อมูล</span><button class="bw-btn" onclick="exportAllWorkspacesJSON()">สำรองเลย</button>`;
   } else if (age > BACKUP_WARN_HOURS) {
     const h = Math.floor(age);
     el.style.display = 'flex';
-    el.innerHTML = `⚠ Backup ครั้งล่าสุด ${h} ชั่วโมงที่แล้ว &nbsp;<button class="btn-xs" onclick="exportAllWorkspacesJSON()" style="background:var(--gold);color:#000;font-weight:600">💾 Backup ทันที</button> <button class="btn-xs" onclick="document.getElementById('backupWarnBar').style.display='none'" style="margin-left:4px;opacity:0.6">✕</button>`;
+    el.innerHTML = `<span class="bw-text">สำรองข้อมูลล่าสุด ${h} ชั่วโมงที่แล้ว</span><button class="bw-btn" onclick="exportAllWorkspacesJSON()">สำรองเลย</button><button class="bw-x" aria-label="ปิด" onclick="document.getElementById('backupWarnBar').style.display='none'">✕</button>`;
   } else {
     el.style.display = 'none';
   }
