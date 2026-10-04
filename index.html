@@ -3,10 +3,10 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"/>
-  <title>NovelTrans v12.6.1 Pro</title>
+  <title>NovelTrans v13.0 Pro</title>
   <!-- PWA -->
   <link rel="manifest" href="manifest.webmanifest"/>
-  <meta name="theme-color" content="#0c0800"/>
+  <meta name="theme-color" content="#111214"/>
   <meta name="mobile-web-app-capable" content="yes"/>
   <meta name="apple-mobile-web-app-capable" content="yes"/>
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
@@ -14,7 +14,7 @@
   <link rel="icon" type="image/svg+xml" href="icon.svg"/>
   <link rel="apple-touch-icon" href="icon.svg"/>
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
-  <link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700&family=Cinzel:wght@400;600;700&family=Noto+Serif+Thai:wght@300;400;500;600&family=Noto+Sans+Thai:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Noto+Serif+Thai:wght@400;500;600&family=Noto+Sans+Thai:wght@400;500;600&family=Noto+Sans+KR:wght@400;500&display=swap" rel="stylesheet"/>
   <link rel="stylesheet" href="style.css"/>
 </head>
 <body>
@@ -26,10 +26,10 @@
 <aside id="sidebar">
   <div class="sb-header">
     <div class="sb-brand">
-      <span class="sb-icon">⚔</span>
+      <span class="sb-icon"><svg class="nt-logo" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h8M8 3v2M6 5c0 4 3 7 6 8M10 5c0 3-3 7-6 9"/><path d="M13 21l4-9 4 9M14.5 18h5"/></svg></span>
       <div>
         <div class="sb-title">NovelTrans</div>
-        <div class="sb-sub">v12.6.1 Pro · Multi File</div>
+        <div class="sb-sub">v13.0 Pro · Multi File</div>
       </div>
     </div>
     <button class="icon-btn" onclick="closeSidebar()">✕</button>
@@ -52,7 +52,7 @@
     <button class="sb-action-btn" onclick="openImportWs()">📥 Import Workspace</button>
     <input type="file" id="importWsFile" accept=".json" style="display:none" onchange="importWorkspace(event)"/>
     <button class="sb-action-btn" onclick="openMultiExport()">📦 Export หลาย Workspace</button>
-    <button class="sb-action-btn" onclick="exportAllWorkspacesJSON()" style="background:rgba(201,168,76,0.12);border-color:var(--gold);color:var(--gold-light)">💾 Backup ทั้งหมด (1-click)</button>
+    <button class="sb-action-btn" onclick="exportAllWorkspacesJSON()" style="background:rgba(91,140,255,0.12);border-color:var(--gold);color:var(--gold-light)">💾 Backup ทั้งหมด (1-click)</button>
     <button class="sb-action-btn" onclick="openApiSettings()">⚙ ตั้งค่า API Key</button>
     <button class="sb-action-btn" onclick="openThemeEditor()">🎨 Theme Editor</button>
   </div>
@@ -61,11 +61,11 @@
 <div id="appMain">
   <header class="app-header">
     <div class="header-left">
-      <button class="icon-btn" onclick="openSidebar()">☰</button>
+      <button class="icon-btn" onclick="openSidebar()" aria-label="เมนู"><svg class="ico" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
       <div class="header-brand">
-        <span class="header-icon">⚔</span>
+        <span class="header-icon"><svg class="nt-logo" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h8M8 3v2M6 5c0 4 3 7 6 8M10 5c0 3-3 7-6 9"/><path d="M13 21l4-9 4 9M14.5 18h5"/></svg></span>
         <span class="header-title">NovelTrans</span>
-        <span class="header-ver">v12.6.1 Pro</span>
+        <span class="header-ver">v13.0 Pro</span>
       </div>
     </div>
     <div class="header-right">
@@ -74,13 +74,11 @@
     </div>
   </header>
   <!-- Backup warning bar (hidden by default) -->
-  <div id="backupWarnBar" style="display:none;align-items:center;gap:8px;padding:5px 16px;
-    background:rgba(180,100,0,0.18);border-bottom:1px solid var(--gold);
-    font-size:0.76rem;color:var(--gold-light);flex-wrap:wrap"></div>
+  <div id="backupWarnBar" class="backup-warn" style="display:none"></div>
 
   <div id="noWsMsg" class="no-ws-msg">
     <div class="no-ws-icon">⚔</div>
-    <div class="no-ws-title">NovelTrans v12.6.1 Pro</div>
+    <div class="no-ws-title">NovelTrans v13.0 Pro</div>
     <div class="no-ws-sub">สร้างหรือเลือก Workspace เพื่อเริ่มแปล</div>
     <button class="btn btn-primary" onclick="openModal('modal-new-ws')">＋ สร้าง Workspace ใหม่</button>
     <button class="btn btn-ghost" style="margin-top:8px" onclick="openImportWs()">📥 Import Workspace</button>
@@ -88,12 +86,12 @@
 
   <div id="wsContent" class="ws-content-hidden">
     <div class="sub-tabs">
-      <button class="sub-tab active" data-tab="translate" onclick="switchTab('translate')">⚡ แปล</button>
-      <button class="sub-tab" data-tab="chapters" onclick="switchTab('chapters')">📚 ตอน</button>
-      <button class="sub-tab" data-tab="read" onclick="switchTab('read')">📖 อ่าน/แก้ไข</button>
-      <button class="sub-tab" data-tab="glossary" onclick="switchTab('glossary')">📖 คลังศัพท์</button>
-      <button class="sub-tab" data-tab="styles" onclick="switchTab('styles')">🖊 Styles</button>
-      <button class="sub-tab" data-tab="settings-ws" onclick="switchTab('settings-ws')">⚙ ตั้งค่า</button>
+      <button class="sub-tab active" data-tab="translate" onclick="switchTab('translate')"><svg class="ico" viewBox="0 0 24 24"><path d="M4 5h8M8 3v2M6 5c0 4 3 7 6 8M10 5c0 3-3 7-6 9"/><path d="M13 21l4-9 4 9M14.5 18h5"/></svg><span>แปล</span></button>
+      <button class="sub-tab" data-tab="chapters" onclick="switchTab('chapters')"><svg class="ico" viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg><span>ตอน</span></button>
+      <button class="sub-tab" data-tab="read" onclick="switchTab('read')"><svg class="ico" viewBox="0 0 24 24"><path d="M2 5h6a4 4 0 0 1 4 4v11a3 3 0 0 0-3-3H2zM22 5h-6a4 4 0 0 0-4 4v11a3 3 0 0 1 3-3h7z"/></svg><span>อ่าน/แก้ไข</span></button>
+      <button class="sub-tab" data-tab="glossary" onclick="switchTab('glossary')"><svg class="ico" viewBox="0 0 24 24"><path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z"/><path d="M5 17a3 3 0 0 1 3-3h11"/></svg><span>คลังศัพท์</span></button>
+      <button class="sub-tab" data-tab="styles" onclick="switchTab('styles')"><svg class="ico" viewBox="0 0 24 24"><path d="M4 20l4-1L19 8l-3-3L5 16z"/><path d="M14 7l3 3"/></svg><span>สไตล์</span></button>
+      <button class="sub-tab" data-tab="settings-ws" onclick="switchTab('settings-ws')"><svg class="ico" viewBox="0 0 24 24"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg><span>ตั้งค่า</span></button>
     </div>
 
     <!-- TRANSLATE TAB -->
@@ -101,7 +99,7 @@
       <div class="translate-layout">
         <div class="t-pane">
           <div class="pane-header">
-            <span class="pane-title">📖 ต้นฉบับ</span>
+            <span class="pane-title">ต้นฉบับ · KO</span>
             <div class="pane-actions">
               <button class="icon-btn-sm" onclick="detectGlossary()" title="ตรวจจับคำศัพท์">🔍</button>
               <button class="icon-btn-sm" onclick="cleanSourceText()" title="ลบ Base64/ขยะออก">🧹</button>
@@ -121,7 +119,7 @@
         </div>
         <div class="t-pane">
           <div class="pane-header">
-            <span class="pane-title">⚡ คำแปล (ไทย)</span>
+            <span class="pane-title">คำแปล · TH</span>
             <div class="pane-actions">
               <button class="icon-btn-sm" onclick="addLineBreaksOutput()" title="เพิ่ม 1 บรรทัดว่างระหว่างทุกบรรทัด">📐</button>
               <button class="icon-btn-sm" onclick="addOneLineOutput()" title="Add 1 Line — เพิ่มบรรทัดว่างก่อนย่อหน้าสุดท้าย">📏</button>
@@ -145,19 +143,19 @@
         </div>
         <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
         <div class="pipeline-stages">
-          <div class="stage" id="stage-glossary">📚 Glossary</div>
-          <div class="stage" id="stage-translate">⚡ แปล</div>
-          <div class="stage" id="stage-polish">✨ Polish</div>
-          <div class="stage" id="stage-done">✓ เสร็จ</div>
+          <div class="stage" id="stage-glossary">คลังศัพท์</div>
+          <div class="stage" id="stage-translate">แปล</div>
+          <div class="stage" id="stage-polish">ขัดเกลา</div>
+          <div class="stage" id="stage-done">เสร็จ</div>
         </div>
       </div>
 
       <div class="action-bar">
-        <button class="btn btn-primary" id="translateBtn" onclick="startTranslation()">⚡ แปล</button>
-        <button class="btn btn-secondary" onclick="openLoadFromChapter()">📂 โหลดตอน</button>
-        <button class="btn btn-secondary" onclick="runQACheck()">🔍 QA</button>
-        <button class="btn btn-secondary" onclick="openFindReplace()">⇄ Find</button>
-        <button class="btn btn-secondary" onclick="openExportModal()">📤 Export</button>
+        <button class="btn btn-primary" id="translateBtn" onclick="startTranslation()">แปลตอนนี้</button>
+        <button class="btn btn-secondary btn-icon" onclick="openLoadFromChapter()" title="โหลดตอน" aria-label="โหลดตอน"><svg class="ico" viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v10H3z"/></svg></button>
+        <button class="btn btn-secondary btn-icon" onclick="runQACheck()" title="ตรวจคุณภาพ (QA)" aria-label="ตรวจคุณภาพ (QA)"><svg class="ico" viewBox="0 0 24 24"><path d="M9 11l2 2 4-4"/><circle cx="12" cy="12" r="8"/></svg></button>
+        <button class="btn btn-secondary btn-icon" onclick="openFindReplace()" title="ค้นหาและแทนที่" aria-label="ค้นหาและแทนที่"><svg class="ico" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></svg></button>
+        <button class="btn btn-secondary btn-icon" onclick="openExportModal()" title="ส่งออก" aria-label="ส่งออก"><svg class="ico" viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg></button>
         <div class="quick-settings">
           <select id="translateProvider" class="mini-select" title="AI Provider" onchange="onProviderChange(this.value)"></select>
           <select id="translateModel" class="mini-select" onchange="onModelChange(this.value)"></select>
@@ -342,7 +340,7 @@
           <div class="sf-group">
             <div class="sf-label">Temperature <span id="wsTempVal">0.7</span></div>
             <input type="range" id="wsTemp" min="0" max="1" step="0.1" value="0.7" class="range-input" oninput="document.getElementById('wsTempVal').textContent=this.value;wsTempHint()"/>
-            <label class="toggle-mini" style="gap:8px;cursor:pointer;margin-top:6px">
+            <label class="toggle-mini toggle-wrap" style="gap:8px;cursor:pointer;margin-top:6px">
               <input type="checkbox" id="wsStableTemp" checked onchange="wsTempHint()"/>
               <span style="font-size:0.78rem;color:var(--text-secondary)">🎯 แปลแบบคงที่ — ตอนแปลใช้ temperature ไม่เกิน 0.3 ให้เลือกคำเหมือนกันทุกตอน (แนะนำ)</span>
             </label>
@@ -702,7 +700,7 @@
           <span class="sf-label" style="margin:0">✏ แก้ไข Auto Glossary Prompt</span>
           <div style="display:flex;gap:6px">
             <button class="btn-xs" onclick="agResetPrompt()" title="คืนค่า default">↺ Reset</button>
-            <button class="btn-xs" style="background:rgba(201,168,76,0.15);border-color:var(--gold-dim);color:var(--gold)" onclick="agSavePrompt()">💾 บันทึก Prompt</button>
+            <button class="btn-xs" style="background:rgba(91,140,255,0.15);border-color:var(--gold-dim);color:var(--gold)" onclick="agSavePrompt()">💾 บันทึก Prompt</button>
           </div>
         </div>
         <textarea id="agPromptEditor" class="editor-ta" rows="8" style="font-size:0.78rem;font-family:var(--font-mono);line-height:1.6;resize:vertical"></textarea>
@@ -1069,8 +1067,8 @@
       <div class="theme-grid">
         <div class="theme-row">
           <label class="theme-lbl">สี Accent (ทอง)</label>
-          <input type="color" id="th-accent" class="theme-color-input" value="#c9a84c" oninput="themePreview()"/>
-          <input type="text"  id="th-accent-hex" class="theme-hex-input" value="#c9a84c" oninput="themeHexInput('th-accent','th-accent-hex')"/>
+          <input type="color" id="th-accent" class="theme-color-input" value="#5B8CFF" oninput="themePreview()"/>
+          <input type="text"  id="th-accent-hex" class="theme-hex-input" value="#5B8CFF" oninput="themeHexInput('th-accent','th-accent-hex')"/>
         </div>
         <div class="theme-row">
           <label class="theme-lbl">배경 void (ลึกสุด)</label>
@@ -1105,7 +1103,8 @@
         <div class="theme-row">
           <label class="theme-lbl">ฟอนต์ Body (ไทย)</label>
           <select id="th-font-body" class="mini-select" style="flex:1" onchange="themePreview()">
-            <option value="'Noto Sans Thai','Noto Serif Thai',sans-serif">Noto Sans Thai (default)</option>
+            <option value="'IBM Plex Sans Thai','Noto Sans Thai',sans-serif">IBM Plex Sans Thai (default)</option>
+            <option value="'Noto Sans Thai','Noto Serif Thai',sans-serif">Noto Sans Thai</option>
             <option value="'Noto Serif Thai',serif">Noto Serif Thai</option>
             <option value="'Sarabun',sans-serif">Sarabun</option>
             <option value="'Kanit',sans-serif">Kanit</option>
@@ -1133,7 +1132,8 @@
       <!-- Presets -->
       <div class="theme-section-label" style="margin-top:10px">Presets สำเร็จรูป</div>
       <div style="display:flex;gap:6px;flex-wrap:wrap">
-        <button class="btn-xs" onclick="themeApplyPreset('dark-gold')">⚔ Dark Gold (default)</button>
+        <button class="btn-xs" onclick="themeApplyPreset('pro')">Pro Tool (default)</button>
+        <button class="btn-xs" onclick="themeApplyPreset('dark-gold')">⚔ Dark Gold (ธีมเดิม)</button>
         <button class="btn-xs" onclick="themeApplyPreset('deep-blue')">🌊 Deep Blue</button>
         <button class="btn-xs" onclick="themeApplyPreset('forest')">🌿 Forest Green</button>
         <button class="btn-xs" onclick="themeApplyPreset('crimson')">🔴 Crimson Night</button>

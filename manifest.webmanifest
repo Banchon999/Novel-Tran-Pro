@@ -9,8 +9,8 @@
   "id": "noveltrans-pro",
   "display": "standalone",
   "orientation": "portrait-primary",
-  "background_color": "#0c0800",
-  "theme_color": "#0c0800",
+  "background_color": "#111214",
+  "theme_color": "#111214",
   "categories": ["productivity", "books", "utilities"],
   "icons": [
     {

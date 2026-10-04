@@ -123,7 +123,7 @@ function frHighlightInOutput(term, opts) {
           const mark = document.createElement('mark');
           mark.className = 'fr-hl';
           mark.textContent = m[0];
-          mark.style.background = 'rgba(201,168,76,0.35)';
+          mark.style.background = 'rgba(91,140,255,0.35)';
           mark.style.color = 'var(--gold-light)';
           mark.style.borderRadius = '2px';
           frag.appendChild(mark);
@@ -146,7 +146,7 @@ function frHighlightInOutput(term, opts) {
 
 function frUpdateActiveHighlight() {
   _frHighlightNodes.forEach((m, i) => {
-    m.style.background = i === _frMatchIdx ? 'rgba(201,168,76,0.7)' : 'rgba(201,168,76,0.3)';
+    m.style.background = i === _frMatchIdx ? 'rgba(91,140,255,0.7)' : 'rgba(91,140,255,0.3)';
     m.style.outline = i === _frMatchIdx ? '2px solid var(--gold)' : 'none';
   });
   if (_frHighlightNodes[_frMatchIdx]) {
@@ -406,7 +406,7 @@ function rsRenderCurrent() {
 
   const markEl = document.createElement('mark');
   markEl.style.cssText = [
-    'background:rgba(201,168,76,0.45)',
+    'background:rgba(91,140,255,0.45)',
     'color:var(--gold-light)',
     'border-radius:3px',
     'padding:0 3px',
@@ -1163,11 +1163,11 @@ function setTranslating(val) {
   const btn = document.getElementById('translateBtn');
   if (!btn) return;
   if (val) {
-    btn.innerHTML = '⬛ หยุด';
+    btn.innerHTML = 'หยุด';
     btn.classList.add('btn-stop');
     btn.onclick = stopTranslation;
   } else {
-    btn.innerHTML = '⚡ แปล';
+    btn.innerHTML = 'แปลตอนนี้';
     btn.classList.remove('btn-stop');
     btn.onclick = startTranslation;
     S.abortCtrl = null;
