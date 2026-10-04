@@ -21,7 +21,7 @@ const PROVIDERS = {
     buildRequest({ model, messages, temperature, max_tokens, stream, key }) {
       return {
         url: 'https://openrouter.ai/api/v1/chat/completions',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}`, 'HTTP-Referer': location.origin, 'X-Title': 'NovelTrans v12.6 Pro' },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}`, 'HTTP-Referer': location.origin, 'X-Title': 'NovelTrans v12.6.1 Pro' },
         body: { model, messages, temperature, max_tokens, stream },
       };
     },
