@@ -95,7 +95,7 @@ async function loadWorkspaceList() {
   }
   el.innerHTML = list.map(w => `
     <div class="ws-item ${S.currentWsId === w.id ? 'active' : ''}" onclick="selectWorkspace('${w.id}')">
-      <span class="ws-emoji">${w.emoji || '📖'}</span>
+      ${coverTileHtml(w.name, w.coverThumb, 'cover-sm')}
       <div class="ws-info">
         <div class="ws-name">${esc(w.name)}</div>
         <div class="ws-meta">${w.chapterCount || 0} ตอน</div>
@@ -119,7 +119,7 @@ async function selectWorkspace(id) {
 
   document.getElementById('noWsMsg').style.display = 'none';
   document.getElementById('wsContent').className = 'ws-content-visible';
-  document.getElementById('wsNameHeader').textContent = `${ws.emoji || '📖'} ${ws.name}`;
+  setWsHeader(ws);
 
   renderProviderUI();
   checkHealth();
@@ -173,7 +173,7 @@ async function createWorkspace() {
   const ws = {
     id: genId(),
     name,
-    emoji: document.getElementById('newWsEmoji').value.trim() || '📖',
+    ...(S._newWsCover ? { cover: S._newWsCover.cover, coverThumb: S._newWsCover.thumb } : {}),
     description: document.getElementById('newWsDesc').value.trim(),
     chapters: [],
     glossary: [],
@@ -186,7 +186,8 @@ async function createWorkspace() {
   await lsSaveWorkspace(ws);
   closeModal('modal-new-ws');
   document.getElementById('newWsName').value = '';
-  document.getElementById('newWsEmoji').value = '';
+  S._newWsCover = null;
+  renderCoverPicker('newWsCover', '', null);
   document.getElementById('newWsDesc').value = '';
   await selectWorkspace(ws.id);
   showToast(`สร้าง "${name}" สำเร็จ`, 'success');
@@ -211,7 +212,8 @@ function renderWsSettings() {
   const w = S.currentWs;
   document.getElementById('wsEditName').value = w.name || '';
   document.getElementById('wsEditDesc').value = w.description || '';
-  document.getElementById('wsEditEmoji').value = w.emoji || '📖';
+  S._coverDraft = undefined;   // undefined = ไม่เปลี่ยน · null = ลบปก · {cover,thumb} = ปกใหม่
+  renderCoverPicker('wsCover', w.name, w.cover);
   renderProviderUI();
   const temp = w.settings?.temperature ?? 0.7;
   document.getElementById('wsTemp').value = temp;
@@ -284,7 +286,9 @@ async function saveWsSettings() {
   if (!S.currentWsId) return;
   S.currentWs.name = document.getElementById('wsEditName').value.trim();
   S.currentWs.description = document.getElementById('wsEditDesc').value.trim();
-  S.currentWs.emoji = document.getElementById('wsEditEmoji').value.trim() || '📖';
+  if (S._coverDraft === null) { delete S.currentWs.cover; delete S.currentWs.coverThumb; }
+  else if (S._coverDraft) { S.currentWs.cover = S._coverDraft.cover; S.currentWs.coverThumb = S._coverDraft.thumb; }
+  S._coverDraft = undefined;
   const wsModelVal = document.getElementById('wsTranslateModel').value;
   S.currentWs.settings = {
     ...(S.currentWs.settings || {}),
@@ -306,7 +310,7 @@ async function saveWsSettings() {
   const presetSel = document.getElementById('wsPresetSelect');
   if (presetSel) S.currentWs.presetId = presetSel.value || (S.currentWs.presets?.[0]?.id || '');
   await lsSaveWorkspace(S.currentWs);
-  document.getElementById('wsNameHeader').textContent = `${S.currentWs.emoji} ${S.currentWs.name}`;
+  setWsHeader(S.currentWs);
   await loadWorkspaceList();
   showToast('บันทึกแล้ว ✓', 'success');
 }
@@ -551,7 +555,7 @@ async function openMultiExport() {
   container.innerHTML = list.map(w => `
     <label style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;cursor:pointer;background:var(--bg-card);border:1px solid var(--border)">
       <input type="checkbox" class="multi-exp-chk" data-id="${w.id}" checked style="width:16px;height:16px;cursor:pointer">
-      <span style="font-size:1.1rem">${w.emoji || '📖'}</span>
+      ${coverTileHtml(w.name, w.coverThumb, 'cover-sm')}
       <span style="flex:1;font-size:0.88rem">${esc(w.name)}</span>
       <span style="font-size:0.75rem;color:var(--text-muted)">${w.chapterCount || 0} ตอน</span>
     </label>
@@ -687,3 +691,117 @@ function tryRepairJson(text) {
   return null;
 }
 
+
+
+// ═══════════════════════════════════════════════
+// ─── ภาพปกนิยาย (แทนอีโมจิ) ───
+// ws.cover = JPEG ย่อ (≤600×900) · ws.coverThumb = 96×144 สำหรับรายการ (เก็บใน ws_list meta ด้วย)
+// ไม่มีปก → กระเบื้องตัวอักษรแรกของชื่อเรื่อง สีจาก hash ชื่อ
+// ═══════════════════════════════════════════════
+const COVER_W = 600, COVER_H = 900, THUMB_W = 96, THUMB_H = 144;
+
+function _coverHue(name) {
+  let h = 0;
+  for (const ch of String(name || '')) h = (h * 31 + ch.codePointAt(0)) >>> 0;
+  return h % 360;
+}
+function _coverInitial(name) {
+  const chars = Array.from(String(name || '').trim()).filter(c => !/\p{M}/u.test(c) && !/\s/.test(c));
+  return chars[0] ? chars[0].toUpperCase() : '?';
+}
+function coverTileHtml(name, thumb, cls = 'cover-sm') {
+  if (thumb) return `<img class="cover-img ${cls}" src="${esc(thumb)}" alt="" loading="lazy"/>`;
+  return `<span class="cover-tile ${cls}" style="--cover-h:${_coverHue(name)}" aria-hidden="true">${esc(_coverInitial(name))}</span>`;
+}
+function setWsHeader(ws) {
+  const el = document.getElementById('wsNameHeader');
+  if (!el) return;
+  el.innerHTML = ws ? `${coverTileHtml(ws.name, ws.coverThumb, 'cover-xs')}<span class="ws-name-text">${esc(ws.name)}</span>` : '—';
+}
+
+function _loadImage(src) {
+  return new Promise((res, rej) => { const img = new Image(); img.onload = () => res(img); img.onerror = () => rej(new Error('อ่านรูปไม่ได้')); img.src = src; });
+}
+// ตัดภาพให้เป็นสัดส่วน 2:3 (กึ่งกลาง) แล้วย่อ
+function _drawCover(img, w, h, quality) {
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const g = c.getContext('2d');
+  const r = Math.max(w / img.width, h / img.height);
+  const dw = img.width * r, dh = img.height * r;
+  g.fillStyle = '#111214'; g.fillRect(0, 0, w, h);
+  g.drawImage(img, (w - dw) / 2, (h - dh) / 2, dw, dh);
+  return c.toDataURL('image/jpeg', quality);
+}
+async function readCoverFile(file) {
+  if (!file) return null;
+  if (!/^image\//.test(file.type || '')) throw new Error('ไฟล์นี้ไม่ใช่รูปภาพ');
+  if (file.size > 25 * 1024 * 1024) throw new Error('รูปใหญ่เกิน 25MB');
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await _loadImage(url);
+    return { cover: _drawCover(img, COVER_W, COVER_H, 0.85), thumb: _drawCover(img, THUMB_W, THUMB_H, 0.8) };
+  } finally { URL.revokeObjectURL(url); }
+}
+
+// ปกอัตโนมัติจากชื่อเรื่อง (ใช้ใน EPUB เมื่อยังไม่ได้ตั้งปก)
+function _wrapTitle(g, text, maxW) {
+  const seg = (typeof Intl !== 'undefined' && Intl.Segmenter) ? [...new Intl.Segmenter('th', { granularity: 'word' }).segment(text)].map(x => x.segment) : Array.from(text);
+  const lines = []; let line = '';
+  for (const part of seg) {
+    if (g.measureText(line + part).width > maxW && line.trim()) { lines.push(line.trim()); line = part.trimStart(); }
+    else line += part;
+  }
+  if (line.trim()) lines.push(line.trim());
+  return lines;
+}
+async function generateCoverDataUrl(name) {
+  const c = document.createElement('canvas'); c.width = COVER_W; c.height = COVER_H;
+  const g = c.getContext('2d');
+  const hue = _coverHue(name);
+  const grad = g.createLinearGradient(0, 0, 0, COVER_H);
+  grad.addColorStop(0, `hsl(${hue},45%,22%)`); grad.addColorStop(1, `hsl(${(hue + 30) % 360},50%,10%)`);
+  g.fillStyle = grad; g.fillRect(0, 0, COVER_W, COVER_H);
+  g.strokeStyle = 'rgba(255,255,255,0.18)'; g.lineWidth = 2; g.strokeRect(36, 36, COVER_W - 72, COVER_H - 72);
+  try { await document.fonts?.load?.("600 64px 'IBM Plex Sans Thai'"); } catch {}
+  g.fillStyle = '#F2F2F4'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  let size = 72, lines;
+  do { g.font = `600 ${size}px 'IBM Plex Sans Thai','Noto Sans Thai',sans-serif`; lines = _wrapTitle(g, String(name || 'NovelTrans'), COVER_W - 140); size -= 6; } while (lines.length > 4 && size > 30);
+  const lh = size * 1.5, top = COVER_H * 0.42 - (lines.length - 1) * lh / 2;
+  lines.forEach((l, i) => g.fillText(l, COVER_W / 2, top + i * lh));
+  g.font = `500 22px 'IBM Plex Sans Thai',sans-serif`; g.fillStyle = 'rgba(242,242,244,0.6)';
+  g.fillText('NovelTrans', COVER_W / 2, COVER_H - 90);
+  return c.toDataURL('image/jpeg', 0.9);
+}
+
+// กล่องเลือกปก: prefix = 'wsCover' (ตั้งค่า) หรือ 'newWsCover' (สร้างเรื่องใหม่)
+function renderCoverPicker(prefix, name, cover) {
+  const box = document.getElementById(prefix + 'Preview');
+  if (!box) return;
+  box.innerHTML = cover ? `<img class="cover-img cover-lg" src="${esc(cover)}" alt="ภาพปก"/>` : coverTileHtml(name, null, 'cover-lg');
+  const rm = document.getElementById(prefix + 'Remove');
+  if (rm) rm.style.display = cover ? '' : 'none';
+}
+async function onCoverFileChange(prefix, input) {
+  const file = input.files?.[0];
+  input.value = '';
+  if (!file) return;
+  try {
+    const r = await readCoverFile(file);
+    if (prefix === 'newWsCover') S._newWsCover = r; else S._coverDraft = r;
+    const name = document.getElementById(prefix === 'newWsCover' ? 'newWsName' : 'wsEditName')?.value || '';
+    renderCoverPicker(prefix, name, r.cover);
+    if (prefix === 'wsCover') showToast('เลือกปกแล้ว — กด 💾 บันทึก เพื่อใช้', '');
+  } catch (e) { showToast('❌ ' + e.message, 'error'); }
+}
+function removeCover(prefix) {
+  const name = document.getElementById(prefix === 'newWsCover' ? 'newWsName' : 'wsEditName')?.value || '';
+  if (prefix === 'newWsCover') S._newWsCover = null; else S._coverDraft = null;
+  renderCoverPicker(prefix, name, null);
+}
+
+// ยังไม่มีปก → กระเบื้องตัวอักษรเปลี่ยนตามชื่อที่พิมพ์
+function coverNameInput(prefix, name) {
+  const draft = prefix === 'newWsCover' ? S._newWsCover : S._coverDraft;
+  const current = draft === null ? null : (draft?.cover || (prefix === 'wsCover' ? S.currentWs?.cover : null));
+  if (!current) renderCoverPicker(prefix, name, null);
+}

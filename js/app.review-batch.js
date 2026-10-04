@@ -1238,7 +1238,10 @@ function esc(str) {
   if (!str) return '';
   const d = document.createElement('div'); d.textContent = str; return d.innerHTML;
 }
-function openModal(id) { document.getElementById(id).classList.add('open'); }
+function openModal(id) {
+  document.getElementById(id).classList.add('open');
+  if (id === 'modal-new-ws' && typeof renderCoverPicker === 'function') { S._newWsCover = null; renderCoverPicker('newWsCover', document.getElementById('newWsName')?.value || '', null); }
+}
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
 
 let _toastTimer = null;
@@ -1405,6 +1408,8 @@ async function parseEpub(file) {
   for (const spineId of spineIds) {
     const item = itemsMap[spineId];
     if (!item) { skippedCount++; continue; }
+    // หน้าปก/หน้าชื่อเรื่อง/สารบัญ ไม่ใช่ตอน (รวม EPUB ที่ export จากแอปนี้เอง)
+    if (/^(cover|titlepage|title-page|nav|toc)$/i.test(spineId)) { skippedCount++; continue; }
     if (item.mediaType && !item.mediaType.includes('html')) { skippedCount++; continue; }
 
     const filePath = opfDir + item.href;

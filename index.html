@@ -314,9 +314,17 @@
     <div class="tab-content" id="tab-settings-ws" style="display:none">
       <div class="settings-scroll">
         <div class="settings-form">
-          <div class="sf-group"><div class="sf-label">ชื่อนิยาย</div><input id="wsEditName" type="text" class="text-input"/></div>
+          <div class="sf-group"><div class="sf-label">ชื่อนิยาย</div><input id="wsEditName" type="text" class="text-input" oninput="coverNameInput('wsCover', this.value)"/></div>
           <div class="sf-group"><div class="sf-label">คำอธิบาย</div><input id="wsEditDesc" type="text" class="text-input"/></div>
-          <div class="sf-group"><div class="sf-label">Emoji</div><input id="wsEditEmoji" type="text" class="text-input" style="max-width:80px"/></div>
+          <div class="sf-group"><div class="sf-label">ภาพปก</div>
+          <div class="cover-picker">
+            <div id="wsCoverPreview" class="cover-preview"></div>
+            <div class="cover-actions">
+              <label class="btn btn-secondary btn-sm" style="cursor:pointer">เลือกรูปปก<input type="file" accept="image/*" style="display:none" onchange="onCoverFileChange('wsCover', this)"/></label>
+              <button type="button" id="wsCoverRemove" class="btn btn-ghost btn-sm" onclick="removeCover('wsCover')" style="display:none">ลบปก</button>
+              <span class="cover-hint">สัดส่วน 2:3 · ระบบตัดกึ่งกลางและย่อให้อัตโนมัติ · ใช้เป็นปก EPUB ด้วย</span>
+            </div>
+          </div></div>
           <div class="sf-group">
             <div class="sf-label">Translation Preset <span style="font-size:0.72rem;color:var(--text-muted)">(Preset ของคุณ — ใช้กับแท็บ ⚡แปล และ ⚡Batch)</span></div>
             <div style="display:flex;gap:8px;align-items:center">
@@ -517,11 +525,17 @@
   <div class="modal">
     <div class="modal-header"><span>＋ สร้าง Workspace ใหม่</span><button class="icon-btn" onclick="closeModal('modal-new-ws')">✕</button></div>
     <div class="modal-body">
-      <div class="sf-group"><div class="sf-label">ชื่อนิยาย *</div><input id="newWsName" type="text" class="text-input" placeholder="เช่น การกลับมาของเทพดาบ"/></div>
-      <div class="sf-group" style="display:flex;gap:8px">
-        <div style="flex:0 0 80px"><div class="sf-label">Emoji</div><input id="newWsEmoji" type="text" class="text-input" placeholder="📖"/></div>
-        <div style="flex:1"><div class="sf-label">คำอธิบาย</div><input id="newWsDesc" type="text" class="text-input" placeholder="ไม่บังคับ"/></div>
-      </div>
+      <div class="sf-group"><div class="sf-label">ชื่อนิยาย *</div><input id="newWsName" type="text" class="text-input" placeholder="เช่น การกลับมาของเทพดาบ" oninput="coverNameInput('newWsCover', this.value)"/></div>
+      <div class="sf-group"><div class="sf-label">คำอธิบาย</div><input id="newWsDesc" type="text" class="text-input" placeholder="ไม่บังคับ"/></div>
+      <div class="sf-group"><div class="sf-label">ภาพปก <span style="color:var(--text-muted);font-size:0.72rem">(ไม่บังคับ)</span></div>
+          <div class="cover-picker">
+            <div id="newWsCoverPreview" class="cover-preview"></div>
+            <div class="cover-actions">
+              <label class="btn btn-secondary btn-sm" style="cursor:pointer">เลือกรูปปก<input type="file" accept="image/*" style="display:none" onchange="onCoverFileChange('newWsCover', this)"/></label>
+              <button type="button" id="newWsCoverRemove" class="btn btn-ghost btn-sm" onclick="removeCover('newWsCover')" style="display:none">ลบปก</button>
+              <span class="cover-hint">สัดส่วน 2:3 · ระบบตัดกึ่งกลางและย่อให้อัตโนมัติ · ใช้เป็นปก EPUB ด้วย</span>
+            </div>
+          </div></div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('modal-new-ws')">ยกเลิก</button>
@@ -889,6 +903,11 @@
           <span class="export-label">ZIP (ทั้ง WS)</span>
           <span class="export-desc">แยกไฟล์ต่อตอน</span>
         </button>
+        <button class="export-btn" onclick="exportWorkspaceEPUB()">
+          <span class="export-icon">📗</span>
+          <span class="export-label">EPUB (ทั้ง WS)</span>
+          <span class="export-desc">อีบุ๊กพร้อมปก · ตอนที่แปลแล้ว</span>
+        </button>
         <button class="export-btn" onclick="exportWorkspaceJSON()">
           <span class="export-icon">💾</span>
           <span class="export-label">JSON (Backup)</span>
@@ -906,6 +925,11 @@
           <span class="export-icon">📄</span>
           <span class="export-label">DOCX (เลือกตอน)</span>
           <span class="export-desc">เลือกตอนที่ต้องการ</span>
+        </button>
+        <button class="export-btn" onclick="openExportSelect('epub')">
+          <span class="export-icon">📗</span>
+          <span class="export-label">EPUB (เลือกตอน)</span>
+          <span class="export-desc">อีบุ๊กพร้อมปก</span>
         </button>
         <button class="export-btn" onclick="openExportSelect('zip')">
           <span class="export-icon">🗜</span>

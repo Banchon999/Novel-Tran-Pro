@@ -1243,3 +1243,22 @@ input[type=checkbox], input[type=radio], input[type=range] { accent-color: var(-
 .backup-warn .bw-text { flex: 1; min-width: 0; }
 .backup-warn .bw-btn { flex-shrink: 0; min-height: 34px; padding: 0 12px; border: 0; border-radius: 6px; background: var(--warn); color: #1A1206; font: 600 0.8rem var(--font-body); cursor: pointer; }
 .backup-warn .bw-x { flex-shrink: 0; width: 34px; height: 34px; border: 0; background: none; color: #F3D3A0; cursor: pointer; }
+
+/* ─── ภาพปกนิยาย ─── */
+.cover-img, .cover-tile { flex-shrink: 0; border-radius: 4px; aspect-ratio: 2 / 3; object-fit: cover; display: inline-flex; }
+.cover-tile {
+  align-items: center; justify-content: center; font-weight: 600; color: #F2F2F4;
+  background: linear-gradient(160deg, hsl(var(--cover-h, 220), 45%, 32%), hsl(calc(var(--cover-h, 220) + 30), 50%, 16%));
+  border: 1px solid rgba(255,255,255,0.08); user-select: none;
+}
+.cover-xs { width: 18px; height: 27px; font-size: 11px; border-radius: 3px; }
+.cover-sm { width: 30px; height: 45px; font-size: 15px; }
+.cover-lg { width: 120px; height: 180px; font-size: 52px; border-radius: 8px; }
+img.cover-xs, img.cover-sm, img.cover-lg { display: block; }
+.ws-item { align-items: center; }
+#wsNameHeader { display: inline-flex; align-items: center; gap: 6px; }
+#wsNameHeader .ws-name-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cover-picker { display: flex; gap: 12px; align-items: flex-start; flex-wrap: wrap; }
+.cover-preview { flex-shrink: 0; }
+.cover-actions { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; flex: 1; min-width: 160px; }
+.cover-hint { font-size: 0.72rem; color: var(--text-muted); line-height: 1.5; }

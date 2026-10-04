@@ -3,7 +3,7 @@
    - cache-first สำหรับไฟล์ static ของแอพ (same-origin GET) + อัปเดตเบื้องหลัง
    - ไม่ยุ่งกับการเรียก API (POST / cross-origin) — ปล่อยผ่านเครือข่ายตรง
    ** เพิ่มเลขเวอร์ชันทุกครั้งที่แก้ไฟล์ app shell เพื่อบังคับอัปเดต cache ** */
-const CACHE = 'noveltrans-v13-0-0';
+const CACHE = 'noveltrans-v13-0-0b';
 
 const APP_SHELL = [
   './',

@@ -499,7 +499,7 @@ async function lsSaveWorkspace(ws) {
   await idbPut('workspaces', ws);
   const list = await lsGetWorkspaceList();
   const idx  = list.findIndex(w => w.id === ws.id);
-  const meta = { id: ws.id, name: ws.name, emoji: ws.emoji || '📖', chapterCount: (ws.chapters || []).length };
+  const meta = { id: ws.id, name: ws.name, emoji: ws.emoji || '📖', coverThumb: ws.coverThumb || '', chapterCount: (ws.chapters || []).length };
   if (idx >= 0) list[idx] = meta; else list.push(meta);
   await lsSaveWorkspaceList(list);
 }
