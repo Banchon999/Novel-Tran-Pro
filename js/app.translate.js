@@ -146,7 +146,7 @@ async function streamSegment(text, contextSegs, options, onChunk, onDone) {
   let fullText = '';
   try {
     fullText = await aiStream(
-      { model, temperature, max_tokens: Math.max(2000, Math.ceil(text.length * 2)), messages: [{ role: 'user', content: prompt }] },
+      { model, temperature: translateTemp(temperature), max_tokens: Math.max(2000, Math.ceil(text.length * 2)), messages: [{ role: 'user', content: prompt }] },
       onChunk,
       (i, o) => { inTok = i; outTok = o; },
       ctrl.signal
@@ -176,13 +176,13 @@ async function translateSegmentDirect(text, allSegments = [], options = {}) {
     ws: S.currentWs, // ใช้ preset ที่ผู้ใช้เลือก เพื่อให้สำนวนสอดคล้องกัน
   });
 
-  const res = await callOpenRouter({ model, messages: [{ role: 'user', content: prompt }], temperature, max_tokens: Math.max(2000, Math.ceil(text.length * 2)) });
+  const res = await callOpenRouter({ model, messages: [{ role: 'user', content: prompt }], temperature: translateTemp(temperature), max_tokens: Math.max(2000, Math.ceil(text.length * 2)) });
   let translation = res.choices?.[0]?.message?.content?.trim() || '';
 
   if (usePolish && translation) {
     const polishPrompt = POLISH_PROMPT.replace('{glossary}', glossaryStr).replace('{text}', translation);
     try {
-      const pr = await callOpenRouter({ model, messages: [{ role: 'user', content: polishPrompt }], temperature: 0.5, max_tokens: Math.max(2000, translation.length * 2) });
+      const pr = await callOpenRouter({ model, messages: [{ role: 'user', content: polishPrompt }], temperature: translateTemp(0.5), max_tokens: Math.max(2000, translation.length * 2) });
       translation = pr.choices?.[0]?.message?.content?.trim() || translation;
     } catch {}
   }
@@ -197,6 +197,10 @@ async function startTranslation() {
   if (typeof rState !== 'undefined') readerCancelPrefetch(); // งาน manual มาก่อน prefetch
   // normalize Korean slang/jamo ก่อนส่ง AI (ไม่แก้ textarea)
   const text = prepareSourceForTranslation(rawText);
+  // ลงคลังศัพท์ใหม่ก่อนแปล (ต้องทำก่อน getOptions — คลังที่ส่งเข้า prompt คำนวณจากตรงนั้น)
+  const _ch = S.editingChapterId ? S.currentWs?.chapters?.find(c => c.id === S.editingChapterId) : null;
+  showToast('📖 ตรวจศัพท์ใหม่ก่อนแปล...', '');
+  await preExtractTerms(text, getOptions().model, _ch ? { id: _ch.id, title: _ch.title, chapterNum: _ch.chapterNum } : null);
   const opts = getOptions();
   if (opts.chunkSize > 0) {
     await translateChunked(text, opts);
@@ -659,6 +663,85 @@ function parseJsonArrayLoose(raw) {
   return { arr: [], broken: true };
 }
 
+// ─── 🤖 ร่างคู่มือการแปล (Style Sheet) จากตอนที่แปลแล้ว + คลังศัพท์ ───
+// AI สรุป "การตัดสินใจ" ที่ใช้อยู่จริง (ทับศัพท์/แปล, คำประจำเรื่อง, น้ำเสียง) · ถ้าแต่ละตอนไม่ตรงกัน ให้เลือกแบบที่ตรงคลัง/ใช้บ่อยกว่า
+// เติมเฉพาะช่องที่ว่าง — ผู้ใช้ตรวจ/แก้แล้วกดบันทึกเอง (ไม่บันทึกทับให้)
+const STYLE_SHEET_DRAFT_PROMPT = `You are the lead translator of a Korean→Thai web-novel series. Write the series TRANSLATION STYLE SHEET in Thai so that every future chapter reads as if one translator did it.
+
+Base it on what the existing translations and the glossary ACTUALLY do. When chapters disagree (e.g. one chapter transliterates a term and another translates it), pick the rendering used in the glossary, otherwise the more frequent one, and state it as the rule.
+Be concrete and short: bullet lines starting with "• ", max 8 bullets per section, use "เกาหลี = ไทย" pairs where useful. Do not invent characters or terms that do not appear below.
+
+Return ONLY JSON (no markdown):
+{"translit":"…","terms":"…","narration":"…","format":"…","voices":"…"}
+- translit: transliterate-vs-translate policy per category (names, places, skills/techniques, ranks/titles, game/system terms, monsters)
+- terms: recurring terms and catchphrases that must be identical every time
+- narration: narration voice, register, narrator self-pronoun, sentence style
+- format: how thoughts, sound effects, system messages, emphasis are written
+- voices: speech style of each main character (self-pronoun, politeness, verbal tics)
+
+GLOSSARY:
+{glossary}
+
+TRANSLATED CHAPTERS (Korean source → Thai translation):
+{samples}`;
+
+async function draftStyleSheet() {
+  const ws = S.currentWs;
+  if (!ws) return;
+  const status = document.getElementById('wsStyleDraftStatus');
+  const btn = document.getElementById('wsStyleDraftBtn');
+  const done = _getSortedChapters().filter(c => c.translation?.trim() && c.sourceText?.trim());
+  if (!done.length) { showToast('ยังไม่มีตอนที่แปลแล้ว — แปลก่อนอย่างน้อย 1 ตอน', 'error'); return; }
+  // ตัวอย่างกระจายทั้งเรื่อง: ตอนแรก กลาง ล่าสุด (สูงสุด 3 ตอน)
+  const picks = [...new Set([done[0], done[Math.floor((done.length - 1) / 2)], done[done.length - 1]])];
+  const samples = picks.map(c => `### ตอน #${c.chapterNum || '?'} ${c.title || ''}\n[KO]\n${c.sourceText.trim().slice(0, 2200)}\n[TH]\n${c.translation.trim().slice(0, 2600)}`).join('\n\n');
+  const glossary = (ws.glossary || []).slice(0, 150).map(g => `${g.korean} = ${fixAddressGender(g.korean, g.thai)} (${g.type || ''}${g.gender ? '/' + g.gender : ''}${g.note ? ' · ' + String(g.note).slice(0, 40) : ''})`).join('\n') || '(ไม่มี)';
+  const model = getProofreadModel(ws, ws.settings?.translateModel || document.getElementById('translateModel')?.value);
+  if (btn) btn.disabled = true;
+  if (status) status.textContent = `🤖 กำลังอ่าน ${picks.length} ตอน + คลัง ${ws.glossary?.length || 0} คำ...`;
+  try {
+    const res = await callOpenRouter({ model, temperature: 0.2, max_tokens: 8000,
+      messages: [{ role: 'user', content: STYLE_SHEET_DRAFT_PROMPT.replace('{glossary}', glossary).replace('{samples}', samples) }] });
+    const raw = String(res.choices?.[0]?.message?.content || '').replace(/```json|```/g, '');
+    const a = raw.indexOf('{'), b = raw.lastIndexOf('}');
+    let obj = null;
+    try { obj = JSON.parse(raw.slice(a, b + 1)); } catch { obj = a >= 0 ? tryRepairJson(raw.slice(a)) : null; }
+    if (!obj || typeof obj !== 'object') throw new Error('อ่านคำตอบ AI ไม่ได้' + (res.choices?.[0]?.finish_reason === 'length' ? ' (token หมด)' : ''));
+    const filled = [], kept = [];
+    for (const [k, label] of STYLE_SHEET_FIELDS) {
+      const el = document.getElementById('ss-' + k);
+      const v = fixAddressGenderText(typeof obj[k] === 'string' ? obj[k].trim() : Array.isArray(obj[k]) ? obj[k].map(x => '• ' + String(x).replace(/^•\s*/, '')).join('\n') : '');
+      if (!el || !v) continue;
+      if (el.value.trim()) { kept.push(label); continue; }
+      el.value = v; filled.push(label);
+    }
+    if (status) status.textContent = filled.length
+      ? `✓ ร่างแล้ว ${filled.length} หัวข้อ${kept.length ? ` (ข้าม ${kept.length} ช่องที่มีข้อความอยู่แล้ว)` : ''} — ตรวจ/แก้แล้วกด 💾 บันทึก`
+      : (kept.length ? 'ทุกช่องมีข้อความอยู่แล้ว — ล้างช่องที่อยากให้ AI ร่างใหม่' : 'AI ไม่ได้ร่างหัวข้อใดมา');
+  } catch (e) {
+    if (status) status.textContent = '❌ ' + e.message;
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+// คำในคลังที่ต้นฉบับมี แต่คำแปลไม่ได้ใช้คำไทยตามคลัง → "ไม่ตรงคลัง" (ตรวจ local ไม่เสียเงิน)
+// ชื่อหลายคำผ่านถ้าเจอคำใดคำหนึ่ง (เช่น "ท่านหญิงเอลีเซ่" ↔ "เอลีเซ่") · คำเรียกขานแก้เพศก่อนเทียบ
+function glossaryMisses(srcText, thaiText, glossary = S.currentWs?.glossary) {
+  const src = String(srcText || ''), th = String(thaiText || '');
+  if (!src || !th) return [];
+  const out = [];
+  for (const g of glossary || []) {
+    const k = String(g.korean || '').trim();
+    const t = String(fixAddressGender(k, String(g.thai || '').trim()) || '');
+    if (k.length < 2 || !t || !src.includes(k) || out.some(o => o.korean === k)) continue;
+    const words = t.split(/\s+/).filter(w => w.length >= 2);
+    if (th.includes(t) || words.some(w => th.includes(w))) continue;
+    out.push({ korean: k, thai: t });
+  }
+  return out;
+}
+
 // gender ใช้ได้เฉพาะ type=character และต้องเป็นค่าที่รู้จัก — ใช้ร่วมกันทั้ง auto-glossary หลังแปลและแบบกดเอง
 // คืน null ถ้าคำแปลไทยมีอักษรเกาหลี/จีน/ญี่ปุ่นปน (เช่น "เซ피อา") — ห้ามเข้าคลัง ไม่งั้นจะลามไปทุกตอน
 function sanitizeGlossaryEntry(entry) {
@@ -675,7 +758,14 @@ function sanitizeGlossaryEntry(entry) {
 
 // ─── Auto Extract Glossary หลังแปลเสร็จ ───
 // chapterInfo = { id, title, chapterNum } หรือ null ถ้าไม่รู้ตอน
-async function autoExtractGlossaryAfterTranslation(sourceText, model, chapterInfo = null, translationText = '') {
+// ดึงศัพท์ใหม่ "ก่อนแปล" — เดิมดึงหลังแปลเท่านั้น คำที่โผล่ครั้งแรกจึงแปลแบบไม่มีคลังกำกับ
+// (เช่น 성녀 ครั้งแรกทับศัพท์ "ซองนยอ" แล้วคลังได้ "นักบุญหญิง" → ตอนถัดไปเปลี่ยนคำ) — นักแปลมืออาชีพลงคลังก่อนแปลเสมอ
+async function preExtractTerms(sourceText, model, chapterInfo = null) {
+  if (!S.currentWs || S.currentWs.settings?.autoGlossary === false || !String(sourceText || '').trim() || !getApiKey()) return;
+  try { await autoExtractGlossaryAfterTranslation(sourceText, model, chapterInfo, '', { quiet: true }); } catch {}
+}
+
+async function autoExtractGlossaryAfterTranslation(sourceText, model, chapterInfo = null, translationText = '', opts = {}) {
   if (!S.currentWsId || !S.currentWs) return;
   if (!sourceText?.trim()) return;
   if (S.currentWs.settings?.autoGlossary === false) return;
@@ -713,7 +803,7 @@ async function autoExtractGlossaryAfterTranslation(sourceText, model, chapterInf
       return;
     }
     if (!terms.length) {
-      showToast('📖 Auto Glossary: ไม่พบคำศัพท์ใหม่', '');
+      if (!opts.quiet) showToast('📖 Auto Glossary: ไม่พบคำศัพท์ใหม่', '');
       return;
     }
 
@@ -748,6 +838,8 @@ async function autoExtractGlossaryAfterTranslation(sourceText, model, chapterInf
       if (S.currentTab === 'glossary') renderGlossaryTable();
       const chLabel = chapterInfo?.title ? ` (ตอน #${chapterInfo.chapterNum||'?'} ${chapterInfo.title.slice(0,20)})` : '';
       showToast(`📖 Auto Glossary: เพิ่ม ${added} คำใหม่${genderFilled ? ` · เติมเพศ ${genderFilled} ตัวละคร` : ''}${chLabel} ✓`, 'success');
+    } else if (opts.quiet) {
+      // ก่อนแปล: ไม่มีอะไรใหม่ → ไม่ต้องแจ้ง
     } else if (rejected) {
       // เดิมขึ้น "มีในคลังแล้ว" ทั้งที่ AI ส่งชื่อไทยที่มีอักษรเกาหลีปน (เช่น "อา리아") แล้วถูกกรองทิ้งหมด
       showToast(`📖 Auto Glossary: ข้าม ${rejected} คำ — ชื่อไทยที่ AI ให้มามีอักษรเกาหลีปน (ลองกด 🤖 Auto ใหม่ หรือเพิ่มเอง)`, 'error');
@@ -836,7 +928,7 @@ async function translateAllStream(text) {
 
     try {
       fullText = await aiStream(
-        { model: options.model, temperature: preset.temperature ?? options.temperature, max_tokens: Math.max(4000, Math.ceil(text.length * 2)), messages: [{ role: 'user', content: prompt }] },
+        { model: options.model, temperature: translateTemp(preset.temperature ?? options.temperature), max_tokens: Math.max(4000, Math.ceil(text.length * 2)), messages: [{ role: 'user', content: prompt }] },
         (delta) => {
           charCount += delta.length;
           fullText += delta;
@@ -868,7 +960,7 @@ async function translateAllStream(text) {
       updateProgress(97, 'Polish...');
       const pp = POLISH_PROMPT.replace('{glossary}', glossaryStr).replace('{text}', fullText);
       try {
-        const pr = await callOpenRouter({ model: options.model, messages: [{ role: 'user', content: pp }], temperature: 0.5, max_tokens: Math.max(4000, fullText.length * 2) });
+        const pr = await callOpenRouter({ model: options.model, messages: [{ role: 'user', content: pp }], temperature: translateTemp(0.5), max_tokens: Math.max(4000, fullText.length * 2) });
         const polished = pr.choices?.[0]?.message?.content?.trim();
         if (polished) { fullText = polished; txtEl.textContent = polished; }
       } catch {}
@@ -891,7 +983,7 @@ async function translateAllStream(text) {
     document.getElementById('translationStats').textContent = `${fullText.length.toLocaleString()} ตัวอักษร`
       + (spFix.fixes.length ? ` · แก้ ครับ/ค่ะ ตามผู้พูด ${spFix.fixes.length} จุด` : '');
     showToast('แปลเสร็จสิ้น ✓', 'success');
-    particleQuickCheck(fullText);
+    qualityQuickCheck(text, fullText);
     // ดึง chapter info จาก chapter ที่กำลัง edit อยู่ (ถ้ามี)
     const _streamChInfo = S.editingChapterId
       ? (() => { const c = S.currentWs?.chapters?.find(ch => ch.id === S.editingChapterId); return c ? { id: c.id, title: c.title, chapterNum: c.chapterNum } : null; })()
@@ -1145,7 +1237,7 @@ async function translateChunked(text, options) {
         timer = startAbortTimer(S.abortCtrl, getTimeoutMs('chunk'));
         try {
           chunkFull = await aiStream(
-            { model: options.model, temperature: chunkPreset.temperature ?? options.temperature, max_tokens: Math.max(2000, Math.ceil(chunk.length * 2)), messages: [{ role: 'user', content: prompt }] },
+            { model: options.model, temperature: translateTemp(chunkPreset.temperature ?? options.temperature), max_tokens: Math.max(2000, Math.ceil(chunk.length * 2)), messages: [{ role: 'user', content: prompt }] },
             (delta) => {
               chunkFull += delta;
               if (cursor.parentNode === txtEl) txtEl.insertBefore(document.createTextNode(delta), cursor);
@@ -1173,7 +1265,7 @@ async function translateChunked(text, options) {
           badge.textContent = '✨ Polish';
           const pp = POLISH_PROMPT.replace('{glossary}', glossaryStr).replace('{text}', chunkFull);
           try {
-            const pr = await callOpenRouter({ model: options.model, messages: [{ role: 'user', content: pp }], temperature: 0.5, max_tokens: Math.max(2000, Math.ceil(chunkFull.length * 1.2)) });
+            const pr = await callOpenRouter({ model: options.model, messages: [{ role: 'user', content: pp }], temperature: translateTemp(0.5), max_tokens: Math.max(2000, Math.ceil(chunkFull.length * 1.2)) });
             const polished = pr.choices?.[0]?.message?.content?.trim();
             if (polished) { chunkFull = polished; txtEl.textContent = polished; completedTranslations[completedTranslations.length-1] = polished; }
           } catch {}
@@ -1227,7 +1319,7 @@ async function translateChunked(text, options) {
     const totalChars = completedTranslations.join('').length;
     document.getElementById('translationStats').textContent = `แปลเสร็จ ${n} chunks · ${totalChars.toLocaleString()} ตัวอักษร`;
     showToast(`แปลเสร็จ ${n} chunks ✓`, 'success');
-    particleQuickCheck(completedTranslations.join('\n\n'));
+    qualityQuickCheck(text, completedTranslations.join('\n\n'));
 
     // ── Auto Extract Glossary ──
     const _chunkChInfo = S.editingChapterId

@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════
-// NovelTrans v12.5 Pro — Multi-file Edition
+// NovelTrans v12.6 Pro — Multi-file Edition
 // IndexedDB backend + OpenRouter API (SSE streaming)
 // ═══════════════════════════════════════════════
 'use strict';
@@ -156,9 +156,55 @@ function getActivePreset(ws) {
   return list.find(p => p.id === ws?.presetId) || list[0] || SEED_PRESETS[0];
 }
 
+// ─── ความต่อเนื่องของคำแปลข้ามตอน (เหมือนนักแปลคนเดียว) ───
+// 1) แปลแบบคงที่: temperature สูงทำให้เลือกคำต่างกันทุกรอบ → ตอนแปลใช้ไม่เกิน 0.3 (ไม่แก้ค่าใน preset) — ค่าเริ่มต้นเปิด
+const STABLE_TEMP_MAX = 0.3;
+function stableTempOn(ws) { return ws?.settings?.stableTemp !== false; }
+function translateTemp(t, ws = S.currentWs) {
+  const v = (typeof t === 'number' && isFinite(t)) ? t : 0.7;
+  return stableTempOn(ws) ? Math.min(v, STABLE_TEMP_MAX) : v;
+}
+
+// 2) คู่มือการแปลของนิยาย (Style Sheet + Voice Bible) — การตัดสินใจที่ต้องยึดทุกตอน
+const STYLE_SHEET_FIELDS = [
+  ['translit',  'นโยบายทับศัพท์ / แปลความหมาย (แยกตามหมวด)', 'TRANSLITERATE vs TRANSLATE POLICY (by category)',
+    'เช่น ชื่อคน/สถานที่: ทับศัพท์ · ชื่อสกิล/ท่า: แปลความหมาย · ศัพท์เกม (마나 레벨 스탯): ทับศัพท์ มานา เลเวล สเตตัส · ยศขุนนาง: แปล (공작=ดยุก)'],
+  ['terms',     'คำประจำเรื่อง / วลีติดปาก (ต้องเหมือนเดิมทุกครั้ง)', 'RECURRING TERMS & CATCHPHRASES (render identically every time)',
+    'เช่น 도련님 = คุณชาย · 기사단 = อัศวินแห่ง… · คำติดปากตัวเอก “…”'],
+  ['narration', 'น้ำเสียงบรรยาย + คำแทนตัวผู้เล่า', 'NARRATION VOICE',
+    'เช่น บรรยายบุรุษที่ 3 ภาษากึ่งทางการ ประโยคกระชับ · ผู้เล่าบุรุษที่ 1 ใช้ "ผม"'],
+  ['format',    'รูปแบบ ความคิด / เสียง / ข้อความระบบ', 'FORMATTING OF THOUGHTS / SOUND EFFECTS / SYSTEM MESSAGES',
+    'เช่น ความคิดใช้ ‘…’ · ข้อความระบบใช้ […] · เสียงประกอบทับศัพท์ ไม่แปล'],
+  ['voices',    'น้ำเสียงตัวละครหลัก', 'CHARACTER VOICES',
+    'เช่น เลออน: สุภาพแต่ห้วน ใช้ "ผม" กับผู้ใหญ่ · อาเรีย: อ่อนหวาน ลงท้าย ค่ะ/คะ'],
+];
+function buildStyleSheetBlock(ws) {
+  const ss = ws?.styleSheet || {};
+  const parts = STYLE_SHEET_FIELDS.filter(([k]) => String(ss[k] || '').trim()).map(([k, , en]) => `${en}:\n${fixAddressGenderText(String(ss[k]).trim())}`);
+  if (!parts.length) return '';
+  return `━━━━━━━━━━━━━━━━━━━━
+TRANSLATION STYLE SHEET for this novel — decisions already made by the translator; follow them exactly in every chapter
+━━━━━━━━━━━━━━━━━━━━
+${parts.join('\n\n')}
+• Adapt the sentence to fit these decisions and the glossary — never change a decided term, transliteration or voice to fit a sentence.`;
+}
+function applyStyleSheet(systemPrompt, ws) {
+  const b = buildStyleSheetBlock(ws);
+  return b && !systemPrompt.includes('TRANSLATION STYLE SHEET') ? injectPromptBlock(systemPrompt, b) : systemPrompt;
+}
+
+// 3) preset ไม่มี {context} → เดิมบริบท (สรุปเรื่อง/ท้ายตอนก่อน) ถูกทิ้งเงียบ ๆ → แทรกเป็นบล็อกแทน
+function applyContext(systemPrompt, contextStr) {
+  if (!contextStr || !String(contextStr).trim() || systemPrompt.includes('{context}')) return systemPrompt;
+  return injectPromptBlock(systemPrompt, `━━━━━━━━━━━━━━━━━━━━
+CONTEXT FROM EARLIER CHAPTERS (for consistency of names, terms and wording only — do NOT translate or output this)
+━━━━━━━━━━━━━━━━━━━━
+${contextStr}`);
+}
+
 function buildTranslatePrompt({ sourceText, glossaryStr = '', contextStr = '', styleNote = '', ws = null, mtlDraft = '', speakerMap = null }) {
   const preset = getActivePreset(ws);
-  return applySpeakerMap(applyParticleRules(applyConsistencyLock(preset.systemPrompt, ws)), speakerMap)
+  return applyContext(applySpeakerMap(applyParticleRules(applyStyleSheet(applyConsistencyLock(preset.systemPrompt, ws), ws)), speakerMap), contextStr)
     .replace('{style_note}', styleNote ? `STYLE GUIDE:\n${styleNote}\n` : '')
     .replace('{glossary}',   glossaryStr || '(ไม่มี)')
     .replace('{context}',   contextStr)
@@ -328,7 +374,8 @@ Return ONLY JSON array (no markdown):
 [{"korean":"term","thai":"Thai translation","type":"character|title|rank|term|honorific|place","gender":"male|female|neutral","note":"English meaning"}]
 
 Rules:
-- Only extract names, titles, skills, places, ranks — NOT common words
+- Only extract names, titles, skills, places, ranks — plus RECURRING genre/system terms that must read the same in every chapter (e.g. 마나, 기사단, 공작가, 레벨, 스탯, 각성) — NOT ordinary everyday words
+- In "note", state the decision: "ทับศัพท์" (transliterated) or "แปลความหมาย" (translated) — and keep that decision for the whole novel
 - Provide natural Thai translations that are CONSISTENT with professional Thai webnovel prose, so that when these terms are injected into the translated chapter they read seamlessly and never break the reader's flow
 - Apply professional proofreading (พิสูจน์อักษร): correct Thai spelling/tone marks, clean transliteration, no stray source-language characters; pick ONE canonical Thai spelling per term and keep it stable
 - type must be one of: character, title, rank, term, honorific, place
@@ -349,6 +396,13 @@ const ADDRESS_GENDER = [
   { re: /^(도련님|공자님|도령님?|소공자님?|젊은 ?주인님)$/, bad: /คุณหนู|คุณหญิง|ท่านหญิง|คุณนาย/, thai: 'คุณชาย' },
   { re: /^(아가씨|영애님?|공녀님?|아씨)$/, bad: /คุณชาย|ท่านชาย|นายน้อย/, thai: 'คุณหนู' },
 ];
+// ข้อความแบบ "도련님 = คุณหนู" ในคู่มือการแปล → แก้คำไทยให้ตรงเพศ (ใช้กับคู่มือที่ AI ร่าง/ผู้ใช้เขียน)
+function fixAddressGenderText(text) {
+  return String(text || '').replace(/([가-힣]+(?: ?[가-힣]+)?)(\s*[=:→]\s*)([^\s,·()\n]+)/g, (m, ko, sep, th) => {
+    const fixed = fixAddressGender(ko, th);
+    return fixed === th ? m : ko + sep + fixed;
+  });
+}
 function fixAddressGender(korean, thai) {
   const k = String(korean || '').trim();
   for (const a of ADDRESS_GENDER) if (a.re.test(k) && a.bad.test(String(thai || ''))) return a.thai;

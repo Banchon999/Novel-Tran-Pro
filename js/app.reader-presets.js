@@ -1,3 +1,14 @@
+// ท้ายคำแปลของตอนก่อนหน้าที่แปลแล้ว (ใกล้สุด ย้อนไม่เกิน 3 ตอน) — ใช้เป็นตัวอย่างสำนวนให้แปลต่อเนื่อง
+function prevChapterTail(ch, ws = S.currentWs) {
+  const sorted = _getSortedChapters();
+  const i = sorted.findIndex(c => c.id === ch.id);
+  for (let j = i - 1; j >= Math.max(0, i - 3); j--) {
+    const t = sorted[j]?.translation?.trim();
+    if (t) return `### ท้ายคำแปลตอนก่อน (#${sorted[j].chapterNum || '?'}) — ตัวอย่างสำนวนที่ใช้มาแล้ว: ใช้ชื่อ คำเรียก และสำนวนให้ต่อเนื่องกับข้อความนี้ ห้ามแปลหรือคัดลอกซ้ำ\n${t.slice(-getPrevCtxChars())}`;
+  }
+  return '';
+}
+
 // ─── Shared Translation Core ───
 // แปล 1 ตอนแบบ headless (glossary → prompt → stream → polish → save → auto-glossary → ctx summary)
 // ใช้ร่วมกันระหว่าง Marathon และ Reader prefetch
@@ -13,9 +24,13 @@ async function translateChapterCore(ch, {
   const ws = S.currentWs;
   const presetBase = (ws.presets || []).find(p => p.id === presetId) || getActivePreset(ws);
   const srcPrepared  = prepareSourceForTranslation(ch.sourceText);
+  // ลงคลังศัพท์ใหม่ก่อนแปล → คำที่โผล่ครั้งแรกก็แปลตามคลัง และ Speaker Map ได้เพศตัวละครใหม่ด้วย
+  await preExtractTerms(srcPrepared, model || ws.settings?.translateModel || document.getElementById('translateModel')?.value, { id: ch.id, title: ch.title, chapterNum: ch.chapterNum });
   const spMap        = await buildSpeakerMap(srcPrepared, model || ws.settings?.translateModel || document.getElementById('translateModel')?.value || 'google/gemini-2.5-flash', ws);
-  const systemPrompt = applySpeakerMap(applyParticleRules(applyConsistencyLock(presetBase.systemPrompt, ws)), spMap);
-  const temperature  = presetBase.temperature;
+  // บริบท = สรุปเรื่อง (Context Memory) + ท้ายคำแปลตอนก่อน (ตัวอย่างสำนวน ให้คำเรียก/สำนวนต่อเนื่อง)
+  const contextStr   = [ctxGetPromptText(ws), prevChapterTail(ch, ws)].filter(Boolean).join('\n\n');
+  const systemPrompt = applyContext(applySpeakerMap(applyParticleRules(applyStyleSheet(applyConsistencyLock(presetBase.systemPrompt, ws), ws)), spMap), contextStr);
+  const temperature  = translateTemp(presetBase.temperature, ws);
   const useModel = model || ws.settings?.translateModel || document.getElementById('translateModel')?.value || 'google/gemini-2.5-flash';
 
   const smartGloss  = getSmartGlossary(ch.sourceText, S.glossaryData);
@@ -26,7 +41,7 @@ async function translateChapterCore(ch, {
   const prompt = systemPrompt
     .replace('{style_note}', '')
     .replace('{glossary}',   glossaryStr || '(ไม่มี)')
-    .replace('{context}',    ctxGetPromptText(ws) || '')
+    .replace('{context}',    contextStr)
     .replace('{text}',       srcPrepared)
     .replace('{mtl_draft}',  mtlDraft || '(ไม่มี MTL draft)');
 
@@ -74,7 +89,7 @@ async function translateChapterCore(ch, {
       const pr = await callOpenRouter({
         model: useModel,
         messages: [{ role: 'user', content: POLISH_PROMPT.replace('{glossary}', glossaryStr).replace('{text}', fullText) }],
-        temperature: 0.5,
+        temperature: translateTemp(0.5, ws),
         max_tokens: Math.max(3000, Math.ceil(fullText.length * 1.2)),
       });
       fullText = pr.choices?.[0]?.message?.content?.trim() || fullText;
@@ -583,7 +598,7 @@ async function reTranslateChapter() {
       onDelta: d => { if (live) { live.textContent += d; } },
     });
     showToast('แปลตอนนี้เสร็จ ✓', 'success');
-    particleQuickCheck(ch.translation);
+    qualityQuickCheck(ch.sourceText, ch.translation);
     if (S.currentTab === 'chapters') renderChapters();
   } catch (e) {
     showToast('แปลไม่สำเร็จ: ' + (e.message || e), 'error');
@@ -914,7 +929,7 @@ async function readerTranslateCurrent() {
     });
     readerRenderChapter(ch);
     if (S.currentTab === 'chapters') renderChapters();
-    particleQuickCheck(ch.translation);
+    qualityQuickCheck(ch.sourceText, ch.translation);
   } catch (err) {
     if (err.name !== 'AbortError') showToast(`แปลไม่สำเร็จ: ${err.message}`, 'error');
     readerRenderChapter(ch);
@@ -1109,6 +1124,17 @@ function particleHighCount(text) {
 }
 
 // เรียกหลังแปลเสร็จ — เตือนถ้ามี ครับ/ค่ะ น่าสงสัย (หน่วงไว้ไม่ให้ทับ toast "แปลเสร็จ")
+// ตรวจหลังแปล (local): ครับ/ค่ะ น่าสงสัย + คำไม่ตรงคลังศัพท์ → toast เดียว (กัน toast ทับกัน)
+function qualityQuickCheck(srcText, text) {
+  const n = particleHighCount(text);
+  const miss = glossaryMisses(srcText, text);
+  const parts = [];
+  if (n) parts.push(`ครับ/ค่ะ น่าสงสัย ${n} จุด (ดู 🚻 แท็บคลังศัพท์)`);
+  if (miss.length) parts.push(`ไม่ตรงคลังศัพท์ ${miss.length} คำ: ${miss.slice(0, 4).map(m => `${m.korean}→${m.thai}`).join(', ')}${miss.length > 4 ? ' …' : ''}`);
+  if (parts.length) setTimeout(() => showToast('⚠ ' + parts.join(' · '), 'error'), 1800);
+  return { particles: n, misses: miss };
+}
+
 function particleQuickCheck(text) {
   const n = particleHighCount(text);
   if (n) setTimeout(() => showToast(`⚠ ครับ/ค่ะ น่าสงสัย ${n} จุด — ตรวจที่ 🚻 สรรพนาม/ครับ-ค่ะ (แท็บคลังศัพท์)`, 'error'), 1800);
