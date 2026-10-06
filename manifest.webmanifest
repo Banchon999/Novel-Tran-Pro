@@ -1,7 +1,7 @@
 {
   "name": "NovelTrans Pro — เครื่องมือแปลนิยาย",
   "short_name": "NovelTrans",
-  "description": "เครื่องมือแปลนิยายเกาหลีด้วย AI พร้อมคลังศัพท์ โหมดอ่าน และ Multi-provider",
+  "description": "เครื่องมือแปลนิยายเกาหลี จีน อังกฤษ เป็นไทยด้วย AI พร้อมคลังศัพท์ โหมดอ่าน และ Multi-provider",
   "lang": "th",
   "dir": "ltr",
   "start_url": "./index.html",
