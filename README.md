@@ -1,145 +1,176 @@
-# NovelTrans v12 Pro — User-Owned Styles/Presets Edition
+<div align="center">
 
-## ใหม่ล่าสุด
-- **🗣 ระบบกัน ครับ/ค่ะ ผิด** — (1) กฎคำลงท้ายตามเพศ**ผู้พูด**แทรกเข้าทุก prompt อัตโนมัติ (มีผลกับ preset เดิม)
-  + glossary ส่ง `particle→ครับ` / `particle→ค่ะ/คะ` ต่อตัวละคร · (2) ตัวตรวจฟรีในปุ่ม **🚻 สรรพนาม/ครับ-ค่ะ**
-  จับ ครับ+ค่ะ ปนกัน / ขัดกับ ผม-ดิฉัน / ไม่ตรงเพศผู้พูด (`ลีน่ากล่าว “…ครับ”`) · (3) เตือนอัตโนมัติหลังแปลทุกแบบ
-- **🐞 แก้บั๊ก** — แท็บแปลไม่ส่งเพศตัวละครให้ AI · หมดเวลาถูกนับเป็นกดหยุด (Batch หยุดทั้งชุด) ·
-  chunk error แต่ขึ้น ✓ แปลแล้ว · กดหยุดแล้วขึ้น "แปลเสร็จ" · Memory cache ใช้แค่ 120 ตัวแรก ·
-  Split ลบคำแปลโดยไม่เตือน (+ Undo ได้แล้ว) · Merge ตั้งสถานะผิด (+ Undo) · 🚻 นับ ภูเขา/นางฟ้า เป็นสรรพนาม ·
-  Auto Glossary แบบกดเองไม่กรอง/แก้เพศไม่ได้ · ปุ่ม Undo ใน toast แสดงเป็นโค้ด HTML
-- **🔀 อ่าน↔แก้ไข เลื่อนตำแหน่งตรงกัน (แท็บ อ่าน/แก้ไข)** — เดิมพอเลื่อนอ่านเจอคำผิดแล้วกด
-  "✏ แก้ไข" textarea จะเด้งกลับไปบนสุด ต้องไล่หาจุดเดิมใหม่ · ตอนนี้ระบบจำ "ย่อหน้า/บรรทัด
-  ที่อยู่บนสุดของจอ" แล้วเลื่อนโหมดใหม่ไปให้ตรงกัน (ทั้ง อ่าน→แก้ไข และ แก้ไข→อ่าน) อิงตำแหน่ง
-  ตัวอักษรจริง จึงตรงแม้บรรทัดตัดคำต่างกัน
-- **🖍 ไฮไลต์คำแปลที่ตรงกับ Glossary (เปิด/ปิดได้)** — ปุ่ม "🖍 ไฮไลต์ศัพท์" ในแท็บ อ่าน/แก้ไข
-  · ไฮไลต์คำในคำแปลที่ตรงกับ "คำไทย" ในคลังศัพท์ พร้อมสีตามประเภท (ตัวละคร/สถานที่/ทักษะ…)
-  · เอาเมาส์ชี้เห็นต้นฉบับเกาหลี + ประเภท · จำค่าเปิด/ปิดต่อ Workspace (`readerSettings.glossaryHl`)
-- **📚 แบ่ง chunk ตอนแปล Batch (เลือกได้หลายโหมด)** — ตั้งใน ⚙ ตั้งค่า Workspace · เดิม batch
-  ส่งทั้งตอนเป็นคำขอเดียว (ตอนยาวเสี่ยงคำแปลถูกตัด/timeout) · ตอนนี้เลือกได้ 3 โหมด:
-  **ปิด** (เดิม) · **Smart** (แบ่งเฉพาะตอนที่ยาวเกินขนาดที่ตั้ง ตัดที่ขอบย่อหน้า) ·
-  **ตามตัวอักษร** (แบ่งทุกตอนเท่า ๆ กัน) · แต่ละ chunk มี context ต่อเนื่อง (ท้ายคำแปล chunk
-  ก่อนหน้า + summary ตอนก่อน) และ glossary เฉพาะ chunk · เก็บใน `settings.batchChunkMode`,
-  `settings.batchChunkSize`
-- **🔧 ตรวจทานคำแปลให้สอดคล้อง (เช็คคำซ้ำ)** — ปุ่มใหม่ในแผงคำซ้อน: ตรวจคู่ substring
-  ที่ "ส่วนที่ใช้ร่วมกัน" ถูกแปลคนละแบบ (เช่น `겁화`="กอบฮวา" แต่ `겁화 가문`="ตระกูลเพลิงกัลป์")
-  แล้วให้ AI เลือกคำแปลที่ถูกต้องของส่วนร่วม + แก้ทั้งสอง entry ให้ใช้คำเดียวกัน (`겁화`→"เพลิงกัลป์")
-  · ไม่แตะต้นฉบับเกาหลี · ทำงานคู่กับปุ่ม "🤖 ให้ AI จัดการ" (ตัวลบคำซ้ำ) เดิม
-- **🔒 Consistency Lock (ล็อกความสม่ำเสมอ)** — เปิด/ปิดได้ต่อ workspace (⚙ ตั้งค่า Workspace)
-  เมื่อเปิดจะแทรกกฎเข้า prompt ตอนแปล: ล็อกสรรพนาม (Pronoun) + ระดับภาษา (Register) +
-  มุมมองเล่าเรื่อง (POV) + ความเสถียรของคำแปล (Deterministic) · แก้ปัญหา "กดแปลรอบสอง
-  ได้ฉัน รอบสามได้ผม รอบสี่ได้ข้าพเจ้า" ทั้งที่ต้นฉบับเดิม · **เลือกสรรพนามบุรุษ 1
-  เริ่มต้นได้** (ฉัน/ผม/ข้าพเจ้า/ข้า… หรือ "อัตโนมัติ" = อิงเพศจาก glossary) สำหรับกรณี
-  ต้นฉบับละประธาน (나는/내가/저는/제가) · ไม่บังคับ inject ถ้า preset มีบล็อกนี้อยู่แล้ว
-  (idempotent) · เก็บใน `settings.consistencyLock`, `settings.consistencySelfRef`
-- **📱 PWA (ติดตั้งเป็นแอพ + ใช้ออฟไลน์ได้)** — มี `manifest.webmanifest` + `sw.js` (service worker)
-  ที่ precache app shell (HTML/CSS/JS/ไอคอน) จึงเปิดแอพแบบ offline ได้ และ "Add to Home Screen"
-  ได้บนมือถือ · การเรียก API ไม่ถูก cache (ปล่อยผ่านเครือข่ายตรง)
-- **🈁 เช็คคำซ้อน (substring) เฉพาะภาษาเกาหลี** — ตรวจคู่คำซ้อนเฉพาะคำที่เป็นเกาหลี (มีฮันกึล
-  และไม่มีคานะญี่ปุ่น) เท่านั้น · คำภาษาอื่น (อังกฤษ/ญี่ปุ่น/จีน) จะไม่ถูกแจ้งเป็นคำซ้อน
-  (เช็คคำซ้ำเป๊ะยังทำกับทุกภาษาเหมือนเดิม)
-- **🤖 แปลชื่อตอน — เลือกได้หลายโมเดล + custom prompt** — dropdown โมเดลในหน้า "แก้ชื่อตอน"
-  ดึงตาม provider ปัจจุบัน (รวมโมเดลที่ 🔄 fetch มา/กำหนดเอง) · จำค่าแยกต่อ workspace
-  (`settings.titleModel`) · แก้ prompt แปลชื่อตอนเองได้ (`settings.titlePromptTemplate`)
+<img src="docs/images/banner.png" alt="NovelTrans — แปลนิยายทั้งเรื่องเหมือนนักแปลคนเดียว" width="100%"/>
 
-## ใหม่ใน v12 (refactor)
-- **Styles & Translation Presets เป็นของผู้ใช้ทั้งหมด** — ไม่มีของ built-in แล้ว; workspace ใหม่จะมีตัวอย่าง 1 อันที่แก้/ลบได้ และจัดการ Preset แบบสร้าง/แก้/ลบได้เต็มรูปแบบ
-- **🔄 Fetch โมเดลจาก API** — ดึงรายชื่อโมเดลล่าสุดจาก provider โดยตรง (เลิกพิมพ์ model id เอง)
-- **🧮 มิเตอร์ Context Window** — แสดงจำนวน token ที่จะส่ง (system + glossary + บริบท + ต้นฉบับ) เทียบกับ context window สูงสุดของโมเดล
-- **📖 แท็บ "อ่าน/แก้ไข" ใหม่** — รวมการอ่านและเครื่องมือแก้ไข (แก้ข้อความ inline + ค้นหา/แทนที่ในตอน) แยกออกจากแท็บตอน
-- **เช็คคำซ้ำรองรับทุกภาษา** — ตรวจคำซ้อนแบบเป็นกลางต่อภาษา (รู้จักขอบคำของภาษาที่มีเว้นวรรค + คำต่อท้ายของภาษาที่ไม่เว้นวรรค)
-- **ตัดออก:** ระบบ Marathon, QA Glossary, และระบบเช็คความสอดคล้อง
+# NovelTrans
 
-## เดิมใน v11
+**เครื่องมือแปลนิยายเว็บด้วย AI สำหรับนักแปลไทย — เกาหลี · จีน · อังกฤษ → ไทย**<br/>
+แปลทั้งเรื่องให้คำเรียก ชื่อ และสำนวน **ต่อเนื่องเหมือนคนคนเดียวแปล** · ใช้บนมือถือได้ · ไม่ต้องมีเซิร์ฟเวอร์
 
-### 📖 Reader Mode — แปลไปอ่านไป
-- ปุ่ม `📖 อ่าน` ในรายการตอน / `📖 อ่านต่อ` ใน toolbar (จำตำแหน่งล่าสุด)
-- ธีมอ่าน 3 แบบ (สว่าง/ซีเปีย/มืด) + ปรับขนาดฟอนต์/ระยะบรรทัด — จำค่าต่อ Workspace
-- **Prefetch**: ขณะอ่านตอน N ระบบแปลตอน N+1 (และ N+2) ให้เองเบื้องหลังแบบเรียงลำดับ
-  (glossary + context memory ของตอนก่อนหน้าเสร็จก่อนเสมอ) — กดตอนถัดไปได้ทันทีไม่ต้องรอ
-- ตอนที่ยังไม่แปล: กด `⚡ แปลตอนนี้` แล้วอ่านสดระหว่าง stream ได้เลย
-- เคารพคิว Marathon และ daily limit เดียวกัน — ไม่แปลซ้ำ ไม่แย่งงาน
+[![Release](https://img.shields.io/github/v/release/Banchon999/Novel-Tran-Pro?style=flat-square&color=5B8CFF&label=release)](https://github.com/Banchon999/Novel-Tran-Pro/releases/latest)
+[![Stars](https://img.shields.io/github/stars/Banchon999/Novel-Tran-Pro?style=flat-square&color=F0B45B)](https://github.com/Banchon999/Novel-Tran-Pro/stargazers)
+[![Last commit](https://img.shields.io/github/last-commit/Banchon999/Novel-Tran-Pro?style=flat-square&color=5BD49A)](https://github.com/Banchon999/Novel-Tran-Pro/commits/main)
+![PWA](https://img.shields.io/badge/PWA-ใช้ออฟไลน์ได้-111214?style=flat-square)
+![No backend](https://img.shields.io/badge/backend-ไม่ต้องมี-111214?style=flat-square)
 
-### 🌐 Multi-provider AI
-- เลือก provider ได้ต่อ Workspace: **OpenRouter** (เดิม), **Google Gemini**, **OpenAI**,
-  **Anthropic Claude**, **DeepSeek** (ต่อ API ตรงเจ้า ไม่ผ่านตัวกลาง)
-- ตั้ง API Key แยกต่อ provider ใน ⚙ ตั้งค่า API Key (key OpenRouter เดิมใช้ได้ต่อทันที)
-- ใส่ model id กำหนดเองได้ (`✏ กำหนดเอง…` ในรายการโมเดล)
-- ข้อความ error บอกสาเหตุชัด: key ผิด (401) / rate limit (429) / เครดิตหมด (402) / server (5xx) / CORS
-- หมายเหตุ CORS: ทุกเจ้าเรียกตรงจาก browser ได้ (Anthropic ใช้ header พิเศษซึ่งแอพใส่ให้แล้ว)
-  ถ้าเจ้าไหนเชื่อมต่อไม่ได้ ให้ใช้ OpenRouter แทน
+[**⬇ ดาวน์โหลดเวอร์ชันล่าสุด**](https://github.com/Banchon999/Novel-Tran-Pro/releases/latest) · [เริ่มใช้ใน 1 นาที](#-เริ่มใช้ใน-1-นาที) · [ฟีเจอร์](#-ทำอะไรได้บ้าง) · [English](#-english)
 
-### 🔁 ความต่อเนื่องการแปล
-- **Resume งานแปลค้าง**: หยุดแปลแบบ chunk กลางคัน → กดแปลใหม่จะถามว่าแปลต่อจาก chunk เดิมไหม
-  (ตอนสถานะ `◐ แปลค้าง` ในรายการตอน)
-- **ตรวจสรรพนาม/เพศ** (`🚻 สรรพนาม` ในแท็บ Glossary): สแกนหา "เขา" ใกล้ชื่อตัวละครหญิง ฯลฯ
-  พร้อมกระโดดไปแก้ใน Review Search — ทำงาน local ไม่เสียค่า AI
-- ความยาว context จากตอน/chunk ก่อนหน้า ปรับได้ในตั้งค่า Workspace (default 400 ตัวอักษร)
-
-### 🔧 อื่นๆ
-- ประเภทคำศัพท์ custom บันทึกถาวรต่อ Workspace (เดิมหายตอน reload)
-- Timeout การเรียก AI ปรับได้ (default 120s) ใน ⚙ ตั้งค่า API Key
-- EPUB import ทนทานขึ้น + ข้อความ error ภาษาไทยชัดเจน (ZIP64/ไฟล์เสีย/WebView เก่า)
-
-### ข้อมูลที่เก็บเพิ่ม (backward-compatible — Workspace เก่าใช้ได้ทันที)
-- localStorage: `nt8_apikey_gemini/openai/anthropic/deepseek`, `nt8_timeout_s`
-- Workspace: `settings.aiProvider`, `settings.customModels`, `settings.prevCtxChars`,
-  `readerSettings`, `readerPosition`, `customGlossaryTypes`, ต่อตอน: `chunkProgress`
+</div>
 
 ---
 
-## โครงสร้างไฟล์
-```
-NovelTrans/
-├── index.html   ← หน้าหลัก
-├── style.css    ← CSS ทั้งหมด
-├── js/          ← JavaScript (แยกเป็นโมดูลตามหน้าที่ โหลดตามลำดับ)
-│   ├── app.core.js              ← state, styles/presets, prompts, storage/IndexedDB
-│   ├── app.providers.js         ← AI providers, fetch models, ต้นทุน
-│   ├── app.workspace.js         ← init, workspace list/settings, import/export
-│   ├── app.chapters-glossary.js ← แท็บตอน + คลังศัพท์ + styles
-│   ├── app.translate.js         ← แกนการแปล, auto-glossary, context memory
-│   ├── app.review-batch.js      ← review search, export, แปล batch, EPUB
-│   ├── app.tools.js             ← เครื่องมือ (dup-check, type system, theme ฯลฯ)
-│   └── app.reader-presets.js    ← แท็บอ่าน/แก้ไข, preset CRUD, reader
-├── serve.sh     ← สคริปต์เปิด server
-└── README.md    ← ไฟล์นี้
-```
+## 🤔 ทำไมต้อง NovelTrans
 
-## วิธีใช้บน Termux
+แปลนิยายด้วย AI ตรง ๆ มักเจอปัญหาเดิมซ้ำ ๆ — **ตอนนี้ทับศัพท์ ตอนหน้าแปลความหมาย**, ชื่อตัวละครสะกดไม่เหมือนเดิม, ตัวละครชายพูด "ค่ะ", คำเรียก "คุณชาย" กลายเป็น "คุณหนู" อ่านแล้วเหมือนคนละคนแปล
 
-### 1. ติดตั้ง Python (ถ้ายังไม่มี)
+NovelTrans เอาวิธีที่ทีมแปลมืออาชีพใช้ มาทำให้อัตโนมัติ:
+
+| ปัญหาที่เจอ | NovelTrans แก้ยังไง |
+|---|---|
+| ชื่อ/ศัพท์เฉพาะสะกดไม่เหมือนเดิมทุกตอน | **คลังศัพท์อัตโนมัติ** — สกัดคำใหม่ *ก่อนแปล* แล้วบังคับใช้คำเดียวกันทุกตอน |
+| ตอนนี้ทับศัพท์ ตอนหน้าแปล | **คู่มือการแปล (Style Sheet)** — AI ร่างนโยบายจากต้นฉบับทั้งเรื่อง ยึดตลอด |
+| ผลแปลสุ่มเปลี่ยนทุกครั้ง | **แปลแบบคงที่** — คุม temperature ให้เลือกคำเดิม |
+| ผู้ชายพูด "ค่ะ" / เขา–เธอ สลับ | **ระบุผู้พูด + ตรวจเพศ** ทุกบทพูด ก่อนและหลังแปล |
+| ตอนก่อนกับตอนนี้สำนวนไม่ต่อกัน | ส่ง **ท้ายตอนก่อน + สรุปเรื่อง** ให้ AI ทุกครั้งอัตโนมัติ |
+
+> วัดจริงด้วยชุดทดสอบใน [`tests/consistency`](tests/consistency) — ตอนเดียวกันแปล 3 รอบ ได้ผลเหมือนกัน **57% → 84–90%** และศัพท์ใช้คำเดียวตลอด **8/8**
+
+## ✨ ทำอะไรได้บ้าง
+
+<table>
+<tr>
+<td width="33%" align="center"><img src="docs/images/screen-translate.png" alt="หน้าแปล" width="230"/><br/><b>แปลแบบ stream</b><br/><sub>ดูคำแปลไหลออกมาสด ๆ · แบ่ง chunk อัตโนมัติ</sub></td>
+<td width="33%" align="center"><img src="docs/images/screen-chapters.png" alt="รายการตอน" width="230"/><br/><b>จัดการทั้งเรื่อง</b><br/><sub>นำเข้า EPUB · แปลหลายตอนรวด (Batch)</sub></td>
+<td width="33%" align="center"><img src="docs/images/screen-glossary.png" alt="คลังศัพท์" width="230"/><br/><b>คลังศัพท์ + เพศตัวละคร</b><br/><sub>สกัดอัตโนมัติ · ตรวจคำซ้ำ/คำซ้อน</sub></td>
+</tr>
+<tr>
+<td align="center"><img src="docs/images/screen-reader.png" alt="อ่านเต็มจอ" width="230"/><br/><b>อ่านเต็มจอ + Prefetch</b><br/><sub>อ่านตอนนี้ ตอนถัดไปแปลรอไว้แล้ว</sub></td>
+<td align="center"><img src="docs/images/screen-sidebar.png" alt="ภาพปกและหลายเรื่อง" width="230"/><br/><b>หลายเรื่อง พร้อมภาพปก</b><br/><sub>แยกคลังศัพท์/ตั้งค่าต่อเรื่อง</sub></td>
+<td align="center"><img src="docs/images/screen-export.png" alt="ส่งออก" width="230"/><br/><b>ส่งออก EPUB · DOCX · TXT</b><br/><sub>EPUB มาตรฐาน (ผ่าน epubcheck) พร้อมปก</sub></td>
+</tr>
+</table>
+
+**ฟีเจอร์ทั้งหมดโดยย่อ**
+
+- 🌐 **ต้นฉบับ 3 ภาษา** — เกาหลี · จีน · อังกฤษ (ตรวจภาษาอัตโนมัติ, prompt และกฎเปลี่ยนตามภาษา)
+- 🤖 **ใช้ AI ได้หลายเจ้า** — OpenRouter (รวมทุกโมเดล) · Google Gemini · OpenAI · Anthropic Claude · DeepSeek
+- 📖 **คลังศัพท์อัตโนมัติ** — สกัดชื่อ/สถานที่/สกิล/คำประจำแนว พร้อมเพศตัวละคร ก่อนแปลทุกตอน
+- 📘 **คู่มือการแปล** — นโยบายทับศัพท์, คำประจำเรื่อง, น้ำเสียงบรรยาย, รูปแบบข้อความระบบ, น้ำเสียงตัวละคร
+- 🗣 **ครับ/ค่ะ ถูกเพศ** — ระบุผู้พูดทุกบทพูด, ตรวจ เขา/เธอ และคำเรียกขานหลังแปล
+- ⚡ **แปลหลายตอนรวด** — Batch พร้อม log และตรวจคำหลุดคลังทุกตอน
+- 📱 **PWA** — ติดตั้งบนหน้าจอโฮม, ใช้ออฟไลน์ได้, ออกแบบมาสำหรับมือถือก่อน
+- 🔒 **ข้อมูลอยู่ในเครื่องคุณ** — เก็บใน IndexedDB ของเบราว์เซอร์, API Key ไม่ส่งไปที่อื่นนอกจากผู้ให้บริการ AI
+- 💾 **สำรอง/กู้คืน 1 คลิก** — Backup ทุกเรื่องเป็นไฟล์เดียว
+- 💸 **ประหยัด** — แสดงต้นทุนจริงทุกครั้ง · Gemini Flash Lite ประมาณ $0.001–0.01 ต่อตอน (ขึ้นกับความยาว)
+
+## 🚀 เริ่มใช้ใน 1 นาที
+
+> ต้องเปิดผ่าน `http://` เสมอ (เปิดไฟล์ตรง ๆ แบบ `file://` ไม่ได้ เพราะเบราว์เซอร์ไม่ให้ใช้ฐานข้อมูล)
+
+**📱 มือถือ Android — ง่ายสุด**
+1. ดาวน์โหลด `NovelTrans-vX.Y.Z.zip` จาก [Releases](https://github.com/Banchon999/Novel-Tran-Pro/releases/latest) แล้วแตกไฟล์
+2. ติดตั้งแอป [Simple HTTP Server](https://shttps.phlox.dev/) → ชี้ไปที่โฟลเดอร์ `NovelTrans` → กด Start
+3. เปิดเบราว์เซอร์ที่ `http://localhost:พอร์ต` → เมนู ☰ → ⚙ ตั้งค่า API Key → สร้างเรื่องแรก
+
+<details>
+<summary><b>🐧 Termux (Android)</b></summary>
+
 ```bash
-pkg update && pkg install python
+pkg install python
+cd ~/storage/shared/NovelTrans && ./serve.sh   # หรือ python3 -m http.server 8080
 ```
+เปิด `http://localhost:8080`
+</details>
 
-### 2. คัดลอกโฟลเดอร์ไปที่ต้องการ
+<details>
+<summary><b>💻 คอมพิวเตอร์ (Windows / macOS / Linux)</b></summary>
+
 ```bash
-cp -r NovelTrans ~/storage/shared/NovelTrans
+git clone https://github.com/Banchon999/Novel-Tran-Pro.git
+cd Novel-Tran-Pro
+python3 -m http.server 8080
+```
+เปิด `http://localhost:8080` · หรืออัปโหลดทั้งโฟลเดอร์ขึ้นเว็บโฮสต์ static ใดก็ได้ (GitHub Pages, Netlify, Cloudflare Pages)
+</details>
+
+<details>
+<summary><b>🔑 เอา API Key จากไหน</b></summary>
+
+- **แนะนำ: [OpenRouter](https://openrouter.ai/keys)** — key เดียวใช้ได้ทุกโมเดล (Gemini, Claude, GPT, DeepSeek ฯลฯ) เติมเงินขั้นต่ำน้อย
+- หรือใช้ key ตรงจาก Google AI Studio / OpenAI / Anthropic / DeepSeek ก็ได้
+- กด **🔄 Fetch** ในหน้าตั้งค่าเพื่อดึงรายชื่อโมเดลล่าสุด
+</details>
+
+## ❓ คำถามที่พบบ่อย
+
+<details><summary><b>ข้อมูลนิยายของฉันถูกส่งไปที่ไหนบ้าง?</b></summary>
+
+ไม่มีเซิร์ฟเวอร์ของ NovelTrans เลย — แอปทำงานในเบราว์เซอร์ของคุณทั้งหมด ข้อความจะถูกส่งไปที่ผู้ให้บริการ AI ที่คุณเลือกเท่านั้น (ตอนกดแปล)
+</details>
+
+<details><summary><b>เปลี่ยนเครื่อง / ล้างเบราว์เซอร์ ข้อมูลหายไหม?</b></summary>
+
+ข้อมูลอยู่ในเบราว์เซอร์ ถ้าล้างข้อมูลเว็บจะหาย — กด **💾 Backup ทั้งหมด** เป็นระยะ (แอปเตือนให้) แล้วนำเข้าที่เครื่องใหม่ได้ทันที
+</details>
+
+<details><summary><b>โมเดลไหนคุ้มที่สุด?</b></summary>
+
+เริ่มที่ **Gemini Flash Lite** (ถูกและเร็ว) สำหรับแปลประจำ · ใช้โมเดลใหญ่กว่า (เช่น Gemini Pro / Claude) เป็น "โมเดลตรวจ" สำหรับงานที่ต้องแม่นยำ เช่น ตรวจเพศ และร่างคู่มือการแปล
+</details>
+
+<details><summary><b>รองรับภาษาญี่ปุ่นไหม?</b></summary>
+
+ยังไม่รองรับอย่างเป็นทางการ (อยู่ในแผน) — ตอนนี้รองรับ เกาหลี · จีน · อังกฤษ
+</details>
+
+## 🗺 แผนต่อไป
+
+- [ ] ต้นฉบับภาษาญี่ปุ่น
+- [ ] ซิงก์ข้อมูลข้ามอุปกรณ์ (เลือกได้, เข้ารหัส)
+- [ ] เปรียบเทียบคำแปลจากหลายโมเดลแบบเคียงกัน
+
+มีไอเดียหรือเจอบั๊ก? เปิด [Issue](https://github.com/Banchon999/Novel-Tran-Pro/issues) ได้เลย
+
+## 🛠 สำหรับนักพัฒนา
+
+เว็บแอป static ล้วน (Vanilla JS, ไม่มี build step) — แก้ไฟล์แล้วรีเฟรชได้ทันที
+
+```
+index.html · style.css · sw.js (PWA)
+js/app.core.js          state, prompts, storage (IndexedDB), ภาษาต้นฉบับ
+js/app.providers.js     ผู้ให้บริการ AI, ดึงรายชื่อโมเดล, ต้นทุน
+js/app.translate.js     แกนการแปล, คลังศัพท์อัตโนมัติ, ระบุผู้พูด, ตรวจเพศ
+js/app.reader-presets.js  อ่านเต็มจอ, Prefetch, Preset
+js/app.review-batch.js  แปลหลายตอน, ส่งออก, นำเข้า EPUB
+js/app.tools.js         ส่งออก EPUB, เครื่องมือคลังศัพท์, ธีม
+tests/                  ชุดวัดความต่อเนื่องและเพศ (ใช้ AI จริง)
 ```
 
-### 3. เปิด server
-```bash
-cd ~/storage/shared/NovelTrans
-chmod +x serve.sh
-./serve.sh
-```
-
-### 4. เปิด browser
-ไปที่ `http://localhost:8080`
+รายละเอียดระบบทั้งหมด: [`SYSTEMS.md`](SYSTEMS.md) · ประวัติการพัฒนา: [`docs/HISTORY.md`](docs/HISTORY.md)
 
 ---
 
-## หรือเปิดทีเดียวด้วยคำสั่งเดียว
-```bash
-cd ~/path/to/NovelTrans && python3 -m http.server 8080
-```
+## 🇬🇧 English
 
-แล้วเปิด browser → `http://localhost:8080`
+**NovelTrans** is a mobile-first, serverless web app for translating web novels (**Korean, Chinese, English → Thai**) with AI — built so a whole series reads as if **one translator** did it.
+
+- **Auto glossary** — extracts names, places, skills and genre terms (with character gender) *before* each chapter is translated, then enforces them.
+- **Translation style sheet** — an AI-drafted policy (transliterate vs. translate, recurring terms, narration voice, character voices) computed from the whole source, injected into every request.
+- **Consistency controls** — stable temperature, previous-chapter context, speaker identification and post-translation gender checks for Thai pronouns and polite particles (ครับ/ค่ะ).
+- **Bring your own AI** — OpenRouter, Google Gemini, OpenAI, Anthropic Claude, DeepSeek; real per-request cost display.
+- **Reader + prefetch, batch translation, EPUB/DOCX/TXT export, per-novel covers, PWA/offline, one-click backup.**
+- **Private by design** — no backend; everything lives in your browser's IndexedDB.
+
+Run it: download a [release](https://github.com/Banchon999/Novel-Tran-Pro/releases/latest), serve the folder over HTTP (`python3 -m http.server 8080`), open `http://localhost:8080`.
 
 ---
 
-## หมายเหตุ
-- **ห้ามเปิดแบบ `file://`** เพราะ IndexedDB จะไม่ทำงานข้ามไฟล์
-- ข้อมูลทั้งหมด (Workspace, Chapter) เก็บใน IndexedDB ของ browser
-- API Key เก็บใน localStorage ของ browser
+<div align="center">
+
+### ⭐ ถ้า NovelTrans ช่วยงานแปลของคุณได้ ฝากกดดาวให้หน่อยนะครับ
+
+ดาวช่วยให้นักแปลคนอื่นเจอโปรเจกต์นี้ และเป็นกำลังใจให้พัฒนาต่อ
+
+[![Star History Chart](https://api.star-history.com/svg?repos=Banchon999/Novel-Tran-Pro&type=Date)](https://star-history.com/#Banchon999/Novel-Tran-Pro&Date)
+
+</div>
