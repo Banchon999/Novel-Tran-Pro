@@ -217,6 +217,11 @@ function renderWsSettings() {
   if (sl) sl.value = SOURCE_LANGS[w.settings?.sourceLang] ? w.settings.sourceLang : '';
   const det = document.getElementById('wsLangDetected');
   if (det) det.textContent = `— ตอนนี้ใช้: ${getSourceLang(w).th}`;
+  const gp = document.getElementById('wsGenrePreset');
+  if (gp && typeof GENRE_PRESETS !== 'undefined') {
+    gp.innerHTML = '<option value="">ไม่ระบุ</option>' + GENRE_PRESETS.map(g => `<option value="${g.id}">${esc(g.name)}</option>`).join('');
+    gp.value = w.settings?.genrePreset || '';
+  }
   S._coverDraft = undefined;   // undefined = ไม่เปลี่ยน · null = ลบปก · {cover,thumb} = ปกใหม่
   renderCoverPicker('wsCover', w.name, w.cover);
   renderProviderUI();
@@ -311,7 +316,9 @@ async function saveWsSettings() {
     batchChunkMode: document.getElementById('wsBatchChunkMode')?.value || 'off',
     batchChunkSize: Math.max(1000, Math.min(20000, parseInt(document.getElementById('wsBatchChunkSize')?.value) || 3000)),
     sourceLang: document.getElementById('wsSourceLang')?.value || '',
+    ...(document.getElementById('wsGenrePreset')?.value ? { genrePreset: document.getElementById('wsGenrePreset').value } : {}),
   };
+  if (document.getElementById('wsGenrePreset') && !document.getElementById('wsGenrePreset').value) delete S.currentWs.settings.genrePreset;
   if (document.getElementById('wsStyleSheetFields')) S.currentWs.styleSheet = readStyleSheetFields();
   const presetSel = document.getElementById('wsPresetSelect');
   if (presetSel) S.currentWs.presetId = presetSel.value || (S.currentWs.presets?.[0]?.id || '');

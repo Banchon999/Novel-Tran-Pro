@@ -205,7 +205,7 @@ ${contextStr}`);
 function buildTranslatePrompt({ sourceText, glossaryStr = '', contextStr = '', styleNote = '', ws = null, mtlDraft = '', speakerMap = null }) {
   const preset = getActivePreset(ws);
   // langify ทำท้ายสุด: บล็อกกฎที่แทรกภายหลัง (ครับ/ค่ะ, เพศ) มีตัวอย่างภาษาเกาหลี — ตัดออกเมื่อต้นฉบับไม่ใช่เกาหลี
-  return langify(applyContext(applySpeakerMap(applyParticleRules(applyStyleSheet(applyConsistencyLock(applyLangNotes(preset.systemPrompt, ws), ws), ws)), speakerMap), contextStr), ws)
+  return langify(applyContext(applySpeakerMap(applyParticleRules(applyStyleSheet(applyConsistencyLock(applyGenreNotes(applyLangNotes(preset.systemPrompt, ws), ws, sourceText), ws), ws)), speakerMap), contextStr), ws)
     .replace('{style_note}', styleNote ? `STYLE GUIDE:\n${styleNote}\n` : '')
     .replace('{glossary}',   glossaryStr || '(ไม่มี)')
     .replace('{context}',   contextStr)
@@ -647,6 +647,12 @@ function langify(tpl, ws, { dropKorean = true } = {}) {
           .replace(/เกาหลี/g, L.th).replace(/\[KO\]/g, `[${L.short}]`);
 }
 
+// แนวทางการแปลตามแนวนิยาย (ws.settings.genrePreset — ข้อมูลอยู่ใน app.glossary-ai.js)
+function applyGenreNotes(systemPrompt, ws, text) {
+  if (typeof buildGenreBlock !== 'function' || typeof systemPrompt !== 'string' || systemPrompt.includes('GENRE GUIDE:')) return systemPrompt;
+  return injectPromptBlock(systemPrompt, buildGenreBlock(ws, text));
+}
+
 function applyLangNotes(systemPrompt, ws) {
   const L = getSourceLang(ws);
   const note = LANG_NOTES[L.code]?.translate;
@@ -662,6 +668,13 @@ function langifyGlossaryPrompt(tpl, ws) {
   if (extra && !t.includes(extra)) {
     const i = t.lastIndexOf('- Return empty array');
     t = i >= 0 ? t.slice(0, i) + extra + '\n' + t.slice(i) : t + '\n' + extra;
+  }
+  // แนวนิยาย: ให้คำที่สกัดใหม่ใช้สำนวนมาตรฐานของแนวนั้น
+  const g = typeof getGenrePreset === 'function' ? getGenrePreset(ws) : null;
+  if (g && !t.includes('GENRE (')) {
+    const rule = `- GENRE (${g.name}): follow these Thai conventions for new terms:\n${g.guide}\n- Standard renderings for this genre: ${g.terms.map(([s, th]) => s + ' = ' + th).join(' · ')}`;
+    const i = t.lastIndexOf('- Return empty array');
+    t = i >= 0 ? t.slice(0, i) + rule + '\n' + t.slice(i) : t + '\n' + rule;
   }
   return t;
 }

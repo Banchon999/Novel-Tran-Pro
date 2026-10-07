@@ -604,69 +604,136 @@ function computeGlossaryDuplicates() {
   return { exactGroups, pairs };
 }
 
-// แสดงผลคำซ้ำในแถบ alert (ไม่ลบอัตโนมัติ — ผู้ใช้กดลบเอง) · คืน true ถ้าพบคำซ้ำ
+// ── "ตรวจแล้ว" — รายการคำซ้ำที่ผู้ใช้ดูแล้วว่าไม่ต้องแก้ จะไม่โชว์อีก (เก็บต่อ workspace) ──
+// ws.dupReviewed = { exact: { <key>: true }, pairs: { "<sub>␟<full>": true } }
+const _DUP_SEP = '␟';
+let _dupShowReviewed = false;
+let _dupPairsAll = [];     // คู่คำซ้อนทั้งหมด (รวมที่ตรวจแล้ว) — index ใช้ใน onclick
+function _dupRev() {
+  const ws = S.currentWs;
+  if (!ws) return { exact: {}, pairs: {} };
+  if (!ws.dupReviewed || typeof ws.dupReviewed !== 'object') ws.dupReviewed = {};
+  ws.dupReviewed.exact = ws.dupReviewed.exact || {};
+  ws.dupReviewed.pairs = ws.dupReviewed.pairs || {};
+  return ws.dupReviewed;
+}
+function _pairKey(p) { return p.sub + _DUP_SEP + p.full; }
+function isDupReviewed(kind, key) { return !!_dupRev()[kind][key]; }
+
+async function dupMarkReviewed(kind, idx, on = true) {
+  if (!S.currentWs) return;
+  const rev = _dupRev();
+  const key = kind === 'exact' ? _dupExactAll[idx]?.key : (_dupPairsAll[idx] ? _pairKey(_dupPairsAll[idx]) : null);
+  if (!key) return;
+  if (on) rev[kind][key] = true; else delete rev[kind][key];
+  await lsSaveWorkspace(S.currentWs);
+  renderDupPanel();
+}
+// ทำเครื่องหมาย "ตรวจแล้ว" ทุกรายการที่ยังแสดงอยู่
+async function dupMarkAllReviewed(kind) {
+  if (!S.currentWs) return;
+  const rev = _dupRev();
+  if (kind === 'exact') _dupExactGroups.forEach(g => rev.exact[g.key] = true);
+  else _lastSubstrPairs.forEach(p => rev.pairs[_pairKey(p)] = true);
+  await lsSaveWorkspace(S.currentWs);
+  renderDupPanel();
+  showToast('ซ่อนรายการที่ตรวจแล้ว — กด "แสดงที่ตรวจแล้ว" เพื่อดูอีกครั้ง', 'success');
+}
+async function dupMarkPairsReviewed(pairs) {
+  if (!S.currentWs || !pairs?.length) return;
+  const rev = _dupRev();
+  pairs.forEach(p => { if (p?.sub && p?.full) rev.pairs[_pairKey({ sub: String(p.sub).trim(), full: String(p.full).trim() })] = true; });
+  await lsSaveWorkspace(S.currentWs);
+}
+function dupToggleShowReviewed() { _dupShowReviewed = !_dupShowReviewed; renderDupPanel(); }
+
+let _dupExactAll = [];
+
+// แสดงผลคำซ้ำในแถบ alert (ไม่ลบอัตโนมัติ — ผู้ใช้กดลบเอง) · คืน true ถ้าพบคำซ้ำที่ยังไม่ได้ตรวจ
 function renderDupPanel() {
   const dupAlert = document.getElementById('glossaryDupAlert');
   if (!dupAlert) return false;
   const { exactGroups, pairs } = computeGlossaryDuplicates();
-  _dupExactGroups = exactGroups;
-  _lastSubstrPairs = pairs;
+  _dupExactAll = exactGroups;
+  _dupPairsAll = pairs;
+  const exactNew = exactGroups.filter(g => !isDupReviewed('exact', g.key));
+  const pairsNew = pairs.filter(p => !isDupReviewed('pairs', _pairKey(p)));
+  _dupExactGroups = exactNew;
+  _lastSubstrPairs = pairsNew;   // ปุ่ม AI ทำงานกับคู่ที่ยังไม่ได้ตรวจเท่านั้น
+  const nRev = (exactGroups.length - exactNew.length) + (pairs.length - pairsNew.length);
   if (!exactGroups.length && !pairs.length) { dupAlert.style.display = 'none'; dupAlert.innerHTML = ''; return false; }
 
   const btnDanger = 'background:var(--crimson-light);color:#fff;border:none;padding:2px 8px;border-radius:4px;cursor:pointer;font-size:0.72rem';
-  let html = '';
+  const btnRev = 'background:none;border:1px solid var(--border);color:var(--text-secondary);padding:1px 7px;border-radius:4px;cursor:pointer;font-size:0.7rem;white-space:nowrap';
+  const showEx = _dupShowReviewed ? exactGroups : exactNew;
+  const showPr = _dupShowReviewed ? pairs : pairsNew;
+  let html = '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">' +
+    (exactNew.length || pairsNew.length ? '' : '<span>✓ <strong>ไม่มีคำซ้ำใหม่</strong></span>') +
+    (nRev ? '<button onclick="dupToggleShowReviewed()" style="' + btnRev + '">' + (_dupShowReviewed ? '🙈 ซ่อนที่ตรวจแล้ว' : '👁 แสดงที่ตรวจแล้ว (' + nRev + ')') + '</button>' : '') +
+    '</div>';
 
-  // ── คำเกาหลีซ้ำแบบเป๊ะ ──
-  if (exactGroups.length) {
-    const totalDup = exactGroups.reduce((s, g) => s + (g.count - 1), 0);
+  // ── คำซ้ำแบบเป๊ะ ──
+  if (showEx.length) {
+    const totalDup = exactNew.reduce((s, g) => s + (g.count - 1), 0);
     html += '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">' +
-      '<span>⚠ <strong>คำเกาหลีซ้ำ ' + exactGroups.length + ' คำ</strong> (มีตัวซ้ำเกินรวม ' + totalDup + ')</span>' +
-      '<button onclick="dupRemoveAllExact()" style="' + btnDanger + '">🗑 ลบให้เหลืออย่างละ 1</button>' +
-      '</div>';
-    html += exactGroups.slice(0, 12).map((g, idx) =>
-      '<div style="display:flex;align-items:center;gap:6px;font-size:0.78rem;padding:2px 0">' +
+      '<span>⚠ <strong>คำต้นฉบับซ้ำ ' + exactNew.length + ' คำ</strong>' + (exactNew.length ? ' (มีตัวซ้ำเกินรวม ' + totalDup + ')' : '') + '</span>' +
+      (exactNew.length ? '<button onclick="dupRemoveAllExact()" style="' + btnDanger + '">🗑 ลบให้เหลืออย่างละ 1</button>' +
+        '<button onclick="dupMarkAllReviewed(\'exact\')" style="' + btnRev + '" title="ซ่อนทุกคำในรายการนี้ ไม่ต้องโชว์อีก">✓ ตรวจแล้วทั้งหมด</button>' : '') +
+      '</div><div class="dup-list">';
+    html += showEx.map(g => {
+      const idx = exactGroups.indexOf(g);
+      const rv = isDupReviewed('exact', g.key);
+      return '<div class="dup-row' + (rv ? ' dup-reviewed' : '') + '">' +
         '<span style="color:var(--gold);font-weight:600">' + esc(g.korean) + '</span>' +
         '<span style="color:var(--text-muted)">×' + g.count + '</span>' +
         '<span style="color:var(--text-muted);font-size:0.7rem;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + g.entries.map(e => esc(e.thai || '—')).join(' / ') + '</span>' +
-        '<button onclick="dupRemoveGroup(' + idx + ')" style="' + btnDanger + '">ลบซ้ำ</button>' +
-      '</div>'
-    ).join('');
-    if (exactGroups.length > 12) html += '<div style="font-size:0.72rem;color:var(--text-muted)">...และอีก ' + (exactGroups.length - 12) + ' คำ</div>';
+        (rv ? '' : '<button onclick="dupRemoveGroup(' + _dupExactGroups.indexOf(g) + ')" style="' + btnDanger + '">ลบซ้ำ</button>') +
+        (rv ? '<button onclick="dupMarkReviewed(\'exact\',' + idx + ',false)" style="' + btnRev + '" title="กลับมาแสดงในรายการ">↺ ยกเลิกตรวจแล้ว</button>'
+            : '<button onclick="dupMarkReviewed(\'exact\',' + idx + ')" style="' + btnRev + '" title="ดูแล้ว ไม่ต้องแก้ — ไม่ต้องโชว์อีก">✓ ตรวจแล้ว</button>') +
+      '</div>';
+    }).join('') + '</div>';
   }
 
   // ── คำซ้อน (substring) — ต้องใช้วิจารณญาณ ให้ AI ช่วยได้ ──
-  if (pairs.length) {
-    if (exactGroups.length) html += '<div style="border-top:1px solid var(--border);margin:6px 0"></div>';
-    const shown = pairs.slice(0, 8);
-    const more  = pairs.length - shown.length;
+  if (showPr.length) {
+    if (showEx.length) html += '<div style="border-top:1px solid var(--border);margin:6px 0"></div>';
     html += '<div style="margin-bottom:4px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
-      '<span>🔍 <strong>คำซ้อน ' + pairs.length + ' คู่</strong> — อาจ inject ผิด</span>' +
+      '<span>🔍 <strong>คำซ้อน ' + pairsNew.length + ' คู่</strong> — อาจ inject ผิด</span>' +
+      (pairsNew.length ?
       '<button id="dupAiResolveBtn" onclick="aiResolveSubstrDups()" style="background:var(--accent);color:var(--accent-ink);border:none;padding:2px 10px;border-radius:4px;cursor:pointer;font-size:0.72rem;font-weight:600">🤖 ให้ AI จัดการ</button>' +
       '<button id="dupFixBtn" onclick="aiFixSubstrConsistency()" title="ตรวจคู่ที่คำแปลของส่วนซ้อนไม่ตรงกัน แล้วแก้ทั้งสองให้ใช้คำเดียวกัน" style="background:linear-gradient(135deg,#2a5d4c,#4cc9a0);color:#04120c;border:none;padding:2px 10px;border-radius:4px;cursor:pointer;font-size:0.72rem;font-weight:600">🔧 แก้คำแปลให้ตรงกัน</button>' +
+      '<button onclick="dupMarkAllReviewed(\'pairs\')" style="' + btnRev + '" title="ซ่อนทุกคู่ในรายการนี้ ไม่ต้องโชว์อีก">✓ ตรวจแล้วทั้งหมด</button>' : '') +
       '</div>';
-    html += '<div id="dupAiStatus" style="font-size:0.74rem;color:var(--gold);min-height:16px"></div>';
-    html += shown.map(p =>
-      '<div style="font-size:0.78rem;padding:2px 0;color:var(--text-secondary)">' +
+    html += '<div id="dupAiStatus" style="font-size:0.74rem;color:var(--gold);min-height:16px"></div><div class="dup-list">';
+    html += showPr.map(p => {
+      const idx = pairs.indexOf(p);
+      const rv = isDupReviewed('pairs', _pairKey(p));
+      return '<div class="dup-row' + (rv ? ' dup-reviewed' : '') + '" style="color:var(--text-secondary)">' +
+        '<span style="flex:1;min-width:0">' +
         '<span style="color:var(--gold)">' + esc(p.sub) + '</span>' +
         '<span style="color:var(--text-muted)"> ⊂ </span>' +
         '<span style="color:var(--text-primary)">' + esc(p.full) + '</span>' +
-        '<span style="color:var(--text-muted);font-size:0.7rem"> — "' + esc(p.subThai) + '" vs "' + esc(p.fullThai) + '"</span>' +
-      '</div>'
-    ).join('');
-    if (more > 0) html += '<div style="font-size:0.72rem;color:var(--text-muted)">...และอีก ' + more + ' คู่</div>';
+        '<span style="color:var(--text-muted);font-size:0.7rem"> — "' + esc(p.subThai) + '" vs "' + esc(p.fullThai) + '"</span></span>' +
+        (rv ? '<button onclick="dupMarkReviewed(\'pairs\',' + idx + ',false)" style="' + btnRev + '" title="กลับมาแสดงในรายการ">↺ ยกเลิกตรวจแล้ว</button>'
+            : '<button onclick="dupMarkReviewed(\'pairs\',' + idx + ')" style="' + btnRev + '" title="ดูแล้ว ไม่ต้องแก้ — ไม่ต้องโชว์อีก">✓ ตรวจแล้ว</button>') +
+      '</div>';
+    }).join('') + '</div>';
   }
 
   html += '<button onclick="document.getElementById(\'glossaryDupAlert\').style.display=\'none\'" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:0.8rem;float:right;margin-top:4px">✕</button>';
 
   dupAlert.style.display = 'block';
   dupAlert.innerHTML = html;
-  return true;
+  return !!(exactNew.length || pairsNew.length);
 }
 
 function checkDuplicateGlossary() {
   if (!(S.glossaryData || []).length) { showToast('คลังศัพท์ว่างเปล่า', ''); return; }
   const found = renderDupPanel();
-  if (!found) showToast('✓ ไม่พบคำซ้ำ', 'success');
+  if (!found) {
+    const n = Object.keys(_dupRev().exact).length + Object.keys(_dupRev().pairs).length;
+    showToast(n && document.getElementById('glossaryDupAlert')?.style.display === 'block' ? '✓ ไม่มีคำซ้ำใหม่ (ซ่อนรายการที่ตรวจแล้ว)' : '✓ ไม่พบคำซ้ำ', 'success');
+  }
 }
 
 // ลบตัวซ้ำของกลุ่มเดียว (เก็บตัวแรก) — อ้างอิงด้วย index กัน bug จากอักขระพิเศษใน onclick
@@ -809,6 +876,8 @@ async function aiResolveSubstrDups() {
 
   // ── Apply all decisions (pre-check + AI) ──
   try {
+    // คู่ที่ AI/pre-check ตัดสินว่า "ต่างความหมาย เก็บทั้งคู่" = ตรวจแล้ว → ไม่ต้องโชว์อีก
+    await dupMarkPairsReviewed(allDecisions.filter(d => d && d.action === 'keep_both'));
     const toDelete = new Set();
     let keepBothCount = 0;
     allDecisions.forEach(d => {
@@ -819,7 +888,9 @@ async function aiResolveSubstrDups() {
 
     if (!toDelete.size) {
       status.textContent = `✓ ทุกคู่ต่างความหมาย เก็บไว้ทั้งหมด (${keepBothCount} คู่)`;
+      showToast(`ทุกคู่ต่างความหมาย — ทำเครื่องหมายตรวจแล้ว ${keepBothCount} คู่ ✓`, 'success');
       btn.disabled = false; btn.textContent = '🤖 ให้ AI จัดการ';
+      setTimeout(() => checkDuplicateGlossary(), 1500);
       return;
     }
 
@@ -931,8 +1002,12 @@ async function aiFixSubstrConsistency() {
     changeList.push({ sub, full, st, ft, reason: d.reason || '' });
   });
 
+  // คู่ที่ AI ตรวจแล้ว (สอดคล้องอยู่แล้ว หรือแก้ให้ตรงกันแล้ว) → ไม่ต้องโชว์อีก
+  await dupMarkPairsReviewed(decisions.filter(d => d && (d.action === 'ok' || d.action === 'fix')));
+
   if (!newThaiByKorean.size) {
     status.textContent = '✓ คำแปลทุกคู่สอดคล้องกันแล้ว ไม่ต้องแก้';
+    setTimeout(() => checkDuplicateGlossary(), 400);
     btn.disabled = false; btn.textContent = origLabel;
     return;
   }

@@ -275,6 +275,8 @@
         <button class="btn btn-primary btn-sm" onclick="openAddGlossary()">＋ เพิ่มคำ</button>
         <button class="btn btn-secondary btn-sm" onclick="openAutoGlossary()">🤖 Auto</button>
         <button class="btn btn-secondary btn-sm" onclick="checkDuplicateGlossary()">🔎 ซ้ำ</button>
+        <button class="btn btn-secondary btn-sm" onclick="openGlossaryAnalyze()" title="ให้ AI ตรวจความสอดคล้อง ความถูกต้อง และเสนอคำแปลที่เป็นไปได้">🧠 AI วิเคราะห์</button>
+        <button class="btn btn-ghost btn-sm" onclick="openGenrePreset()" title="ชุดคำศัพท์และแนวทางการแปลตามแนวนิยาย">📚 แนวนิยาย</button>
         <button class="btn btn-ghost btn-sm" onclick="openPronounCheck()" title="หาจุดที่สรรพนาม หรือ ครับ/ค่ะ ขัดกับเพศตัวละครใน Glossary">🚻 สรรพนาม/ครับ-ค่ะ</button>
         <button class="btn btn-ghost btn-sm" onclick="openGlossaryExport()">📤 Export</button>
         <button class="btn btn-ghost btn-sm" onclick="openGlossaryCSVImport()">📥 CSV Import</button>
@@ -324,6 +326,9 @@
               <option value="en">อังกฤษ → ไทย</option>
             </select>
             <div style="font-size:0.72rem;color:var(--text-muted)">ใช้กำหนด prompt แปล, การสกัดคำศัพท์ และการตรวจคำแปล ให้ตรงกับภาษาของนิยาย</div></div>
+          <div class="sf-group"><div class="sf-label">แนวนิยาย</div>
+            <select id="wsGenrePreset" class="select-input"></select>
+            <div style="font-size:0.72rem;color:var(--text-muted)">แทรกแนวทางการแปลตามแนว (สำนวน ยศ ศัพท์มาตรฐาน) ในการแปล การสกัดคำ และ AI วิเคราะห์ · นำเข้าชุดคำศัพท์ได้ที่แท็บคลังศัพท์ → 📚 แนวนิยาย</div></div>
           <div class="sf-group"><div class="sf-label">ภาพปก</div>
           <div class="cover-picker">
             <div id="wsCoverPreview" class="cover-preview"></div>
@@ -1188,6 +1193,79 @@
 </div>
 
 <!-- GLOSSARY EXPORT MODAL -->
+<div class="modal-backdrop" id="modal-genre-preset">
+  <div class="modal modal-wide">
+    <div class="modal-header">
+      <span>📚 แนวนิยาย — ชุดคำศัพท์ + แนวทางการแปล</span>
+      <button class="icon-btn" onclick="closeModal('modal-genre-preset')">✕</button>
+    </div>
+    <div class="modal-body" style="gap:10px">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <select id="gpSelect" class="select-input" style="flex:1;min-width:220px" onchange="gpRender()"></select>
+        <span id="gpActive" style="font-size:0.74rem;color:var(--text-muted)"></span>
+      </div>
+      <div id="gpDesc" style="font-size:0.82rem;color:var(--text-secondary)"></div>
+      <div id="gpLangWarn" style="font-size:0.76rem;color:var(--crimson-light)"></div>
+      <label class="toggle-mini" style="font-size:0.82rem"><input type="checkbox" id="gpUse" onchange="gpSaveUse()"/> ใช้แนวทางการแปลนี้กับเรื่องนี้ (แปล · สกัดคำ · AI วิเคราะห์)</label>
+      <details class="gp-guide-wrap"><summary>ดูแนวทางการแปลที่จะแทรกใน prompt</summary><pre id="gpGuide" class="gp-guide"></pre></details>
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+        <span class="sf-label" style="margin:0;flex:1">ชุดคำศัพท์ — เลือกคำที่ต้องการ แก้คำแปลได้ก่อนเพิ่ม</span>
+        <button class="btn-xs" onclick="gpSelectAll(true)">เลือกทั้งหมด</button>
+        <button class="btn-xs" onclick="gpSelectAll(false)">ยกเลิก</button>
+      </div>
+      <div id="gpTerms" class="gp-terms"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-genre-preset')">ปิด</button>
+      <button class="btn btn-primary" id="gpImportBtn" onclick="gpImportSelected()">＋ เพิ่มลงคลัง</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="modal-glossary-analyze">
+  <div class="modal modal-wide">
+    <div class="modal-header">
+      <span>🧠 AI วิเคราะห์คลังศัพท์</span>
+      <button class="icon-btn" onclick="closeModal('modal-glossary-analyze')">✕</button>
+    </div>
+    <div class="modal-body" style="gap:10px">
+      <div class="ga-row">
+        <span class="ga-label">โมเดล</span>
+        <select id="gaModel" class="select-input" style="flex:1;min-width:220px" onchange="gaModelInfo()"></select>
+      </div>
+      <div id="gaModelWhy" class="ga-why-box"></div>
+      <div class="ga-row">
+        <span class="ga-label">ตรวจ</span>
+        <label class="toggle-mini"><input type="checkbox" id="gaChkConsistency" checked onchange="gaModelInfo()"/> ความสอดคล้อง</label>
+        <label class="toggle-mini"><input type="checkbox" id="gaChkCorrectness" checked onchange="gaModelInfo()"/> ความถูกต้อง</label>
+        <label class="toggle-mini"><input type="checkbox" id="gaChkOptions" checked onchange="gaModelInfo()"/> คำแปลที่เป็นไปได้ของทุกคำ</label>
+      </div>
+      <div class="ga-row">
+        <span class="ga-label">ขอบเขต</span>
+        <select id="gaScope" class="mini-select" onchange="gaModelInfo()"></select>
+        <span id="gaGenre" style="font-size:0.74rem;color:var(--text-muted)"></span>
+      </div>
+      <div class="ga-row">
+        <button class="btn btn-primary btn-sm" id="gaRunBtn" onclick="runGlossaryAnalyze()">🧠 เริ่มวิเคราะห์</button>
+        <span id="gaStatus" style="font-size:0.78rem;color:var(--gold)"></span>
+      </div>
+      <div id="gaApplyBar" class="ga-row" style="display:none">
+        <select id="gaFilter" class="mini-select" onchange="gaRenderResults()">
+          <option value="all">แสดงทั้งหมด</option>
+          <option value="issues">เฉพาะที่มีปัญหา</option>
+        </select>
+        <button class="btn-xs" onclick="gaSelectAll(true)">เลือกทั้งหมด</button>
+        <button class="btn-xs" onclick="gaSelectAll(false)">ยกเลิก</button>
+        <button class="btn btn-primary btn-sm" style="margin-left:auto" onclick="gaApplySelected()">✓ ใช้คำแปลที่เลือก</button>
+      </div>
+      <div id="gaResults" class="ga-results"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-glossary-analyze')">ปิด</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-backdrop" id="modal-glossary-export">
   <div class="modal">
     <div class="modal-header">
@@ -1550,6 +1628,7 @@
 <script src="js/app.review-batch.js"></script>
 <script src="js/app.tools.js"></script>
 <script src="js/app.reader-presets.js"></script>
+<script src="js/app.glossary-ai.js"></script>
 <!-- PWA: register service worker (เปิดแบบ http(s):// เท่านั้น — file:// จะไม่ทำงาน) -->
 <script>
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
