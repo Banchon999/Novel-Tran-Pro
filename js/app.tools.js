@@ -333,6 +333,8 @@ async function runAutoGlossary() {
 
   const model = document.getElementById('agModel')?.value || document.getElementById('translateModel').value;
   const existing = (S.glossaryData || []).map(g => g.korean).join(', ') || '(ไม่มี)';
+  const lang = agDetectLang(text);
+  const basePrompt = agGetPrompt(lang);
 
   // ── Chunked extraction: split every 15,000 chars at paragraph boundary ──
   const CHUNK_LIMIT = 15000;
@@ -352,9 +354,10 @@ async function runAutoGlossary() {
     }
   }
 
+  const langLabel = `ภาษา${_AG_LANG_TH[lang]}`;
   status.textContent = chunks.length > 1
-    ? `🤖 วิเคราะห์ ${chunks.length} ส่วน (${text.length.toLocaleString()} ตัวอักษร)...`
-    : '🤖 กำลังวิเคราะห์...';
+    ? `🤖 วิเคราะห์${langLabel} ${chunks.length} ส่วน (${text.length.toLocaleString()} ตัวอักษร)...`
+    : `🤖 กำลังวิเคราะห์ (${langLabel})...`;
 
   try {
     let allTerms = [];
@@ -367,7 +370,7 @@ async function runAutoGlossary() {
 
       // Build existing list including terms found so far
       const existingNow = [...seenKorean].join(', ') || '(ไม่มี)';
-      const prompt = agGetPrompt().replace('{existing}', existingNow).replace('{text}', chunk).replace('{thai_snippet}', '');
+      const prompt = basePrompt.replace('{existing}', existingNow).replace('{text}', chunk).replace('{thai_snippet}', '');
 
       try {
         // เดิม max_tokens 2000 กับ chunk 15,000 ตัวอักษร → โมเดลที่คิดก่อนตอบ/คำเยอะ ถูกตัดกลาง JSON → ข้ามเงียบ ๆ แล้วขึ้น "ไม่พบ"
@@ -1042,62 +1045,94 @@ document.querySelectorAll('.modal-backdrop').forEach(el => {
   el.addEventListener('click', e => { if (e.target === el) el.classList.remove('open'); });
 });
 
-// ─── Auto Glossary Prompt Editor ───
-const _agDefaultPrompt = `You are a Korean webnovel terminology extractor. Extract proper nouns and special terms from Korean text.
+// ─── Auto Glossary Prompt Editor — แยก prompt ตามภาษาต้นฉบับ ───
+// prompt สำเร็จรูปอยู่ที่ AUTOGLOSSARY_PROMPTS (app.core.js) · ที่ผู้ใช้แก้เก็บแยกภาษา: nt8_ag_prompt_<ko|zh|en>
+// (key เดิม nt8_ag_prompt = prompt ที่เคยแก้ไว้สมัยมีแต่เกาหลี → ใช้เป็นของเกาหลีเท่านั้น)
+const _AG_LANG_TH = { ko: 'เกาหลี', zh: 'จีน', en: 'อังกฤษ' };
+function _agKey(lang) { return 'nt8_ag_prompt_' + lang; }
+function agSavedPrompt(lang) {
+  try { return localStorage.getItem(_agKey(lang)) || (lang === 'ko' ? localStorage.getItem('nt8_ag_prompt') : '') || ''; } catch { return ''; }
+}
+function agDefaultPrompt(lang) { return AUTOGLOSSARY_PROMPTS[lang] || AUTOGLOSSARY_PROMPTS.ko; }
 
-EXISTING GLOSSARY (skip these): {existing}
+// ตรวจภาษาจากข้อความที่จะสกัดจริง (ตัวหนังสือชนะการตั้งค่า เช่น วางข้อความจีนใน workspace เกาหลี) → ไม่พบ ใช้ภาษาของ workspace
+function agDetectLang(text) {
+  const d = detectSourceLang(text);
+  return SOURCE_LANGS[d] ? d : getSourceLang(S.currentWs).code;
+}
 
-KOREAN SOURCE TEXT:
-{text}
+function agGetPrompt(lang) {
+  const code = SOURCE_LANGS[lang] ? lang : getSourceLang(S.currentWs).code;
+  return langifyGlossaryPrompt(agSavedPrompt(code) || agDefaultPrompt(code), S.currentWs, code);
+}
 
-{thai_snippet}
+// ตรวจว่า prompt เขียนตรงภาษาไหม — prompt ของจีนแต่มีตัวอย่างเกาหลีเต็มไปหมด = AI ได้กฎผิดภาษา
+function agPromptLangWarning(text, lang) {
+  const n = re => (String(text || '').match(re) || []).length;
+  const ko = n(/[가-힣]/g), han = n(/[一-鿿]/g);
+  const other = lang === 'zh' ? (ko > 5 ? 'เกาหลี' : '') : lang === 'ko' ? (han > 20 ? 'จีน' : '') : (ko > 5 ? 'เกาหลี' : han > 20 ? 'จีน' : '');
+  return other ? `⚠ Prompt นี้มีตัวอย่าง/กฎภาษา${other}ปนอยู่ แต่ใช้กับต้นฉบับ${_AG_LANG_TH[lang]} — AI อาจสกัดคำผิดภาษา กด ↺ Reset เพื่อใช้ prompt มาตรฐานของภาษา${_AG_LANG_TH[lang]}` : '';
+}
 
-Return ONLY JSON array (no markdown):
-[{"korean":"term","thai":"Thai translation","type":"character|title|rank|term|honorific|place","gender":"male|female|neutral","note":"English meaning"}]
+function agCurrentText() {
+  if (_agTab === 'chapters') {
+    return [...document.querySelectorAll('.ag-ch-chk:checked')].map(el => S.currentWs?.chapters.find(c => c.id === el.dataset.id)?.sourceText || '').join('\n').slice(0, 6000);
+  }
+  return document.getElementById('agSourceText')?.value || '';
+}
 
-Rules:
-- Only extract names, titles, skills, places, ranks — NOT common words
-- Provide natural Thai translations that are CONSISTENT with professional Thai webnovel prose, so that when these terms are injected into the translated chapter they read seamlessly and never break the reader's flow
-- Apply professional proofreading (พิสูจน์อักษร): correct Thai spelling/tone marks, clean transliteration, no stray source-language characters; pick ONE canonical Thai spelling per term and keep it stable
-- type must be one of: character, title, rank, term, honorific, place
-- thai: Thai script only — never leave Korean/Chinese/Japanese characters inside the Thai translation
-- gender: REQUIRED for type="character". Infer carefully from the KOREAN source first:
-  • Korean cues: 그/남자/형/오빠/아버지/아들/왕/황제/공작(as a person)/기사 = male | 그녀/여자/언니/누나/어머니/딸/왕비/부인/영애/하녀/시녀 = female
-  • Who the character is (mother, wife, maid, daughter → female; father, son, husband → male)
-  • Thai translation, only as weak support: เขา/นาย = male | เธอ/นาง/หล่อน = female. Do NOT use ฉัน/ผม in narration or inner thoughts as evidence — a preset may lock every narrator to ฉัน
-  • Use "neutral" when the cues are missing or conflicting
-- Return empty array [] if no new terms found`;
+function agUpdateLangInfo() {
+  const el = document.getElementById('agLangInfo');
+  if (!el || !S.currentWs) return;
+  const text = agCurrentText();
+  const d = detectSourceLang(text);
+  const code = agDetectLang(text);
+  el.textContent = `ภาษา: ${_AG_LANG_TH[code]}${d ? ' (ตรวจจากข้อความ)' : ' (ตามตั้งค่าเรื่อง)'}${agSavedPrompt(code) ? ' · ใช้ prompt ที่แก้เอง' : ''}`;
+}
 
 function agTogglePromptEditor() {
   const wrap = document.getElementById('agPromptEditorWrap');
-  const visible = wrap.style.display !== 'none';
-  if (visible) {
-    wrap.style.display = 'none';
-  } else {
-    // โหลด prompt ปัจจุบัน (จาก localStorage ถ้ามี ไม่งั้นใช้ default)
-    const saved = localStorage.getItem('nt8_ag_prompt');
-    document.getElementById('agPromptEditor').value = saved || _agDefaultPrompt;
-    wrap.style.display = 'block';
-  }
+  if (wrap.style.display !== 'none') { wrap.style.display = 'none'; return; }
+  document.getElementById('agPromptLang').value = agDetectLang(agCurrentText());
+  agLoadPromptEditor();
+  wrap.style.display = 'block';
+}
+
+function agLoadPromptEditor() {
+  const lang = document.getElementById('agPromptLang').value;
+  document.getElementById('agPromptEditor').value = agSavedPrompt(lang) || agDefaultPrompt(lang);
+  agCheckPromptEditor();
+}
+
+function agCheckPromptEditor() {
+  const lang = document.getElementById('agPromptLang').value;
+  const val = document.getElementById('agPromptEditor').value;
+  const w = document.getElementById('agPromptLangWarn');
+  if (w) w.textContent = agPromptLangWarning(val, lang);
+  const st = document.getElementById('agPromptState');
+  if (st) st.textContent = agSavedPrompt(lang) ? 'แก้เองแล้ว' : 'มาตรฐาน';
 }
 
 function agSavePrompt() {
+  const lang = document.getElementById('agPromptLang').value;
   const val = document.getElementById('agPromptEditor').value.trim();
   if (!val.includes('{text}')) { showToast('Prompt ต้องมี {text}', 'error'); return; }
   if (!val.includes('{existing}')) { showToast('Prompt ต้องมี {existing}', 'error'); return; }
-  localStorage.setItem('nt8_ag_prompt', val);
-  showToast('บันทึก Prompt แล้ว ✓', 'success');
+  try {
+    if (val === agDefaultPrompt(lang).trim()) localStorage.removeItem(_agKey(lang));
+    else localStorage.setItem(_agKey(lang), val);
+    if (lang === 'ko') localStorage.removeItem('nt8_ag_prompt');
+  } catch {}
+  agCheckPromptEditor(); agUpdateLangInfo();
+  showToast(`บันทึก Prompt (${_AG_LANG_TH[lang]}) แล้ว ✓`, 'success');
 }
 
 function agResetPrompt() {
-  if (!confirm('คืนค่า Prompt เป็น default?')) return;
-  localStorage.removeItem('nt8_ag_prompt');
-  document.getElementById('agPromptEditor').value = _agDefaultPrompt;
+  const lang = document.getElementById('agPromptLang').value;
+  if (!confirm(`คืนค่า Prompt ภาษา${_AG_LANG_TH[lang]} เป็นมาตรฐาน?`)) return;
+  try { localStorage.removeItem(_agKey(lang)); if (lang === 'ko') localStorage.removeItem('nt8_ag_prompt'); } catch {}
+  agLoadPromptEditor(); agUpdateLangInfo();
   showToast('คืนค่า Prompt แล้ว ✓', 'success');
-}
-
-function agGetPrompt() {
-  return langifyGlossaryPrompt(localStorage.getItem('nt8_ag_prompt') || _agDefaultPrompt, S.currentWs);
 }
 
 // ─── Clean Source Text (ลบ Base64 / ขยะ) ───

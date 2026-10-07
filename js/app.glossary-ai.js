@@ -9,10 +9,11 @@
 const GENRE_PRESETS = [
   {
     id: 'ko-murim', lang: 'ko', name: 'เกาหลี · มู่หลิน/ยุทธภพ (무협)',
-    desc: 'นิยายกำลังภายในฉบับเกาหลี เช่น ภูเขาหัวซาน, ยอดฝีมือกลับชาติ — ใช้สำนวนนิยายกำลังภายในไทย',
+    desc: 'นิยายกำลังภายในฉบับเกาหลี เช่น ภูเขาฮวาซาน, ยอดฝีมือกลับชาติ — ศัพท์วรยุทธแปลตามสำนวนกำลังภายในไทย ชื่อเฉพาะถอดเสียงเกาหลี',
     guide: `• Use the established Thai นิยายกำลังภายใน register: narration slightly literary; characters address each other ข้า/เจ้า, ท่าน; elders/masters speak with authority.
-• Character names in Korean murim novels are Sino-Korean: keep the Korean reading as Thai publishers do (청명 → ชองมยอง), never re-read them in Mandarin.
-• Famous orders keep their classic Thai names: 소림 เส้าหลิน · 무당 บู๊ตึ๊ง · 아미 ง้อไบ๊ · 개방 พรรคกระยาจก · 화산 หัวซาน.
+• Proper names in Korean murim novels are Sino-Korean: ALWAYS transliterate the KOREAN reading, never re-read them in Mandarin or use the old Hokkien-era Thai names — people (청명 → ชองมยอง), families (남궁세가 → ตระกูลนัมกุง), sects and places (화산파 → สำนักฮวาซาน · 소림 → โซริม · 무당 → มูดัง · 아미 → อามี · 당가 → ตระกูลดัง · 사천 → ซาชอน, not เสฉวน).
+• Compound surnames (Korean reading): 제갈 เจกัล · 사마 ซามา · 구양 กูยาง · 상관 ซังกวาน · 남궁 นัมกุง · 모용 โมยง · 황보 ฮวังโบ · 동방 ดงบัง · 서문 ซอมุน · 독고 ทกโก · 장손 จังซน · 영호 ยองโฮ.
+• Names that are plain descriptions are translated, not transliterated: 개방 พรรคกระยาจก · 마교 พรรคมาร · 무림맹 พันธมิตรยุทธภพ.
 • Martial terms are translated by meaning, never transliterated: 내공 พลังภายใน · 단전 ตันเถียน · 경공 วิชาตัวเบา · 초식 กระบวนท่า · 검기 ปราณกระบี่ · 주화입마 ธาตุไฟเข้าแทรก.
 • Realm names (일류/절정/초절정/화경/현경) are ranks: render them as ขั้น… and keep them identical every time.
 • 사형/사제/사저/사매 follow the gender of the person: ศิษย์พี่/ศิษย์น้อง (male) · ศิษย์พี่หญิง/ศิษย์น้องหญิง (female).`,
@@ -31,9 +32,12 @@ const GENRE_PRESETS = [
       ['화경', 'ขั้นแปรสภาพ', 'rank', '', 'hwa-gyeong'], ['현경', 'ขั้นลึกล้ำ', 'rank', '', 'hyeon-gyeong'],
       ['정파', 'ฝ่ายธรรมะ', 'clan', '', 'orthodox faction'], ['사파', 'ฝ่ายอธรรม', 'clan', '', 'unorthodox faction'],
       ['마교', 'พรรคมาร', 'clan', '', 'demonic cult'], ['무림맹', 'พันธมิตรยุทธภพ', 'clan', '', 'murim alliance'],
-      ['구파일방', 'เก้าสำนักหนึ่งพรรค', 'clan', '', 'nine sects one gang'], ['소림', 'เส้าหลิน', 'clan', '', 'Shaolin'],
-      ['무당', 'บู๊ตึ๊ง', 'clan', '', 'Wudang — ชื่อคลาสสิกในฉบับแปลไทย'], ['아미', 'ง้อไบ๊', 'clan', '', 'Emei'],
-      ['화산파', 'สำนักหัวซาน', 'clan', '', 'Mount Hua sect — บางเล่มใช้ ฮวาซาน'], ['개방', 'พรรคกระยาจก', 'clan', '', 'Beggars\' Sect'],
+      ['구파일방', 'เก้าสำนักหนึ่งพรรค', 'clan', '', 'nine sects one gang'], ['소림', 'โซริม', 'clan', '', 'Shaolin — ฉบับเสียงจีน: เส้าหลิน'],
+      ['무당', 'มูดัง', 'clan', '', 'Wudang — ฉบับเสียงจีน: บู๊ตึ๊ง'], ['아미', 'อามี', 'clan', '', 'Emei — ฉบับเสียงจีน: ง้อไบ๊'],
+      ['화산파', 'สำนักฮวาซาน', 'clan', '', 'Mount Hua sect — ฉบับเสียงจีน: หัวซาน'], ['개방', 'พรรคกระยาจก', 'clan', '', 'Beggars\' Sect'],
+      ['남궁세가', 'ตระกูลนัมกุง', 'clan', '', 'Namgung family'], ['제갈세가', 'ตระกูลเจกัล', 'clan', '', 'Zhuge family'],
+      ['모용세가', 'ตระกูลโมยง', 'clan', '', 'Murong family'], ['당가', 'ตระกูลดัง', 'clan', '', 'Tang family (사천당가)'],
+      ['세가', 'ตระกูล', 'term', '', 'noble martial family'],
       ['장문인', 'เจ้าสำนัก', 'title', '', 'sect leader'], ['사부', 'ท่านอาจารย์', 'honorific', '', 'master/teacher'],
       ['사형', 'ศิษย์พี่', 'honorific', '', 'senior brother'], ['사제', 'ศิษย์น้อง', 'honorific', '', 'junior brother'],
       ['사저', 'ศิษย์พี่หญิง', 'honorific', '', 'senior sister'], ['사매', 'ศิษย์น้องหญิง', 'honorific', '', 'junior sister'],

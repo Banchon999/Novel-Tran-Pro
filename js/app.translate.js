@@ -862,7 +862,7 @@ function glossaryMisses(srcText, thaiText, glossary = S.currentWs?.glossary) {
 function sanitizeGlossaryEntry(entry) {
   if (!entry || /[\u3131-\u318e\uac00-\ud7a3\u4e00-\u9fff\u3040-\u30ff]/.test(String(entry.thai || ''))) return null;
   if (entry.type !== 'character' || !['male', 'female', 'neutral'].includes(entry.gender)) delete entry.gender;
-  entry.thai = fixAddressGender(entry.korean, entry.thai);
+  entry.thai = fixSinoKoreanReading(entry.korean, fixAddressGender(entry.korean, entry.thai));
   // AI บางครั้งคืนชื่อซ้ำสองรอบ ("세피아 세피아" = "เซเปีย เซเปีย") → ยุบเหลือชื่อเดียว
   for (const f of ['korean', 'thai']) {
     const m = String(entry[f] || '').trim().match(/^(.+?)(?:\s+\1)+$/);
@@ -897,7 +897,9 @@ async function autoExtractGlossaryAfterTranslation(sourceText, model, chapterInf
     ? `THAI TRANSLATION (use Thai pronouns เขา/เธอ/ผม/ฉัน etc. to help infer character gender):\n${translationText.slice(0, 3000)}`
     : '';
 
-  const basePrompt = (() => { try { return agGetPrompt(); } catch { return langifyGlossaryPrompt(AUTOGLOSSARY_PROMPT, S.currentWs); } })();
+  // ภาษาตรวจจากต้นฉบับตอนนี้จริง → ได้ prompt สกัดคำของภาษานั้น (จีน/อังกฤษ/เกาหลี)
+  const lang = (() => { const d = detectSourceLang(sourceText); return SOURCE_LANGS[d] ? d : getSourceLang(S.currentWs).code; })();
+  const basePrompt = (() => { try { return agGetPrompt(lang); } catch { return langifyGlossaryPrompt(AUTOGLOSSARY_PROMPTS[lang] || AUTOGLOSSARY_PROMPT, S.currentWs, lang); } })();
   const prompt = basePrompt
     .replace('{existing}', existing)
     .replace('{text}', sourceText.slice(0, 8000))
@@ -1636,6 +1638,7 @@ function agSwitchTab(tab) {
   btnChapters.style.borderBottom = tab === 'chapters' ? '2px solid var(--gold)' : 'none';
   btnChapters.style.color = tab === 'chapters' ? 'var(--gold)' : '';
   btnChapters.className = tab === 'chapters' ? 'btn btn-secondary btn-sm' : 'btn btn-ghost btn-sm';
+  if (typeof agUpdateLangInfo === 'function') agUpdateLangInfo();
 }
 
 function agRenderChapterList() {
@@ -1659,6 +1662,7 @@ function agUpdateChaptersInfo() {
     return s + (ch?.sourceText?.length || 0);
   }, 0);
   document.getElementById('agChaptersInfo').textContent = checked.length ? `เลือก ${checked.length} ตอน · ${total.toLocaleString()} ตัวอักษรรวม` : '';
+  if (typeof agUpdateLangInfo === 'function') agUpdateLangInfo();
 }
 
 function agSelectAllChapters() {
@@ -1680,6 +1684,8 @@ function openAutoGlossary() {
   agSwitchTab('manual');
   agRenderChapterList();
   renderModelSelect(document.getElementById('agModel'), getProvider(), document.getElementById('translateModel')?.value, false);
+  const pw = document.getElementById('agPromptEditorWrap'); if (pw) pw.style.display = 'none';
+  agUpdateLangInfo();
   openModal('modal-autoglossary');
 }
 
