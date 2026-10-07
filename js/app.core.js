@@ -398,7 +398,8 @@ WHAT TO EXTRACT
 - One concept per entry: split "숨겨진 퀘스트 '회귀자의 맹세'" into the quest name only (회귀자의 맹세); split "오크 군단장 그로칸" into 그로칸 (character) and 오크 군단장 (title). Never include quotes or brackets.
 
 "thai" — Thai script only (no Hangul, no brackets, no explanations), one canonical spelling:
-- Korean personal names: transliterate syllable by syllable the way Thai publishers do — 김 คิม · 이 อี · 박 พัค · 최 ชเว · 정 จอง · 강 คัง · 조 โจ · 윤 ยุน · 장 จาง · 한 ฮัน · 오 โอ · 서 ซอ · 신 ชิน · 권 ควอน · 황 ฮวัง · 송 ซง · 백 แพ็ก; syllables: 준 จุน · 민 มิน · 서 ซอ · 지 จี · 훈 ฮุน · 현 ฮยอน · 우 อู · 영 ยอง · 은 อึน · 희 ฮี · 수 ซู · 연 ยอน · 태 แท · 하 ฮา · 진 จิน. Example: 이서준 อีซอจุน.
+- Korean personal names: transliterate syllable by syllable the way Thai publishers do — 김 คิม · 이 อี · 박 พัค · 최 ชเว · 정 จอง · 강 คัง · 조 โจ · 윤 ยุน · 장 จัง · 한 ฮัน · 오 โอ · 서 ซอ · 신 ชิน · 권 ควอน · 황 ฮวัง · 송 ซง · 백 แพ็ก; syllables: 준 จุน · 민 มิน · 서 ซอ · 지 จี · 훈 ฮุน · 현 ฮยอน · 우 อู · 영 ยอง · 은 อึน · 희 ฮี · 수 ซู · 연 ยอน · 태 แท · 하 ฮา · 진 จิน. Example: 이서준 อีซอจุน.
+- Sino-Korean names (murim / Chinese-style settings): ALWAYS transliterate the KOREAN reading written in the text — never convert to Mandarin or to old Thai-Chinese names. Compound surnames: 제갈 เจกัล · 사마 ซามา · 구양 กูยาง · 상관 ซังกวาน · 남궁 นัมกุง · 모용 โมยง · 황보 ฮวังโบ · 동방 ดงบัง · 서문 ซอมุน · 독고 ทกโก · 장손 จังซน · 영호 ยองโฮ. Sects, families and places likewise: 화산 ฮวาซาน · 소림 โซริม · 무당 มูดัง · 아미 อามี · 당가 ตระกูลดัง · 사천 ซาชอน · 남궁세가 ตระกูลนัมกุง — the Chinese-style Thai names (เส้าหลิน บู๊ตึ๊ง ง้อไบ๊ ถัง เสฉวน หัวซาน) are WRONG for a Korean source. Only purely descriptive names are translated (개방 พรรคกระยาจก · 마교 พรรคมาร · 무림맹 พันธมิตรยุทธภพ · 구파일방 เก้าสำนักหนึ่งพรรค).
 - Meaningful names (skills, items, places, guilds, quests): translate the meaning in natural Thai web-novel style (검성 ราชันกระบี่, 붉은 달 길드 กิลด์จันทร์แดง); transliterate only when the name has no meaning to translate. Real places keep their Thai names (서울 โซล).
 - English loanwords written in Hangul → the Thai loanword readers know: 게이트 เกต · 던전 ดันเจี้ยน · 던전 브레이크 ดันเจี้ยนเบรก · 레이드 เรด · 스킬 สกิล · 퀘스트 เควสต์ · 길드 กิลด์ · 레벨 เลเวล · 인벤토리 ช่องเก็บของ — except 시스템 (the System) → ระบบ.
 - Sino-Korean martial / fantasy terms follow the established Thai renderings (내공 พลังภายใน · 단전 ตันเถียน · 마석 หินเวท · 기사단 คณะอัศวิน · 공작 ดยุก).
@@ -485,6 +486,28 @@ function fixAddressGenderText(text) {
     const fixed = fixAddressGender(ko, th);
     return fixed === th ? m : ko + sep + fixed;
   });
+}
+// นิยายเกาหลีแนวมู่หลินใช้ชื่อจีน แต่เรื่องนี้ถอดเป็น "เสียงเกาหลี" เสมอ — AI บางตัว (Gemini Flash Lite) ติดชื่อจีนแบบไทยเดิม
+// (เส้าหลิน, ถัง, หนานกง) → ถ้าต้นฉบับมีคำเกาหลีนั้น และคำไทยใช้เสียงจีน ให้แก้เป็นเสียงเกาหลี
+// [ฮันกึล, เสียงเกาหลี, เสียงจีนแบบไทยที่ต้องแก้...] — แซ่ซ้อนจากตารางของผู้ใช้ + สำนัก/สถานที่ที่เจอบ่อย
+const KO_SINO_READINGS = [
+  ['제갈', 'เจกัล', 'จูกัด', 'จูเก่อ', 'จูเก๋อ'], ['사마', 'ซามา', 'ซือหม่า'], ['구양', 'กูยาง', 'โอวหยาง'], ['상관', 'ซังกวาน', 'ซ่างกวน', 'ซ่างกวาน'],
+  ['남궁', 'นัมกุง', 'หนานกง'], ['모용', 'โมยง', 'มู่หรง'], ['황보', 'ฮวังโบ', 'หวงฝู่'], ['동방', 'ดงบัง', 'ตงฟาง'],
+  ['서문', 'ซอมุน', 'ซีเหมิน'], ['독고', 'ทกโก', 'ตูกู', 'ตู๋กู'], ['장손', 'จังซน', 'จางซุน'], ['영호', 'ยองโฮ', 'ลิ้งหู', 'หลิงหู'],
+  ['소림', 'โซริม', 'เส้าหลิน'], ['무당', 'มูดัง', 'บู๊ตึ๊ง', 'อู่ตัง'], ['아미', 'อามี', 'ง้อไบ๊', 'เอ๋อเหมย'], ['화산', 'ฮวาซาน', 'หัวซาน', 'ฮว้าซัว'],
+  ['사천', 'ซาชอน', 'เสฉวน', 'ซื่อชวน'], ['당가', 'ดัง', 'ถัง'],
+];
+function fixSinoKoreanReading(korean, thai) {
+  const k = String(korean || ''), t0 = String(thai || '');
+  if (!/[가-힣]/.test(k) || !t0) return thai;
+  let t = t0;
+  for (const [ko, kr, ...zh] of KO_SINO_READINGS) {
+    if (!k.includes(ko)) continue;
+    for (const z of zh) if (t.includes(z)) t = t.split(z).join(kr);
+  }
+  // แซ่ 당 (唐) ขึ้นต้นชื่อ: 당소소 = ถังโซโซ → ดังโซโซ (เฉพาะต้นคำ — กัน 정당 ฯลฯ)
+  if (k.startsWith('당') && t.startsWith('ถัง')) t = 'ดัง' + t.slice(3);
+  return t === t0 ? thai : t;
 }
 function fixAddressGender(korean, thai) {
   const k = String(korean || '').trim();

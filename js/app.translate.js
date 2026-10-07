@@ -862,7 +862,7 @@ function glossaryMisses(srcText, thaiText, glossary = S.currentWs?.glossary) {
 function sanitizeGlossaryEntry(entry) {
   if (!entry || /[\u3131-\u318e\uac00-\ud7a3\u4e00-\u9fff\u3040-\u30ff]/.test(String(entry.thai || ''))) return null;
   if (entry.type !== 'character' || !['male', 'female', 'neutral'].includes(entry.gender)) delete entry.gender;
-  entry.thai = fixAddressGender(entry.korean, entry.thai);
+  entry.thai = fixSinoKoreanReading(entry.korean, fixAddressGender(entry.korean, entry.thai));
   // AI บางครั้งคืนชื่อซ้ำสองรอบ ("세피아 세피아" = "เซเปีย เซเปีย") → ยุบเหลือชื่อเดียว
   for (const f of ['korean', 'thai']) {
     const m = String(entry[f] || '').trim().match(/^(.+?)(?:\s+\1)+$/);
