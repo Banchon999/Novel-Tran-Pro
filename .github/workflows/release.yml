@@ -42,7 +42,7 @@ jobs:
         run: |
           set -e
           mkdir -p dist/NovelTrans
-          cp -r index.html style.css sw.js manifest.webmanifest icon.svg serve.sh js README.md SYSTEMS.md dist/NovelTrans/
+          cp -r index.html style.css sw.js manifest.webmanifest icon.svg serve.sh js README.md SYSTEMS.md LICENSE dist/NovelTrans/
           cd dist && zip -qr "NovelTrans-${{ steps.v.outputs.tag }}.zip" NovelTrans
 
       - uses: softprops/action-gh-release@v2

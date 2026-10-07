@@ -12,6 +12,7 @@
 [![Last commit](https://img.shields.io/github/last-commit/Banchon999/Novel-Tran-Pro?style=flat-square&color=5BD49A)](https://github.com/Banchon999/Novel-Tran-Pro/commits/main)
 ![PWA](https://img.shields.io/badge/PWA-ใช้ออฟไลน์ได้-111214?style=flat-square)
 ![No backend](https://img.shields.io/badge/backend-ไม่ต้องมี-111214?style=flat-square)
+[![License](https://img.shields.io/github/license/Banchon999/Novel-Tran-Pro?style=flat-square&color=8A8C94)](LICENSE)
 
 [**⬇ ดาวน์โหลดเวอร์ชันล่าสุด**](https://github.com/Banchon999/Novel-Tran-Pro/releases/latest) · [เริ่มใช้ใน 1 นาที](#-เริ่มใช้ใน-1-นาที) · [ฟีเจอร์](#-ทำอะไรได้บ้าง) · [English](#-english)
 
@@ -44,7 +45,7 @@ NovelTrans เอาวิธีที่ทีมแปลมืออาชี
 <td width="33%" align="center"><img src="docs/images/screen-glossary.png" alt="คลังศัพท์" width="230"/><br/><b>คลังศัพท์ + เพศตัวละคร</b><br/><sub>สกัดอัตโนมัติ · ตรวจคำซ้ำ/คำซ้อน</sub></td>
 </tr>
 <tr>
-<td align="center"><img src="docs/images/screen-reader.png" alt="อ่านเต็มจอ" width="230"/><br/><b>อ่านเต็มจอ + Prefetch</b><br/><sub>อ่านตอนนี้ ตอนถัดไปแปลรอไว้แล้ว</sub></td>
+<td align="center"><img src="docs/images/screen-translate-zh.png" alt="แปลนิยายจีน" width="230"/><br/><b>นิยายจีน · อังกฤษ ก็ได้</b><br/><sub>ตรวจภาษาอัตโนมัติ · ศัพท์จีนกำลังภายในต่อเนื่อง</sub></td>
 <td align="center"><img src="docs/images/screen-sidebar.png" alt="ภาพปกและหลายเรื่อง" width="230"/><br/><b>หลายเรื่อง พร้อมภาพปก</b><br/><sub>แยกคลังศัพท์/ตั้งค่าต่อเรื่อง</sub></td>
 <td align="center"><img src="docs/images/screen-export.png" alt="ส่งออก" width="230"/><br/><b>ส่งออก EPUB · DOCX · TXT</b><br/><sub>EPUB มาตรฐาน (ผ่าน epubcheck) พร้อมปก</sub></td>
 </tr>
@@ -58,6 +59,7 @@ NovelTrans เอาวิธีที่ทีมแปลมืออาชี
 - 📘 **คู่มือการแปล** — นโยบายทับศัพท์, คำประจำเรื่อง, น้ำเสียงบรรยาย, รูปแบบข้อความระบบ, น้ำเสียงตัวละคร
 - 🗣 **ครับ/ค่ะ ถูกเพศ** — ระบุผู้พูดทุกบทพูด, ตรวจ เขา/เธอ และคำเรียกขานหลังแปล
 - ⚡ **แปลหลายตอนรวด** — Batch พร้อม log และตรวจคำหลุดคลังทุกตอน
+- 📖 **อ่านเต็มจอ + Prefetch** — อ่านตอนนี้ ตอนถัดไปแปลรอไว้แล้ว (ธีมกลางคืน/กระดาษ/ซีเปีย)
 - 📱 **PWA** — ติดตั้งบนหน้าจอโฮม, ใช้ออฟไลน์ได้, ออกแบบมาสำหรับมือถือก่อน
 - 🔒 **ข้อมูลอยู่ในเครื่องคุณ** — เก็บใน IndexedDB ของเบราว์เซอร์, API Key ไม่ส่งไปที่อื่นนอกจากผู้ให้บริการ AI
 - 💾 **สำรอง/กู้คืน 1 คลิก** — Backup ทุกเรื่องเป็นไฟล์เดียว
@@ -120,16 +122,12 @@ python3 -m http.server 8080
 
 <details><summary><b>รองรับภาษาญี่ปุ่นไหม?</b></summary>
 
-ยังไม่รองรับอย่างเป็นทางการ (อยู่ในแผน) — ตอนนี้รองรับ เกาหลี · จีน · อังกฤษ
+ยังไม่รองรับ — ตอนนี้รองรับ เกาหลี · จีน · อังกฤษ
 </details>
 
-## 🗺 แผนต่อไป
+## 🐞 เจอบั๊ก / มีไอเดีย
 
-- [ ] ต้นฉบับภาษาญี่ปุ่น
-- [ ] ซิงก์ข้อมูลข้ามอุปกรณ์ (เลือกได้, เข้ารหัส)
-- [ ] เปรียบเทียบคำแปลจากหลายโมเดลแบบเคียงกัน
-
-มีไอเดียหรือเจอบั๊ก? เปิด [Issue](https://github.com/Banchon999/Novel-Tran-Pro/issues) ได้เลย
+เปิด [Issue](https://github.com/Banchon999/Novel-Tran-Pro/issues) ได้เลย
 
 ## 🛠 สำหรับนักพัฒนา
 
@@ -148,6 +146,10 @@ tests/                  ชุดวัดความต่อเนื่อ�
 
 รายละเอียดระบบทั้งหมด: [`SYSTEMS.md`](SYSTEMS.md) · ประวัติการพัฒนา: [`docs/HISTORY.md`](docs/HISTORY.md)
 
+## 📄 License
+
+[GPL-3.0](LICENSE) — ใช้ แก้ไข และแจกจ่ายต่อได้ฟรี แต่ถ้านำไปแก้แล้วเผยแพร่ ต้องเปิดซอร์สโค้ดภายใต้ GPL-3.0 เช่นกัน
+
 ---
 
 ## 🇬🇧 English
@@ -161,7 +163,7 @@ tests/                  ชุดวัดความต่อเนื่อ�
 - **Reader + prefetch, batch translation, EPUB/DOCX/TXT export, per-novel covers, PWA/offline, one-click backup.**
 - **Private by design** — no backend; everything lives in your browser's IndexedDB.
 
-Run it: download a [release](https://github.com/Banchon999/Novel-Tran-Pro/releases/latest), serve the folder over HTTP (`python3 -m http.server 8080`), open `http://localhost:8080`.
+Licensed under [GPL-3.0](LICENSE). Run it: download a [release](https://github.com/Banchon999/Novel-Tran-Pro/releases/latest), serve the folder over HTTP (`python3 -m http.server 8080`), open `http://localhost:8080`.
 
 ---
 
