@@ -367,35 +367,112 @@ TRANSLATION (Thai): {translation}
 Respond ONLY with JSON (no markdown):
 {"pass":true,"score":0-100,"issues":[{"type":"string","description":"string","suggestion":"string"}],"summary":"string"}`;
 
-const AUTOGLOSSARY_PROMPT = `You are a Korean webnovel terminology extractor. Extract proper nouns and special terms from Korean text.
+// ─── Prompt สกัดคำศัพท์ (Auto Glossary) — แยกตามภาษาต้นฉบับ ───
+// เดิมมีแม่แบบเกาหลีอันเดียวแล้ว langify เป็นจีน/อังกฤษ → AI ได้กฎ/ตัวอย่างไม่ตรงภาษา (key "korean", ถอดเสียงจีนแบบพินอินดิบ)
+// ตอนนี้แต่ละภาษามี prompt ของตัวเอง: ขอบเขตคำ, วิธีถอดเสียง/แปลแบบที่สำนักพิมพ์ไทยใช้, สัญญาณบอกเพศ, ตัวอย่างผลลัพธ์
+// placeholder: {existing} {text} {thai_snippet}
+const _AG_COMMON_FIELDS = `"type": one of character | title | rank | term | honorific | place | skill | item | clan | monster
+"note": short English meaning + the decision "ทับศัพท์" (transliterated) or "แปลความหมาย" (translated) — keep that decision for the whole novel
 
-EXISTING GLOSSARY (skip these): {existing}
+OUTPUT: ONLY a raw JSON array — no markdown fences, no text before or after. Return [] if there is nothing new.`;
+
+const AUTOGLOSSARY_PROMPTS = {
+  ko: `You are a professional Korean→Thai web-novel terminology editor. Build glossary entries for the Thai translation of the KOREAN text below.
+SOURCE LANGUAGE: Korean (한국어).
+
+EXISTING GLOSSARY — already decided, never output these again: {existing}
 
 KOREAN SOURCE TEXT:
 {text}
 
 {thai_snippet}
 
-Return ONLY JSON array (no markdown):
-[{"korean":"term","thai":"Thai translation","type":"character|title|rank|term|honorific|place","gender":"male|female|neutral","note":"English meaning"}]
+WHAT TO EXTRACT
+- Every named entity, including minor ones: characters (full name), places, organizations / guilds / sects / families, skills and techniques, weapons and items, monsters and races, named quests or events.
+- Titles, ranks, grades and forms of address that must read the same in every chapter (헌터, S급, 공작, 사형, 도련님).
+- Recurring genre or system vocabulary the reader must see consistently (게이트, 마석, 상태창, 레이드, 내공, 기사단).
+- NOT ordinary words (사람, 목소리, 화면), verbs, adjectives, numbers, chapter headings, or whole phrases.
 
-Rules:
-- Only extract names, titles, skills, places, ranks — plus RECURRING genre/system terms that must read the same in every chapter (e.g. 마나, 기사단, 공작가, 레벨, 스탯, 각성) — NOT ordinary everyday words
-- In "note", state the decision: "ทับศัพท์" (transliterated) or "แปลความหมาย" (translated) — and keep that decision for the whole novel
-- Provide natural Thai translations that are CONSISTENT with professional Thai webnovel prose, so that when these terms are injected into the translated chapter they read seamlessly and never break the reader's flow
-- Apply professional proofreading (พิสูจน์อักษร): correct Thai spelling/tone marks, clean transliteration, no stray source-language characters; pick ONE canonical Thai spelling per term and keep it stable
-- type must be one of: character, title, rank, term, honorific, place
-- gender: REQUIRED for type="character". Infer carefully from ALL available cues — but accuracy matters more than confidence:
-  • Korean pronouns (strongest signal): 그/남자/형/오빠/아버지/아들/왕/황제/그는/그가 = male | 그녀/여자/언니/누나/어머니/딸/왕비/그녀는/그녀가 = female
-  • Korean kinship terms used FOR the character: 형/오빠/아버지/할아버지 = male | 언니/누나/어머니/할머니 = female
-  • Korean dialogue honorifics when others address the character: ~씨/~님 is neutral; 여왕/공주 = female; 왕자/황자 = male
-  • Thai translation pronouns if provided (weak support only): เขา/นาย = male | เธอ/นาง/หล่อน = female. Do NOT treat ฉัน/ผม in narration or inner thoughts as evidence — a preset may lock every narrator to ฉัน
-  • Korean fantasy name patterns: names ending in 아/야/이 with feminine context = likely female; strong warrior names without feminine markers = likely male
-  • First-person Korean 나/저 does NOT indicate gender — look at surrounding context instead
-  • CAUTION for chapter 1 / first appearance: If cues are ambiguous or mixed, assign "neutral" — it is BETTER to be neutral and correct later than to assign wrong gender permanently.
-  • Only assign male/female when you are CONFIDENT from at least one clear signal above.
-- Forms of address carry the gender of the person ADDRESSED: 도련님/공자님 (young master, male) = คุณชาย · 아가씨/영애 (young lady, female) = คุณหนู · 부인 = ท่านหญิง/คุณนาย — never give a male form of address a female Thai word or vice versa
-- Return empty array [] if no new terms found`;
+"source" — the Korean term exactly as written in the text, in base form:
+- Strip particles and endings (은/는/이/가/을/를/의/에게/에서/께서/으로/이다…). Keep 님 only when it is part of a form of address (도련님).
+- One concept per entry: split "숨겨진 퀘스트 '회귀자의 맹세'" into the quest name only (회귀자의 맹세); split "오크 군단장 그로칸" into 그로칸 (character) and 오크 군단장 (title). Never include quotes or brackets.
+
+"thai" — Thai script only (no Hangul, no brackets, no explanations), one canonical spelling:
+- Korean personal names: transliterate syllable by syllable the way Thai publishers do — 김 คิม · 이 อี · 박 พัค · 최 ชเว · 정 จอง · 강 คัง · 조 โจ · 윤 ยุน · 장 จาง · 한 ฮัน · 오 โอ · 서 ซอ · 신 ชิน · 권 ควอน · 황 ฮวัง · 송 ซง · 백 แพ็ก; syllables: 준 จุน · 민 มิน · 서 ซอ · 지 จี · 훈 ฮุน · 현 ฮยอน · 우 อู · 영 ยอง · 은 อึน · 희 ฮี · 수 ซู · 연 ยอน · 태 แท · 하 ฮา · 진 จิน. Example: 이서준 อีซอจุน.
+- Meaningful names (skills, items, places, guilds, quests): translate the meaning in natural Thai web-novel style (검성 ราชันกระบี่, 붉은 달 길드 กิลด์จันทร์แดง); transliterate only when the name has no meaning to translate. Real places keep their Thai names (서울 โซล).
+- English loanwords written in Hangul → the Thai loanword readers know: 게이트 เกต · 던전 ดันเจี้ยน · 던전 브레이크 ดันเจี้ยนเบรก · 레이드 เรด · 스킬 สกิล · 퀘스트 เควสต์ · 길드 กิลด์ · 레벨 เลเวล · 인벤토리 ช่องเก็บของ — except 시스템 (the System) → ระบบ.
+- Sino-Korean martial / fantasy terms follow the established Thai renderings (내공 พลังภายใน · 단전 ตันเถียน · 마석 หินเวท · 기사단 คณะอัศวิน · 공작 ดยุก).
+- Forms of address carry the gender of the person ADDRESSED: 도련님/공자님 → คุณชาย (male) · 아가씨/영애 → คุณหนู (female) · 부인 → ท่านหญิง/คุณนาย.
+
+"gender" — REQUIRED for type "character": male | female | neutral. Evidence, strongest first: 그/그는/그가 → male, 그녀 → female; kinship or role words used FOR the person (형/오빠/아버지/아들/왕자 male · 언니/누나/어머니/딸/영애/하녀/공주 female); how others address them; Thai pronouns in the Thai translation if given (เขา male · เธอ/นาง female — weak evidence; ผม/ฉัน prove nothing). 나/저 prove nothing. If unsure → "neutral".
+${_AG_COMMON_FIELDS}
+Example:
+[{"source":"이서준","thai":"อีซอจุน","type":"character","gender":"male","note":"protagonist · ทับศัพท์"},{"source":"붉은 달 길드","thai":"กิลด์จันทร์แดง","type":"clan","note":"Red Moon Guild · แปลความหมาย"},{"source":"마석","thai":"หินเวท","type":"item","note":"mana stone · แปลความหมาย"}]`,
+
+  zh: `You are a professional Chinese→Thai web-novel terminology editor (จีนกำลังภายใน · เซียน · แฟนตาซีจีน). Build glossary entries for the Thai translation of the CHINESE text below.
+SOURCE LANGUAGE: Chinese (中文, simplified or traditional) — read it as Mandarin.
+
+EXISTING GLOSSARY — already decided, never output these again: {existing}
+
+CHINESE SOURCE TEXT:
+{text}
+
+{thai_snippet}
+
+WHAT TO EXTRACT
+- Every named entity, including minor ones: characters (full name 姓+名, Daoist names such as 玄机子), places (山 峰 殿 阁 城 谷 潭 林), sects / clans / families (宗 门 派 阁 家 族), techniques and manuals (titles in 《》, …剑法 …掌 …诀 …经), artifacts, pills and treasures (…剑 …丹 …符 …鼎 玉简), beasts.
+- Cultivation realms and ranks (炼气 筑基 金丹 …), positions and titles (掌门 长老 执法长老 内门弟子), forms of address used as titles (师兄 师尊 前辈 公子 姑娘).
+- Recurring genre vocabulary the reader must see consistently (灵气 灵力 丹田 剑意 储物袋 宗门大比 闭关).
+- NOT ordinary words (少女 声音 白衣), insults (废物), verbs, idioms (成语 such as 一日千里), chapter headings, or sentences.
+
+"source" — copy the characters exactly from the text: no pinyin, no 《》 or quotes, no trailing 的/了/之. For realms keep one bare entry (筑基 for 筑基期/筑基初期/筑基境).
+
+"thai" — Thai script only (no Chinese characters, no pinyin, no brackets), one canonical spelling:
+- Personal names: transliterate from MANDARIN with Thai tone marks approximating the tones, as Thai publishers of Chinese novels do.
+  Initials: b ป · p พ · d ต · t ท · g ก · k ค · h ฮ/ห · j จ · q ช · x ซ · zh จ · ch ช · sh ซ · r ร · z จ · c ช · s ซ · y ย · w ว. Finals: -ian เอียน · -uan อวน · xuan/xue เสวียน/เสวีย · -iu อิว · -ui อุย/เว่ย · -ong อง · -eng เอิง · -e เออ · -ao เอา · -ou โอว · ü (yu xu ju qu) อวี · zhi chi shi zi ci si ri → จือ ชือ ซือ. Tone 1 สามัญ · 2 จัตวา · 3 เอก · 4 โท. 无/吴 = อู๋, never หวู.
+  Common surnames (use exactly): 王 หวัง · 李 หลี่ · 张 จาง · 刘 หลิว · 陈 เฉิน · 杨 หยาง · 赵 จ้าว · 黄 หวง · 周 โจว · 吴 อู๋ · 林 หลิน · 叶 เย่ · 萧 เซียว · 苏 ซู · 楚 ฉู่ · 秦 ฉิน · 沈 เสิ่น · 顾 กู้ · 江 เจียง · 云 อวิ๋น · 白 ไป๋ · 韩 หาน · 唐 ถัง · 许 สวี่ · 徐 สวี · 孙 ซุน · 宋 ซ่ง · 谢 เซี่ย · 陆 ลู่ · 凌 หลิง · 慕容 มู่หรง · 上官 ซ่างกวน · 欧阳 โอวหยาง · 司马 ซือหม่า · 南宫 หนานกง.
+  Examples: 林动 หลินต้ง · 萧炎 เซียวเหยียน · 苏柔 ซูโหรว · 韩立 หานลี่ · 张无忌 จางอู๋จี้ · 楚雪 ฉู่เสวี่ย.
+- Sects, places, techniques, artifacts: translate the MEANING in the Thai จีนกำลังภายใน style. Descriptive words are translated (落日 ตะวันลับ · 万妖 หมื่นอสูร · 寒 เย็นเยียบ · 赤焰 เปลวเพลิงชาด); only a core that is a family name or an opaque poetic name stays transliterated inside the Thai frame (青云宗 สำนักชิงอวิ๋น). 宗/门/派 สำนัก · 阁 หอ · 殿 ตำหนัก · 峰 ยอดเขา · 谷/峡谷 หุบเขา · 城 นคร · 经 คัมภีร์ · 剑法 วิชากระบี่ · 丹 โอสถ · 灵器 อาวุธวิญญาณ · 飞剑 กระบี่เหิน. Examples: 天剑宗 สำนักกระบี่สวรรค์ · 藏经阁 หอคัมภีร์ · 万妖山脉 เทือกเขาหมื่นอสูร · 碧霞峰 ยอดเขาปี้เสีย · 《玄冰诀》 เคล็ดวิชาน้ำแข็งเสวียน.
+  NEVER spell a whole sect, realm or technique phonetically (天剑宗 is NOT เทียนเจี้ยนจง; 炼气 is NOT เลี่ยนชี่).
+- Genre vocabulary: 江湖 ยุทธจักร · 武林 บู๊ลิ้ม · 灵气 ปราณวิญญาณ · 灵力 พลังวิญญาณ · 丹田 ตันเถียน · 剑意 เจตจำนงกระบี่ · 储物袋 ถุงเก็บของ · 玉简 แผ่นหยก · 闭关 ปิดด่านบำเพ็ญ · 宗门大比 การประลองใหญ่ของสำนัก · 内门弟子 ศิษย์สายใน · 外门弟子 ศิษย์สายนอก.
+- Realms: 炼气 ขั้นหลอมปราณ · 筑基 ขั้นสร้างรากฐาน · 金丹 ขั้นแก่นทองคำ · 元婴 ขั้นวิญญาณก่อกำเนิด · 化神 ขั้นแปลงเทพ (期/境 add nothing).
+- Forms of address: 师兄 ศิษย์พี่ · 师弟 ศิษย์น้อง · 师姐 ศิษย์พี่หญิง · 师妹 ศิษย์น้องหญิง · 师尊/师父 ท่านอาจารย์ · 前辈 ท่านผู้อาวุโส · 长老 ผู้อาวุโส · 掌门 เจ้าสำนัก · 公子/少爷 คุณชาย (male) · 小姐/姑娘 คุณหนู/แม่นาง (female).
+
+"gender" — REQUIRED for type "character": male | female | neutral. Evidence, strongest first: 他 → male, 她 → female; 少年/公子/少爷/老者/师兄/父/子 male · 少女/小姐/姑娘/仙子/师姐/师妹/母/女 female; how others address them; Thai pronouns in the Thai translation if given (weak evidence). If unsure → "neutral".
+${_AG_COMMON_FIELDS}
+Example:
+[{"source":"韩立","thai":"หานลี่","type":"character","gender":"male","note":"protagonist · ทับศัพท์"},{"source":"藏经阁","thai":"หอคัมภีร์","type":"place","note":"Scripture Pavilion · แปลความหมาย"},{"source":"金丹","thai":"ขั้นแก่นทองคำ","type":"rank","note":"Golden Core realm · แปลความหมาย"}]`,
+
+  en: `You are a professional English→Thai web-novel terminology editor (fantasy · LitRPG · romance fantasy). Build glossary entries for the Thai translation of the ENGLISH text below.
+SOURCE LANGUAGE: English.
+
+EXISTING GLOSSARY — already decided, never output these again: {existing}
+
+ENGLISH SOURCE TEXT:
+{text}
+
+{thai_snippet}
+
+WHAT TO EXTRACT
+- Every named entity, including minor ones: characters, places, organizations / guilds / houses, skills, classes, spells, items and weapons, races and monsters, named quests or events.
+- Multi-word proper nouns as ONE entry (Silver Tower, Adventurers' Guild). Titles used like names and noble ranks (Archmage, Grand Elder, Duke of X).
+- Recurring system / genre vocabulary the reader must see consistently (Level, Status Window, mana crystal, B-rank).
+- NOT ordinary words, words capitalized only because they start a sentence, pronouns, numbers, chapter headings, system-message labels (Quest Accepted, Reward) or rarity labels (Common, Rare, Epic).
+
+"source" — exactly as written (keep capitalization), without a leading "The" unless it is part of a title in quotes or brackets, without possessive 's, no brackets or quotes, no numbers (Level 27 → Level).
+
+"thai" — Thai script only, one canonical spelling:
+- Personal names: transliterate by English pronunciation, following Royal Institute practice — readable, without tone marks unless the common spelling has them, ์ on silent final letters, given name and family name separated by a space (Leon Ashford เลออน แอชฟอร์ด · Elena เอเลนา · Victor วิกเตอร์ · Arthur อาร์เธอร์).
+- Meaningful names (places, organizations, skills, items, quests): translate the meaning when it reads naturally in Thai fantasy (Whispering Forest ป่ากระซิบ · Silver Tower หอคอยเงิน); transliterate coined or opaque names (Ravenmoor เรเวนมัวร์).
+- Game terms → the Thai loanwords readers know: Level เลเวล · Skill สกิล · Quest เควสต์ · Class คลาส · Dungeon ดันเจี้ยน · Guild กิลด์ · Status Window หน้าต่างสถานะ.
+- Titles: Duke ดยุก · Marquis มาร์ควิส · Earl เอิร์ล · Count เคานต์ · Baron บารอน · Lady เลดี้ · Lord ลอร์ด · Sir เซอร์ · Archmage จอมเวทสูงสุด · Young master คุณชาย (male) · Young lady/Miss คุณหนู (female).
+
+"gender" — REQUIRED for type "character": male | female | neutral. Evidence: he/him/his → male, she/her → female; Mr/Sir/Lord/King/Prince/Duke/brother/father → male; Ms/Mrs/Miss/Lady/Queen/Princess/Duchess/sister/mother → female. If unsure → "neutral".
+${_AG_COMMON_FIELDS}
+Example:
+[{"source":"Leon Ashford","thai":"เลออน แอชฟอร์ด","type":"character","gender":"male","note":"protagonist · ทับศัพท์"},{"source":"Silver Tower","thai":"หอคอยเงิน","type":"place","note":"mage tower · แปลความหมาย"},{"source":"Status Window","thai":"หน้าต่างสถานะ","type":"term","note":"system UI · แปลความหมาย"}]`,
+};
+const AUTOGLOSSARY_PROMPT = AUTOGLOSSARY_PROMPTS.ko;   // ชื่อเดิม (เผื่อโค้ดเก่าอ้างถึง)
 
 // คำเรียกขานที่บอกเพศของ "คนที่ถูกเรียก" — AI คลังศัพท์เคยใส่ 도련님 = คุณหนู (ผิดเพศ) แล้วลามทุกตอน
 const ADDRESS_GENDER = [
@@ -661,20 +738,28 @@ function applyLangNotes(systemPrompt, ws) {
 }
 
 // prompt สกัดคำ: แปลงภาษา + กฎเฉพาะภาษา (ใส่ก่อนบรรทัด "Return empty array")
-function langifyGlossaryPrompt(tpl, ws) {
-  const L = getSourceLang(ws);
-  let t = langify(tpl, ws);
-  const extra = LANG_NOTES[L.code]?.glossary;
-  if (extra && !t.includes(extra)) {
-    const i = t.lastIndexOf('- Return empty array');
-    t = i >= 0 ? t.slice(0, i) + extra + '\n' + t.slice(i) : t + '\n' + extra;
+// prompt สกัดคำ: เลือกตามภาษา (lang = ภาษาที่ตรวจพบจากข้อความจริง ถ้าไม่ส่งมาใช้ภาษาของ workspace)
+// • prompt สำเร็จรูปของภาษานั้น (AUTOGLOSSARY_PROMPTS) → ใช้ตรง ๆ ไม่ต้องแปลง
+// • prompt ที่ผู้ใช้แก้เอง/แบบเก่า (เขียนสำหรับเกาหลี) → แปลงภาษา + เติมกฎเฉพาะภาษา (LANG_NOTES)
+// • แนวนิยาย: เติมเมื่อแนวนั้นตรงกับภาษาของข้อความเท่านั้น (ชุดคำเกาหลีไม่ไปปนกับต้นฉบับจีน)
+function _glossInsert(t, rule) {
+  let i = t.lastIndexOf('\nOUTPUT:');
+  if (i < 0) i = t.lastIndexOf('- Return empty array');
+  return i >= 0 ? t.slice(0, i) + '\n' + rule + '\n' + t.slice(i) : t + '\n' + rule;
+}
+function langifyGlossaryPrompt(tpl, ws, lang) {
+  const code = SOURCE_LANGS[lang] ? lang : getSourceLang(ws).code;
+  const lws = { ...(ws || {}), settings: { ...(ws?.settings || {}), sourceLang: code } };
+  const builtIn = typeof AUTOGLOSSARY_PROMPTS !== 'undefined' && Object.values(AUTOGLOSSARY_PROMPTS).includes(tpl);
+  let t = tpl;
+  if (!builtIn) {
+    t = langify(tpl, lws);
+    const extra = LANG_NOTES[code]?.glossary;
+    if (extra && !t.includes(extra)) t = _glossInsert(t, extra);
   }
-  // แนวนิยาย: ให้คำที่สกัดใหม่ใช้สำนวนมาตรฐานของแนวนั้น
   const g = typeof getGenrePreset === 'function' ? getGenrePreset(ws) : null;
-  if (g && !t.includes('GENRE (')) {
-    const rule = `- GENRE (${g.name}): follow these Thai conventions for new terms:\n${g.guide}\n- Standard renderings for this genre: ${g.terms.map(([s, th]) => s + ' = ' + th).join(' · ')}`;
-    const i = t.lastIndexOf('- Return empty array');
-    t = i >= 0 ? t.slice(0, i) + rule + '\n' + t.slice(i) : t + '\n' + rule;
+  if (g && g.lang === code && !t.includes('GENRE (')) {
+    t = _glossInsert(t, `GENRE (${g.name}) — follow these Thai conventions for new terms:\n${g.guide}\nStandard renderings for this genre: ${g.terms.map(([s, th]) => s + ' = ' + th).join(' · ')}`);
   }
   return t;
 }
@@ -686,6 +771,7 @@ function normalizeTermKeys(t) {
   if (!t || typeof t !== 'object') return t;
   if (!t.korean) for (const k of _TERM_KEYS) if (typeof t[k] === 'string' && t[k].trim()) { t.korean = t[k].trim(); break; }
   if (!t.thai) for (const k of _THAI_KEYS) if (typeof t[k] === 'string' && t[k].trim()) { t.thai = t[k].trim(); break; }
-  if (typeof t.korean === 'string') t.korean = t.korean.trim();
+  // AI บางตัวติด 《》 / 「」 / เครื่องหมายคำพูดมากับชื่อ → คำในคลังจะไม่ตรงกับต้นฉบับ
+  if (typeof t.korean === 'string') t.korean = t.korean.trim().replace(/^[《「『【\["'“‘]+|[》」』】\]"'”’]+$/g, '').trim();
   return t;
 }

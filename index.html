@@ -702,7 +702,7 @@
       <div id="agPanelManual">
         <div class="sf-group">
           <div class="sf-label">ข้อความต้นฉบับ</div>
-          <textarea id="agSourceText" class="editor-ta" rows="6" placeholder="วางข้อความต้นฉบับที่นี่เพื่อให้ AI วิเคราะห์คำศัพท์..."></textarea>
+          <textarea id="agSourceText" class="editor-ta" rows="6" oninput="agUpdateLangInfo()" placeholder="วางข้อความต้นฉบับที่นี่เพื่อให้ AI วิเคราะห์คำศัพท์..."></textarea>
         </div>
       </div>
 
@@ -725,20 +725,23 @@
         <button class="btn btn-primary btn-sm" id="agRunBtn" onclick="runAutoGlossary()">🤖 วิเคราะห์</button>
         <select id="agModel" class="mini-select"><!-- populate ตาม provider ตอนเปิด modal --></select>
         <button class="btn btn-ghost btn-sm" onclick="agTogglePromptEditor()" id="agPromptToggleBtn" title="แก้ไข Prompt ที่ใช้วิเคราะห์">✏ Prompt</button>
-        <span style="font-size:0.74rem;color:var(--text-muted)">เลือกโมเดลสำหรับ Auto Glossary</span>
+        <span id="agLangInfo" style="font-size:0.74rem;color:var(--text-muted)"></span>
         <span id="agStatus" style="font-size:0.78rem;color:var(--gold)"></span>
       </div>
       <!-- Prompt editor (hidden by default) -->
       <div id="agPromptEditorWrap" style="display:none;margin-top:8px;border:1px solid var(--border-glow);border-radius:var(--radius);background:var(--bg-deep);padding:10px">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
-          <span class="sf-label" style="margin:0">✏ แก้ไข Auto Glossary Prompt</span>
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;margin-bottom:6px">
+          <span class="sf-label" style="margin:0;display:flex;align-items:center;gap:6px;white-space:nowrap">✏ Prompt ต้นฉบับ
+            <select id="agPromptLang" class="mini-select" onchange="agLoadPromptEditor()"><option value="ko">เกาหลี</option><option value="zh">จีน</option><option value="en">อังกฤษ</option></select>
+            <span id="agPromptState" style="font-size:0.7rem;color:var(--text-muted);font-weight:400"></span></span>
           <div style="display:flex;gap:6px">
             <button class="btn-xs" onclick="agResetPrompt()" title="คืนค่า default">↺ Reset</button>
             <button class="btn-xs" style="background:rgba(91,140,255,0.15);border-color:var(--gold-dim);color:var(--gold)" onclick="agSavePrompt()">💾 บันทึก Prompt</button>
           </div>
         </div>
-        <textarea id="agPromptEditor" class="editor-ta" rows="8" style="font-size:0.78rem;font-family:var(--font-mono);line-height:1.6;resize:vertical"></textarea>
-        <div style="font-size:0.7rem;color:var(--text-muted);margin-top:5px">ตัวแปรที่ใช้: <code style="color:var(--gold)">{existing}</code> = คำที่มีแล้ว &nbsp;|&nbsp; <code style="color:var(--gold)">{text}</code> = ข้อความต้นฉบับ</div>
+        <div id="agPromptLangWarn" style="font-size:0.74rem;color:var(--crimson-light);margin-bottom:4px"></div>
+        <textarea id="agPromptEditor" class="editor-ta" rows="8" oninput="agCheckPromptEditor()" style="font-size:0.78rem;font-family:var(--font-mono);line-height:1.6;resize:vertical"></textarea>
+        <div style="font-size:0.7rem;color:var(--text-muted);margin-top:5px">ตัวแปรที่ใช้: <code style="color:var(--gold)">{existing}</code> = คำที่มีแล้ว &nbsp;|&nbsp; <code style="color:var(--gold)">{text}</code> = ข้อความต้นฉบับ · แต่ละภาษามี Prompt ของตัวเอง ระบบเลือกให้อัตโนมัติจากภาษาของข้อความที่วิเคราะห์</div>
       </div>
       <div id="agResults" style="display:none;margin-top:10px">
         <div class="sf-label" style="margin-bottom:6px">คำที่พบ — เลือกที่ต้องการเพิ่ม</div>
