@@ -204,8 +204,9 @@ ${contextStr}`);
 
 function buildTranslatePrompt({ sourceText, glossaryStr = '', contextStr = '', styleNote = '', ws = null, mtlDraft = '', speakerMap = null }) {
   const preset = getActivePreset(ws);
+  const lws = wsForText(ws, sourceText);   // กฎภาษาตามต้นฉบับที่แปลจริง
   // langify ทำท้ายสุด: บล็อกกฎที่แทรกภายหลัง (ครับ/ค่ะ, เพศ) มีตัวอย่างภาษาเกาหลี — ตัดออกเมื่อต้นฉบับไม่ใช่เกาหลี
-  return langify(applyContext(applySpeakerMap(applyParticleRules(applyStyleSheet(applyConsistencyLock(applyGenreNotes(applyLangNotes(preset.systemPrompt, ws), ws, sourceText), ws), ws)), speakerMap), contextStr), ws)
+  return langify(applyContext(applySpeakerMap(applyParticleRules(applyStyleSheet(applyConsistencyLock(applyGenreNotes(applyLangNotes(preset.systemPrompt, lws), lws, sourceText), ws), ws)), speakerMap), contextStr), lws)
     .replace('{style_note}', styleNote ? `STYLE GUIDE:\n${styleNote}\n` : '')
     .replace('{glossary}',   glossaryStr || '(ไม่มี)')
     .replace('{context}',   contextStr)
@@ -298,9 +299,9 @@ function looksIncomplete(src, out) {
 }
 
 // AI ส่งต้นฉบับกลับมาโดยไม่แปล? (อักษรเกาหลี/จีน/ญี่ปุ่นเกิน 30% ของตัวอักษรทั้งหมด)
-function looksUntranslated(text) {
+function looksUntranslated(text, src) {
   const t = String(text || '');
-  if (getSourceLang().code === 'en') {   // ต้นฉบับอังกฤษ: อักษรละตินเกินครึ่ง = ไม่ได้แปล
+  if ((src ? textSourceLang(src) : getSourceLang()).code === 'en') {   // ต้นฉบับอังกฤษ: อักษรละตินเกินครึ่ง = ไม่ได้แปล
     const lat = (t.match(/[A-Za-z]/g) || []).length, th = (t.match(/[\u0e00-\u0e7f]/g) || []).length;
     return lat > 200 && lat / Math.max(1, lat + th) > 0.5;
   }
@@ -316,7 +317,7 @@ function stripSourceEcho(src, out) {
   const norm = s => String(s).replace(/\s+/g, '');
   const SRC = norm(src);
   let removed = 0;
-  const srcRe = getSourceLang().scriptG;   // เกาหลี/จีน/ละติน ตามภาษาต้นฉบับของเรื่อง
+  const srcRe = textSourceLang(src).scriptG;   // เกาหลี/จีน/ละติน ตามภาษาของต้นฉบับท่อนนี้
   const kept = String(out || '').split('\n').filter(l => {
     const h = (l.match(srcRe) || []).length, th = (l.match(/[\u0e00-\u0e7f]/g) || []).length;
     if (h > 3 && h > th && SRC.includes(norm(l))) { removed++; return false; }
@@ -704,6 +705,31 @@ function getSourceLang(ws = (typeof S !== 'undefined' ? S.currentWs : null)) {
   return SOURCE_LANGS[detectSourceLang(sample)] || SOURCE_LANGS.ko;
 }
 
+// ภาษาของ "ข้อความที่กำลังประมวลผล" ชนะการตั้งค่า — กฎ/ตัวอย่างใน prompt ต้องตรงกับภาษาที่ AI อ่านจริง
+// (วัดจริง: ให้กฎเกาหลีกับต้นฉบับจีน → DeepSeek ถอดเสียงพินอินดิบ 炼气期 = เลี่ยนชีฉี) · ตรวจไม่ได้ (ข้อความสั้น) → ใช้การตั้งค่า
+function textSourceLang(text, ws = (typeof S !== 'undefined' ? S.currentWs : null)) {
+  const d = detectSourceLang(text);
+  return SOURCE_LANGS[d] || getSourceLang(ws);
+}
+// คืน workspace ที่ภาษาตรงกับข้อความ (สำเนาตื้น — ใช้สร้าง prompt เท่านั้น ห้ามบันทึก) · ไม่ต่าง → คืนตัวเดิม
+function wsForText(ws, text) {
+  ws = ws || (typeof S !== 'undefined' ? S.currentWs : null);
+  const d = detectSourceLang(text);
+  if (!SOURCE_LANGS[d] || d === getSourceLang(ws).code) return ws;
+  noteLangMismatch(ws, d);
+  return { ...(ws || {}), settings: { ...(ws?.settings || {}), sourceLang: d } };
+}
+// แจ้งครั้งเดียวต่อเรื่อง/ภาษา เมื่อผู้ใช้ตั้งภาษาไว้ แต่ต้นฉบับเป็นอีกภาษา
+const _langMismatchSeen = new Set();
+function noteLangMismatch(ws, code) {
+  const set = ws?.settings?.sourceLang;
+  if (!SOURCE_LANGS[set] || set === code) return;
+  const key = (ws?.id || '') + ':' + code;
+  if (_langMismatchSeen.has(key)) return;
+  _langMismatchSeen.add(key);
+  if (typeof showToast === 'function') showToast(`ต้นฉบับนี้เป็นภาษา${SOURCE_LANGS[code].th} แต่ตั้งค่าเรื่องไว้เป็น${SOURCE_LANGS[set].th} — ใช้กฎภาษา${SOURCE_LANGS[code].th}ให้แล้ว (ถ้าทั้งเรื่องเป็น${SOURCE_LANGS[code].th} แก้ได้ที่ ⚙ ตั้งค่า Workspace)`, '');
+}
+
 // กฎเฉพาะภาษา — ใส่ใน prompt แปล และ prompt สกัดคำ
 const LANG_NOTES = {
   zh: {
@@ -750,6 +776,8 @@ function langify(tpl, ws, { dropKorean = true } = {}) {
 // แนวทางการแปลตามแนวนิยาย (ws.settings.genrePreset — ข้อมูลอยู่ใน app.glossary-ai.js)
 function applyGenreNotes(systemPrompt, ws, text) {
   if (typeof buildGenreBlock !== 'function' || typeof systemPrompt !== 'string' || systemPrompt.includes('GENRE GUIDE:')) return systemPrompt;
+  const g = typeof getGenrePreset === 'function' ? getGenrePreset(ws) : null;
+  if (g && g.lang !== getSourceLang(ws).code) return systemPrompt;   // แนวของอีกภาษา (เช่น มู่หลินเกาหลี กับต้นฉบับจีน) ไม่ใส่
   return injectPromptBlock(systemPrompt, buildGenreBlock(ws, text));
 }
 

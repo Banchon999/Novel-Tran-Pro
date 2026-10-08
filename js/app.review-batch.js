@@ -1031,9 +1031,9 @@ async function startBatchChapters() {
             );
             const se = stripSourceEcho(chunk, part);
             part = se.text; echoGap = se.missing > 0 || (se.removed > 0 && !part.trim());
-            if (!echoGap && !looksUntranslated(part) && !looksIncomplete(chunk, part)) break;
+            if (!echoGap && !looksUntranslated(part, chunk) && !looksIncomplete(chunk, part)) break;
           }
-          if (echoGap || looksUntranslated(part)) throw new Error('AI ส่งต้นฉบับกลับมาโดยไม่แปล');
+          if (echoGap || looksUntranslated(part, chunk)) throw new Error('AI ส่งต้นฉบับกลับมาโดยไม่แปล');
           if (looksIncomplete(chunk, part)) throw new Error('คำแปลสั้นผิดปกติ (ถูกตัดกลางคัน/ตกหล่น)');
         } catch (e) {
           // หมดเวลา ≠ ผู้ใช้กดหยุด → ถือเป็น error ของตอนนี้ แล้ว batch ไปตอนถัดไป

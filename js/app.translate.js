@@ -269,7 +269,7 @@ async function buildSpeakerMap(text, model, ws = S.currentWs) {
   const glossChars = (ws?.glossary || []).filter(g => g.type === 'character' && g.korean);
   const chars = glossChars.filter(g => text.includes(g.korean))
     .map(g => `- ${g.korean} = ${g.thai}${g.gender === 'male' || g.gender === 'female' ? ` (${g.gender})` : ''}`).join('\n') || '(none)';
-  const prompt = langify(SPEAKER_MAP_PROMPT, ws)
+  const prompt = langify(SPEAKER_MAP_PROMPT, wsForText(ws, text))
     .replace('{characters}', chars)
     .replace('{n}', String(lines.length))
     .replace('{text}', text)
@@ -398,7 +398,8 @@ function fixQuoteGender(q, gender) {
 // ชื่อเกาหลีหลุดมาในคำแปล ("레온มองลงไป") → แทนด้วยชื่อไทยจากคลังศัพท์/แผนที่ผู้พูด (เฉพาะชื่อเต็มที่ไม่ติดอักษรเกาหลีอื่น)
 function repairHangulNames(thaiText, map, ws = S.currentWs) {
   const t = String(thaiText || '');
-  if (getSourceLang(ws).code === 'zh') return _repairHanNames(t, map, ws);
+  // ชื่อที่หลุดมาเป็นอักษรจีน (ไม่มีฮันกึล) → ทางจีน แม้ตั้งค่าเรื่องเป็นภาษาอื่น
+  if (getSourceLang(ws).code === 'zh' || (/[\u4e00-\u9fff]/.test(t) && !/[\uac00-\ud7a3]/.test(t))) return _repairHanNames(t, map, ws);
   if (!/[\uac00-\ud7a3]/.test(t)) return { text: t, fixes: [] };
   const pairs = new Map();
   for (const g of (ws?.glossary || [])) if (g.korean && g.thai && !/[\uac00-\ud7a3]/.test(g.thai)) pairs.set(g.korean, g.thai);
@@ -616,7 +617,7 @@ ${items}`;
   const findChar = who => { who = String(who || '').trim(); return who && glossChars.find(x => who.includes(x.korean) || x.korean.includes(who) || (x.thai && who.includes(x.thai))); };
   try {
     // รอบ 1: เสนอคำแก้
-    const r = await callOpenRouter({ model: pModel, temperature: 0, max_tokens: 8000, messages: [{ role: 'user', content: langify(prompt, ws) }] });
+    const r = await callOpenRouter({ model: pModel, temperature: 0, max_tokens: 8000, messages: [{ role: 'user', content: langify(prompt, wsForText(ws, srcText)) }] });
     const raw = (r.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
     const arr = JSON.parse(raw.slice(raw.indexOf('['), raw.lastIndexOf(']') + 1) || '[]');
     const proposals = [];
@@ -650,7 +651,7 @@ ${chars}
 Return ONLY JSON: [{"n":1,"reason":"one short sentence","person":"Korean name from CHARACTERS, or unknown"}]
 
 ${proposals.map((x, i) => `#${i + 1}\nKOREAN:\n${korFor(x.k, 5)}\nTHAI (earlier lines):\n${thaiBefore(x.k)}\nTHAI (marked line):\n${x.marked}`).join('\n\n')}`;
-    const v = await callOpenRouter({ model: pModel, temperature: 0, max_tokens: 4000, messages: [{ role: 'user', content: langify(vPrompt, ws) }] });
+    const v = await callOpenRouter({ model: pModel, temperature: 0, max_tokens: 4000, messages: [{ role: 'user', content: langify(vPrompt, wsForText(ws, srcText)) }] });
     const vraw = (v.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
     const varr = JSON.parse(vraw.slice(vraw.indexOf('['), vraw.lastIndexOf(']') + 1) || '[]');
     proposals.forEach((x, i) => {
@@ -1067,7 +1068,7 @@ async function translateAllStream(text) {
     if (inTok || outTok) addCosts(inTok, outTok, options.model);
     const se = stripSourceEcho(text, fullText);   // ตอบสองภาษา → ตัดบรรทัดเกาหลีที่คัดลอกทิ้ง
     if (se.removed) { fullText = se.text; txtEl.textContent = fullText; }
-    if (se.missing > 0 || (se.removed && !fullText.trim()) || looksUntranslated(fullText)) throw new Error('AI ส่งต้นฉบับกลับมาโดยไม่แปล — กดแปลอีกครั้ง หรือเปลี่ยนโมเดล');
+    if (se.missing > 0 || (se.removed && !fullText.trim()) || looksUntranslated(fullText, text)) throw new Error('AI ส่งต้นฉบับกลับมาโดยไม่แปล — กดแปลอีกครั้ง หรือเปลี่ยนโมเดล');
     if (looksIncomplete(text, fullText)) throw new Error('คำแปลสั้นผิดปกติ — น่าจะถูกตัดกลางคันหรือตกหล่น · กดแปลอีกครั้ง');
 
     if (options.useMemory && fullText) _mcSet(cacheKey, fullText);
@@ -1371,7 +1372,7 @@ async function translateChunked(text, options) {
         if (inTok || outTok) addCosts(inTok, outTok, options.model);
         const se = stripSourceEcho(chunk, chunkFull);   // ตอบสองภาษา → ตัดบรรทัดเกาหลีที่คัดลอกทิ้ง
         if (se.removed) { chunkFull = se.text; txtEl.textContent = chunkFull; }
-        if (se.missing > 0 || (se.removed && !chunkFull.trim()) || looksUntranslated(chunkFull)) throw new Error('AI ส่งต้นฉบับกลับมาโดยไม่แปล');
+        if (se.missing > 0 || (se.removed && !chunkFull.trim()) || looksUntranslated(chunkFull, chunk)) throw new Error('AI ส่งต้นฉบับกลับมาโดยไม่แปล');
         if (looksIncomplete(chunk, chunkFull)) throw new Error('คำแปลสั้นผิดปกติ (ถูกตัดกลางคัน/ตกหล่น)');
 
         if (options.useMemory && chunkFull) _mcSet(cacheKey, chunkFull);
