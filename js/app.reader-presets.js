@@ -29,7 +29,8 @@ async function translateChapterCore(ch, {
   const spMap        = await buildSpeakerMap(srcPrepared, model || ws.settings?.translateModel || document.getElementById('translateModel')?.value || 'google/gemini-2.5-flash', ws);
   // บริบท = สรุปเรื่อง (Context Memory) + ท้ายคำแปลตอนก่อน (ตัวอย่างสำนวน ให้คำเรียก/สำนวนต่อเนื่อง)
   const contextStr   = [ctxGetPromptText(ws), prevChapterTail(ch, ws)].filter(Boolean).join('\n\n');
-  const systemPrompt = langify(applyContext(applySpeakerMap(applyParticleRules(applyStyleSheet(applyConsistencyLock(applyGenreNotes(applyLangNotes(presetBase.systemPrompt, ws), ws, srcPrepared), ws), ws)), spMap), contextStr), ws);
+  const lws = wsForText(ws, srcPrepared);   // กฎภาษาตามต้นฉบับตอนนี้จริง
+  const systemPrompt = langify(applyContext(applySpeakerMap(applyParticleRules(applyStyleSheet(applyConsistencyLock(applyGenreNotes(applyLangNotes(presetBase.systemPrompt, lws), lws, srcPrepared), ws), ws)), spMap), contextStr), lws);
   const temperature  = translateTemp(presetBase.temperature, ws);
   const useModel = model || ws.settings?.translateModel || document.getElementById('translateModel')?.value || 'google/gemini-2.5-flash';
 
@@ -68,7 +69,7 @@ async function translateChapterCore(ch, {
       if (inTok || outTok) { addCosts(inTok, outTok, useModel); inTok = outTok = 0; }
       const se = stripSourceEcho(srcPrepared, fullText);
       fullText = se.text; echoGap = se.missing > 0 || (se.removed > 0 && !fullText.trim());
-      if (!echoGap && !looksUntranslated(fullText) && !looksIncomplete(srcPrepared, fullText)) break;
+      if (!echoGap && !looksUntranslated(fullText, srcPrepared) && !looksIncomplete(srcPrepared, fullText)) break;
     }
   } catch (e) {
     // หมดเวลา → error ปกติ (ให้ prefetch ลองใหม่ / แจ้งผู้ใช้) — ไม่ปนกับการกดยกเลิก
@@ -81,7 +82,7 @@ async function translateChapterCore(ch, {
   }
 
   if ((!fullText || !fullText.trim()) && !echoGap) throw new Error('AI ส่งผลลัพธ์ว่าง');
-  if (echoGap || looksUntranslated(fullText)) throw new Error('AI ส่งต้นฉบับกลับมาโดยไม่แปล (ลองแล้ว 2 ครั้ง) — ลองเปลี่ยนโมเดลหรือแปลใหม่');
+  if (echoGap || looksUntranslated(fullText, srcPrepared)) throw new Error('AI ส่งต้นฉบับกลับมาโดยไม่แปล (ลองแล้ว 2 ครั้ง) — ลองเปลี่ยนโมเดลหรือแปลใหม่');
   if (looksIncomplete(srcPrepared, fullText)) throw new Error('คำแปลสั้นผิดปกติ — น่าจะถูกตัดกลางคันหรือตกหล่น (ลองแล้ว 2 ครั้ง) — ลองแปลใหม่หรือเปลี่ยนโมเดล');
 
   if (presetBase.polish) {

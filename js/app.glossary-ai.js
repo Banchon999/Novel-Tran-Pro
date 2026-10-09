@@ -332,12 +332,24 @@ function _modelRate(id) {
   return MODEL_COSTS[prov + ':' + id] || (prov === 'openrouter' && _modelPriceMap?.[id]) || MODEL_COSTS[id] || null;
 }
 
+// ภาษาของคลังศัพท์ = ภาษาของคำต้นฉบับในคลังจริง (ตรวจไม่ได้ → ตามตั้งค่าเรื่อง) — อันดับโมเดลและกฎใน prompt ตามภาษานี้
+function gaLang(entries) {
+  const t = (entries || []).map(e => e.korean).join(' ');
+  const n = re => (t.match(re) || []).length;
+  const ko = n(/[가-힣]/g), han = n(/[一-鿿]/g), lat = n(/[A-Za-z]/g), kana = n(/[぀-ヿ]/g);
+  // คำศัพท์สั้น → เกณฑ์ต่ำกว่าการตรวจทั้งตอน (คลังใหม่ ๆ มีแค่ไม่กี่คำ)
+  if (ko >= 4 && ko >= han) return SOURCE_LANGS.ko;
+  if (han >= 4 && kana * 3 < han) return SOURCE_LANGS.zh;
+  if (lat >= 12 && !ko && !han) return SOURCE_LANGS.en;
+  return getSourceLang(S.currentWs);
+}
+
 let _gaResults = [];   // [{ entry, issues:[{kind,problem}], options:[{thai,why}], best, type, gender }]
 
 function openGlossaryAnalyze() {
   if (!S.currentWs) { showToast('เลือก Workspace ก่อน', 'error'); return; }
   if (!(S.glossaryData || []).length) { showToast('คลังศัพท์ว่างเปล่า', ''); return; }
-  const L = getSourceLang(S.currentWs);
+  const L = gaLang(S.glossaryData);
   const sel = document.getElementById('gaModel');
   const prov = getProvider();
   if (prov === 'openrouter') {
@@ -382,7 +394,7 @@ function gaEntries() {
 
 // เหตุผล + ประมาณราคา ของโมเดลที่เลือก
 function gaModelInfo() {
-  const L = getSourceLang(S.currentWs);
+  const L = gaLang(gaEntries());
   const id = gaGetModel();
   const rank = (ANALYZE_MODEL_RANKS[L.code] || []).find(r => r[0] === id);
   const r = _modelRate(id);
@@ -446,7 +458,7 @@ async function runGlossaryAnalyze() {
   if (!checks.length) { showToast('เลือกอย่างน้อย 1 การตรวจ', 'error'); return; }
   const entries = gaEntries();
   if (!entries.length) { showToast('ไม่มีคำในขอบเขตที่เลือก', 'error'); return; }
-  const L = getSourceLang(S.currentWs);
+  const L = gaLang(entries);
   const model = gaGetModel();
   const btn = document.getElementById('gaRunBtn');
   const status = document.getElementById('gaStatus');
@@ -457,7 +469,8 @@ async function runGlossaryAnalyze() {
 
   // เรียงตามประเภท → คำหมวดเดียวกันอยู่ batch เดียวกัน (ตรวจความสอดคล้องในหมวดได้ดีขึ้น)
   const sorted = [...entries].sort((a, b) => (a.type || '').localeCompare(b.type || '') || String(a.korean).localeCompare(String(b.korean)));
-  const g = getGenrePreset(S.currentWs);
+  const g0 = getGenrePreset(S.currentWs);
+  const g = g0 && g0.lang === L.code ? g0 : null;   // แนวของอีกภาษาไม่ใส่
   const genre = g ? `\nGENRE: ${g.name}. Thai conventions for this genre:\n${g.guide}\n` : '';
   const checkText = checks.map(k => GA_CHECK_TEXT[k]).join('\n').replace(/\{LANG\}/g, L.name);
   const outputRule = checks.includes('options')
