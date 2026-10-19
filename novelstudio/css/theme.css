@@ -1,0 +1,85 @@
+/* ═══ NovelStudio — Theme (CSS variables, dark default) ═══ */
+
+:root, :root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #12141a;
+  --bg-2: #1a1d26;
+  --bg-3: #232734;
+  --bg-hover: #2b3040;
+  --border: #323848;
+  --border-soft: #262b38;
+  --text: #e6e8ee;
+  --text-dim: #9aa1b2;
+  --text-faint: #6b7284;
+  --accent: #7c9aff;
+  --accent-strong: #5d7dfa;
+  --accent-soft: rgba(124, 154, 255, 0.14);
+  --ok: #5ecf8a;
+  --warn: #e8b45a;
+  --danger: #ef6d6d;
+  --shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+  --shadow-soft: 0 2px 10px rgba(0, 0, 0, 0.3);
+
+  /* สีตามประเภท Codex */
+  --cdx-character: #7c9aff;
+  --cdx-place: #5ecf8a;
+  --cdx-skill: #e8b45a;
+  --cdx-item: #c98ef5;
+  --cdx-rule: #6ad0d8;
+  --cdx-other: #9aa1b2;
+
+  --font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Noto Sans Thai', sans-serif;
+  --font-content: 'Sarabun', 'Noto Sans Thai', -apple-system, sans-serif;
+  --radius: 10px;
+  --radius-sm: 7px;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f5f6f9;
+  --bg-2: #ffffff;
+  --bg-3: #eef0f5;
+  --bg-hover: #e4e7ef;
+  --border: #d5d9e4;
+  --border-soft: #e4e7ef;
+  --text: #23262f;
+  --text-dim: #5b6272;
+  --text-faint: #8a90a0;
+  --accent: #4a6cf0;
+  --accent-strong: #3a5ae0;
+  --accent-soft: rgba(74, 108, 240, 0.1);
+  --ok: #23a55e;
+  --warn: #c08a2c;
+  --danger: #d9494b;
+  --shadow: 0 8px 28px rgba(30, 35, 60, 0.14);
+  --shadow-soft: 0 2px 10px rgba(30, 35, 60, 0.08);
+
+  --cdx-character: #4a6cf0;
+  --cdx-place: #23a55e;
+  --cdx-skill: #c08a2c;
+  --cdx-item: #9c4fd4;
+  --cdx-rule: #1d9aa5;
+  --cdx-other: #5b6272;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+a { color: var(--accent); }
+
+::selection { background: var(--accent-soft); }
+
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 5px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-faint); }
+::-webkit-scrollbar-track { background: transparent; }
