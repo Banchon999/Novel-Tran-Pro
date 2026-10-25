@@ -400,6 +400,17 @@
             </label>
           </div>
 
+          <div class="sf-group">
+            <div class="sf-label">คำแทนตัวผู้เล่า (บรรยาย / คิดในใจ)</div>
+            <select id="wsNarratorSelf" class="select-input" style="width:auto;font-size:0.78rem">
+              <option value="">ฉัน — แบบนิยายแปลส่วนใหญ่ (แนะนำ)</option>
+              <option value="ผม">ผม</option>
+              <option value="ข้า">ข้า (ย้อนยุค / มู่หลิน)</option>
+              <option value="gender">ตามเพศ (ชาย = ผม · หญิง = ฉัน)</option>
+            </select>
+            <div style="font-size:0.70rem;color:var(--text-muted);margin-top:6px">ใช้กับการเล่าเรื่องบุรุษที่ 1 และความคิดในใจ ‘…’ · บทพูดกับคนอื่นยังใช้ ผม/ครับ · ฉัน/ค่ะ ตามผู้พูด</div>
+          </div>
+
           <!-- ── Consistency Lock (ล็อกความสม่ำเสมอสรรพนาม/ระดับภาษา) ── -->
           <div class="sf-group" style="border-top:1px solid var(--border);padding-top:10px;margin-top:2px">
             <div class="sf-label" style="margin-bottom:6px">
@@ -414,7 +425,7 @@
               <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
                 <span style="font-size:0.78rem;color:var(--text-secondary)">สรรพนามบุรุษ 1 เริ่มต้น:</span>
                 <select id="wsConsistencySelfRef" class="select-input" style="width:auto;font-size:0.78rem">
-                  <option value="auto">อัตโนมัติ (อิงเพศจาก glossary)</option>
+                  <option value="auto">อัตโนมัติ (ตามคำแทนตัวผู้เล่า)</option>
                   <option value="ฉัน">ฉัน</option>
                   <option value="ผม">ผม</option>
                   <option value="ดิฉัน">ดิฉัน</option>
@@ -427,7 +438,7 @@
                   <option value="กู">กู</option>
                 </select>
               </div>
-              <div style="font-size:0.70rem;color:var(--text-muted);margin-top:6px">เมื่อต้นฉบับไม่ระบุสรรพนาม จะใช้คำที่เลือกนี้คงที่ตลอดทั้งตอน · "อัตโนมัติ" = อิงเพศตัวละครจาก glossary (male→ผม, female→ฉัน)</div>
+              <div style="font-size:0.70rem;color:var(--text-muted);margin-top:6px">เมื่อต้นฉบับไม่ระบุสรรพนาม จะใช้คำที่เลือกนี้คงที่ตลอดทั้งตอน · "อัตโนมัติ" = ใช้ค่าในช่อง "คำแทนตัวผู้เล่า" ด้านบน</div>
             </div>
           </div>
 

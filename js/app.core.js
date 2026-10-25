@@ -37,10 +37,10 @@ const SHARED_CORE_RULES = `CONSISTENCY & READING FLOW (keep the reader's immersi
 • Do not translate proper names unless they appear in the glossary.`;
 
 const SHARED_PRONOUN_RULES = `THAI PRONOUN RULES — CRITICAL, NO EXCEPTIONS:
-• Male (gender:male) → 3rd: เขา/ของเขา | 1st: ผม/กู/ข้า (match register). NEVER use ฉัน/เธอ/นาง for males.
+• Male (gender:male) → 3rd: เขา/ของเขา | 1st in spoken dialogue: ผม/กู/ข้า (match register). NEVER use เธอ/นาง for males (ฉัน is fine in first-person narration and inner thoughts — see NARRATOR VOICE).
 • Female (gender:female) → 3rd: เธอ/นาง/ของเธอ | 1st: ฉัน/หนู/อิฉัน. NEVER use ผม/กู for females.
 • Unknown gender → use เขา (3rd) / ฉัน (1st) as default until clarified.
-• First-person narration (나/저/我 etc.) → use the narrator's gender from the glossary; do not default blindly.`;
+• First-person narration and inner thoughts (나/저/我 etc.) → follow NARRATOR VOICE.`;
 
 const SHARED_PROOFREAD_RULES = `PROFESSIONAL PROOFREADING (พิสูจน์อักษรระดับมืออาชีพ) — the output must be publish-ready Thai:
 • Correct Thai spelling, vowels and tone marks (วรรณยุกต์), and word spacing; zero typos or doubled characters.
@@ -206,7 +206,7 @@ function buildTranslatePrompt({ sourceText, glossaryStr = '', contextStr = '', s
   const preset = getActivePreset(ws);
   const lws = wsForText(ws, sourceText);   // กฎภาษาตามต้นฉบับที่แปลจริง
   // langify ทำท้ายสุด: บล็อกกฎที่แทรกภายหลัง (ครับ/ค่ะ, เพศ) มีตัวอย่างภาษาเกาหลี — ตัดออกเมื่อต้นฉบับไม่ใช่เกาหลี
-  return langify(applyContext(applySpeakerMap(applyParticleRules(applyStyleSheet(applyConsistencyLock(applyGenreNotes(applyLangNotes(preset.systemPrompt, lws), lws, sourceText), ws), ws)), speakerMap), contextStr), lws)
+  return langify(applyContext(applySpeakerMap(applyNarratorVoice(applyParticleRules(applyStyleSheet(applyConsistencyLock(applyGenreNotes(applyLangNotes(preset.systemPrompt, lws), lws, sourceText), ws), ws)), ws), speakerMap), contextStr), lws)
     .replace('{style_note}', styleNote ? `STYLE GUIDE:\n${styleNote}\n` : '')
     .replace('{glossary}',   glossaryStr || '(ไม่มี)')
     .replace('{context}',   contextStr)
@@ -217,8 +217,8 @@ function buildTranslatePrompt({ sourceText, glossaryStr = '', contextStr = '', s
 // ─── Consistency Lock (ระบบล็อกความสม่ำเสมอ — กดเปิด/ปิดต่อ workspace) ───
 // แก้ปัญหา "กดแปลรอบสองได้สรรพนามคนละแบบ" โดยล็อกสรรพนาม/ระดับภาษา/มุมมอง/การตัดสินใจ
 // ค่าที่เก็บใน ws.settings: consistencyLock (bool), consistencySelfRef (string|'auto')
-function buildConsistencyBlock(selfRef) {
-  const sr = (selfRef && selfRef !== 'auto') ? selfRef : '';
+function buildConsistencyBlock(selfRef, narr = 'ฉัน') {
+  const sr = (selfRef && selfRef !== 'auto') ? selfRef : (narr && narr !== 'gender' ? narr : '');
   const defaultRule = sr
     ? `• Unless the source explicitly indicates otherwise, render first-person narration/self-reference as "${sr}" and keep it fixed for the ENTIRE passage.\n• Do NOT substitute other first-person forms (ฉัน/ผม/ข้า/ข้าพเจ้า/กระผม/ดิฉัน ฯลฯ) and do NOT upgrade or downgrade the level of formality.`
     : `• When the source does not specify, derive the narrator's 1st-person Thai word from the glossary gender (male→ผม, female→ฉัน, unknown→ฉัน) and keep it fixed for the whole passage.\n• Do NOT upgrade or downgrade the level of formality beyond what the source/glossary supports.`;
@@ -283,6 +283,44 @@ function injectPromptBlock(systemPrompt, block) {
   return systemPrompt + '\n\n' + block;
 }
 
+// ─── คำแทนตัวผู้เล่า (บรรยายบุรุษที่ 1 + คิดในใจ) ───
+// นิยายแปลไทยส่วนใหญ่ ผู้เล่าใช้ "ฉัน" ทั้งชายและหญิง ส่วน "ผม" ใช้ตอนพูดสุภาพกับคนอื่น
+// (เดิมกฎ "ผู้ชายห้ามใช้ ฉัน" ทำให้บรรยาย/คิดในใจของพระเอกเป็น "ผม" ทั้งเรื่อง)
+// ws.settings.narratorSelf: '' = ฉัน (ค่าเริ่มต้น) | 'ผม' | 'ข้า' | 'gender' (ตามเพศ: ชาย=ผม หญิง=ฉัน)
+// ถ้าเปิด Consistency Lock และเลือกสรรพนามเอง → ใช้คำนั้น
+function getNarratorSelf(ws) {
+  const st = ws?.settings || {};
+  const lock = st.consistencyLock && st.consistencySelfRef && st.consistencySelfRef !== 'auto' ? st.consistencySelfRef : '';
+  return lock || st.narratorSelf || 'ฉัน';
+}
+// คำแทนตัวในความคิดของตัวละครเพศนี้ (ใช้ในแผนที่ผู้พูด)
+function narratorSelfFor(ws, gender) {
+  const n = getNarratorSelf(ws);
+  return n !== 'gender' ? n : gender === 'male' ? 'ผม' : 'ฉัน';
+}
+function buildNarratorBlock(ws) {
+  const n = getNarratorSelf(ws);
+  const rule = n === 'gender'
+    ? `• First-person narration and the narrator's inner thoughts take the narrator's gender from the glossary: male → ผม · female → ฉัน · unknown → ฉัน.`
+    : `• First-person narration and inner thoughts / self-talk (‘…’ thoughts, monologue, anything not said aloud) → "${n}" for the narrator, male or female alike${n === 'ฉัน' ? ' — the standard of published Thai web-novel translations; a male narrator using ฉัน here is NOT a gender error' : ''}.`;
+  return `NARRATOR VOICE (คำแทนตัวผู้เล่า) — CRITICAL:
+${rule}
+• Spoken dialogue (“…”) follows the speaker and whom they address: a male speaking politely → ผม + ครับ · a female → ฉัน/ดิฉัน + ค่ะ · rough or archaic speech → กู / ข้า as the source shows.
+• Keep the narration word identical for the whole chapter — never switch the narration between ฉัน and ผม.`;
+}
+// preset ที่ผู้ใช้บันทึกไว้ก่อนหน้ามีกฎเก่า "NEVER use ฉัน for males" ฝังอยู่ → แก้ตอนสร้าง prompt
+const _OLD_PRONOUN_LINES = [
+  ['| 1st: ผม/กู/ข้า (match register). NEVER use ฉัน/เธอ/นาง for males.', '| 1st in spoken dialogue: ผม/กู/ข้า (match register). NEVER use เธอ/นาง for males (ฉัน is fine in first-person narration and inner thoughts — see NARRATOR VOICE).'],
+  ["• First-person narration (나/저/我 etc.) → use the narrator's gender from the glossary; do not default blindly.", '• First-person narration and inner thoughts (나/저/我 etc.) → follow NARRATOR VOICE.'],
+  ['• Thai pronouns: Male→เขา/ผม | Female→เธอ/ฉัน', '• Thai pronouns: Male→เขา, ผม in spoken dialogue | Female→เธอ/ฉัน · narration & inner thoughts → NARRATOR VOICE'],
+];
+function applyNarratorVoice(systemPrompt, ws) {
+  if (typeof systemPrompt !== 'string' || systemPrompt.includes('NARRATOR VOICE (คำแทนตัวผู้เล่า)')) return systemPrompt;
+  let t = systemPrompt;
+  for (const [a, b] of _OLD_PRONOUN_LINES) t = t.split(a).join(b);
+  return injectPromptBlock(t, buildNarratorBlock(ws));
+}
+
 function applyParticleRules(systemPrompt) {
   if (typeof systemPrompt !== 'string' || systemPrompt.includes('SPEECH PARTICLE RULES')) return systemPrompt;
   return injectPromptBlock(systemPrompt, SPEECH_PARTICLE_RULES);
@@ -334,7 +372,7 @@ function stripSourceEcho(src, out) {
 function applyConsistencyLock(systemPrompt, ws) {
   if (!ws?.settings?.consistencyLock || typeof systemPrompt !== 'string') return systemPrompt;
   if (systemPrompt.includes('PRONOUN CONSISTENCY CONTROL')) return systemPrompt;
-  return injectPromptBlock(systemPrompt, buildConsistencyBlock(ws.settings.consistencySelfRef));
+  return injectPromptBlock(systemPrompt, buildConsistencyBlock(ws.settings.consistencySelfRef, getNarratorSelf(ws)));
 }
 
 // ─── Prompts ───
@@ -349,6 +387,7 @@ RULES:
 • Keep tone, character voice, and pacing consistent; do NOT add, omit, or alter meaning.
 • Preserve all glossary terms exactly as given.
 • Do NOT change the gender of speech particles (ครับ ↔ ค่ะ/คะ) unless one contradicts the speaker's gender given in the glossary; never mix both in one line of dialogue.
+• Keep every self-pronoun as translated: a male narrator saying ฉัน in narration or inner thoughts is correct — never change ฉัน ↔ ผม.
 
 GLOSSARY (preserve these terms):
 {glossary}

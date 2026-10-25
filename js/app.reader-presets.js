@@ -130,7 +130,7 @@ RULES:
 • Write natural, fluent Thai
 • Follow all glossary terms exactly
 • Maintain paragraph structure
-• Thai pronouns: Male→เขา/ผม | Female→เธอ/ฉัน
+• Thai pronouns: Male→เขา, ผม in spoken dialogue | Female→เธอ/ฉัน · narration & inner thoughts → NARRATOR VOICE
 {style_note}
 GLOSSARY:
 {glossary}
