@@ -59,7 +59,7 @@ function splitText(text) {
 function buildGlossaryStr(wsGlossary) {
   const GENDER_MAP   = { male: 'male/ชาย', female: 'female/หญิง', neutral: 'neutral/กลาง' };
   const PRONOUN_3RD  = { male: '3rd→เขา/ของเขา', female: '3rd→เธอ/นาง/ของเธอ' };
-  const PRONOUN_1ST  = { male: '1st→ผม/กู/ข้า', female: '1st→ฉัน/หนู/อิฉัน' };
+  const PRONOUN_1ST  = { male: '1st in speech→ผม/กู/ข้า', female: '1st→ฉัน/หนู/อิฉัน' };   // บรรยาย/คิดในใจ → NARRATOR VOICE
   const PARTICLE     = { male: 'particle→ครับ/ขอรับ', female: 'particle→ค่ะ/คะ' };
   const entries = Object.entries(wsGlossary || {});
   if (!entries.length) return '(ไม่มี)';
@@ -336,7 +336,9 @@ function speakerMapPromptBlock(map, ws = S.currentWs) {
     // ไม่ใส่ข้อความบทพูดเกาหลีในแผนที่ — ทดสอบแล้ว (Gemini 3.5 Flash Lite) มีบทพูดเกาหลีใน prompt → โมเดลทิ้งบทพูดเป็นเกาหลี 1/5 · ใส่แค่ลำดับ → 0/5
     const lv = m.kind === 'sq' ? 'plain' : koSpeechLevel(m.q);
     const n = nm.find(x => m.speaker.includes(x.korean));
-    return `${i + 1}. ${m.kind === 'sq' ? '‘…’ thought' : '“…”'} → ${m.speaker}${n ? ` = ${n.thai}` : ''} (${m.gender}) → ${end(m.gender, lv)}`;
+    // ความคิดในใจ ‘…’ ใช้คำแทนตัวผู้เล่า (ค่าเริ่มต้น ฉัน) ไม่ใช่ ผม แบบบทพูดสุภาพ
+    const how = m.kind === 'sq' ? `inner thought → no ครับ/ค่ะ, self: ${narratorSelfFor(ws, m.gender)}` : end(m.gender, lv);
+    return `${i + 1}. ${m.kind === 'sq' ? '‘…’ thought' : '“…”'} → ${m.speaker}${n ? ` = ${n.thai}` : ''} (${m.gender}) → ${how}`;
   });
   if (!lines.length && !namesTxt) return '';
   return `━━━━━━━━━━━━━━━━━━━━
@@ -604,6 +606,7 @@ ${chars}
 
 For each item, read the Korean and check the Thai paragraph. Fix ONLY gendered words that refer to the wrong person:
 third-person pronouns (เขา ↔ เธอ/นาง), self-pronouns (ผม/ฉัน/ดิฉัน), polite particles (ครับ/ค่ะ/คะ), forms of address (คุณชาย/คุณหนู).
+${getNarratorSelf(ws) === 'gender' ? '' : `First-person narration and inner thoughts use "${getNarratorSelf(ws)}" for every narrator, male included — that is correct; never change it.\n`}
 When the Korean omits the subject, work out from context who it is before deciding.
 The Korean source itself can contain a typo with the wrong gender (e.g. 그녀 used for a male character) — the CHARACTERS genders above always win; correct the Thai accordingly.
 Do NOT change any other word, spelling or punctuation.
