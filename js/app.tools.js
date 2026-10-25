@@ -363,14 +363,14 @@ async function runAutoGlossary() {
     let allTerms = [];
     const seenKorean = new Set((S.glossaryData || []).map(g => g.korean));
     const failed = []; let partial = 0;
+    const storyCtx = glossaryStoryContext(S.currentWs, lang);   // ใช้ตรวจว่าโลกของเรื่องเป็นทหารจริงไหม (fixSenseByContext)
 
     for (let ci = 0; ci < chunks.length; ci++) {
       const chunk = chunks[ci];
       if (chunks.length > 1) status.textContent = `🤖 วิเคราะห์ส่วน ${ci+1}/${chunks.length}...`;
 
-      // Build existing list including terms found so far
-      const existingNow = [...seenKorean].join(', ') || '(ไม่มี)';
-      const prompt = basePrompt.replace('{existing}', existingNow).replace('{text}', chunk).replace('{thai_snippet}', '');
+      // คำในคลังที่อยู่ในท่อนนี้ (พร้อมคำแปล) + คำที่เพิ่งพบในท่อนก่อน · บริบทเรื่องให้ AI เลือกความหมายตามโลกของเรื่อง
+      const prompt = fillGlossaryPrompt(basePrompt, { ws: S.currentWs, text: chunk, lang, extraSkip: allTerms.map(t => t.korean) });
 
       try {
         // เดิม max_tokens 2000 กับ chunk 15,000 ตัวอักษร → โมเดลที่คิดก่อนตอบ/คำเยอะ ถูกตัดกลาง JSON → ข้ามเงียบ ๆ แล้วขึ้น "ไม่พบ"
@@ -382,6 +382,7 @@ async function runAutoGlossary() {
         if (Array.isArray(terms)) {
           terms.forEach(t => {
             normalizeTermKeys(t);
+            if (t?.korean) t.thai = fixSenseByContext(t.korean, t.thai, chunk + '\n' + storyCtx);
             if (t?.korean && !seenKorean.has(t.korean)) {
               seenKorean.add(t.korean);
               // Attach source chapter info

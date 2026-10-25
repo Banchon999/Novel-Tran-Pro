@@ -888,11 +888,6 @@ async function autoExtractGlossaryAfterTranslation(sourceText, model, chapterInf
 
   if (!Array.isArray(S.currentWs.glossary)) S.currentWs.glossary = [];
 
-  // ตัวละครที่ยังไม่มีเพศ ไม่ใส่ในรายการ "ข้าม" → ให้ AI ดึงซ้ำเพื่อเติมเพศ (ด้านล่างจะเติมเฉพาะเพศ ไม่แก้คำแปลเดิม)
-  const existing = S.currentWs.glossary
-    .filter(g => !(g.type === 'character' && !['male', 'female', 'neutral'].includes(g.gender)))
-    .map(g => g.korean).join(', ') || '(none)';
-
   // เพิ่ม snippet ของ Thai translation เพื่อช่วย AI detect gender จากสรรพนามไทย
   const thaiSnippet = translationText?.trim()
     ? `THAI TRANSLATION (use Thai pronouns เขา/เธอ/ผม/ฉัน etc. to help infer character gender):\n${translationText.slice(0, 3000)}`
@@ -901,10 +896,8 @@ async function autoExtractGlossaryAfterTranslation(sourceText, model, chapterInf
   // ภาษาตรวจจากต้นฉบับตอนนี้จริง → ได้ prompt สกัดคำของภาษานั้น (จีน/อังกฤษ/เกาหลี)
   const lang = (() => { const d = detectSourceLang(sourceText); return SOURCE_LANGS[d] ? d : getSourceLang(S.currentWs).code; })();
   const basePrompt = (() => { try { return agGetPrompt(lang); } catch { return langifyGlossaryPrompt(AUTOGLOSSARY_PROMPTS[lang] || AUTOGLOSSARY_PROMPT, S.currentWs, lang); } })();
-  const prompt = basePrompt
-    .replace('{existing}', existing)
-    .replace('{text}', sourceText.slice(0, 8000))
-    .replace('{thai_snippet}', thaiSnippet);
+  // {existing} = คำในคลังที่อยู่ในตอนนี้ (ตัวละครที่ยังไม่มีเพศติด [gender?] ให้ AI ส่งซ้ำเพื่อเติมเพศ) · {story_context} = โลกของเรื่อง
+  const prompt = fillGlossaryPrompt(basePrompt, { ws: S.currentWs, text: sourceText.slice(0, 8000), lang, thaiSnippet });
 
   try {
     const res = await callOpenRouter({
@@ -926,9 +919,11 @@ async function autoExtractGlossaryAfterTranslation(sourceText, model, chapterInf
     }
 
     let added = 0, genderFilled = 0, rejected = 0;
+    const senseCtx = sourceText + '\n' + glossaryStoryContext(S.currentWs, lang);   // ตรวจว่าโลกของเรื่องเป็นทหารจริงไหม
     terms.forEach(raw => {
       normalizeTermKeys(raw);
       if (!raw?.korean || !raw?.thai) return;
+      raw.thai = fixSenseByContext(raw.korean, raw.thai, senseCtx);
       const term = sanitizeGlossaryEntry({ ...raw });
       if (!term) { rejected++; return; }
       const existingEntry = S.currentWs.glossary.find(g => g.korean === term.korean);
