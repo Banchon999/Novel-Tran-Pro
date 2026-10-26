@@ -479,7 +479,7 @@ const AUTOGLOSSARY_PROMPTS = {
     senses: `• 생도 — dictionary: military cadet (นักเรียนนายร้อย). At a hunter / mage / ability academy whose students train to clear dungeons it is simply a student of that academy → นักเรียน (or นักเรียน + the school's Thai name). Roll calls, drills, lining up and strict instructors happen at any academy — they do NOT make it military. Only a real military or knight academy (사관학교, an army, future knights or officers) makes it นักเรียนนายร้อย / นักเรียนอัศวิน.
 • 교관 — ครูฝึก at a hunter academy; ครูฝึกทหาร only in a military setting. 교수 — อาจารย์ at an academy.
 • 기사 — อัศวิน only in a world with knights. In a modern setting 기사님 is a driver and 기사 can be a news article — neither is a term.
-• 검 (sword) and every compound (검성 · 검술 · 검기 · 검사 · 마검 · 대검 · 단검) — ดาบ in a modern, future, hunter, game or Western-fantasy world (검성 จอมดาบ · 검술 วิชาดาบ · 검기 ปราณดาบ · 검사 นักดาบ · 마검 ดาบมาร); กระบี่ ONLY in a murim / Chinese-style world of sects and martial arts (내공 · 문파 · 무림), where 검법 is วิชากระบี่ and 검기 ปราณกระบี่.
+• 검 (sword) and every compound (검성 · 검술 · 검기 · 검사 · 마검 · 대검 · 단검) — ดาบ in a modern, future, hunter, game or Western-fantasy world (검성 จอมดาบ · 검술 วิชาดาบ · 검기 ปราณดาบ · 검사 นักดาบ · 마검 ดาบมาร — but in a modern office/legal story 검사 is a prosecutor, อัยการ); กระบี่ ONLY in a murim / Chinese-style world of sects and martial arts (내공 · 문파 · 무림), where 검법 is วิชากระบี่ and 검기 ปราณกระบี่.
 • 각하 / 전하 / 영애 / 공작 — noble meanings only when the world has nobility; 선배 / 후배 — รุ่นพี่ / รุ่นน้อง in a school, ศิษย์พี่ / ศิษย์น้อง only in a sect.`,
     src: `"source" — the Korean term exactly as written in the text, in base form:
 - Strip particles and endings (은/는/이/가/을/를/의/에게/에서/께서/으로/이다…). Keep 님 only when it is part of a form of address (도련님).
@@ -549,7 +549,7 @@ function fixAddressGenderText(text) {
 }
 // คำที่ความหมายในพจนานุกรมเป็น "ทหาร" แต่ในนิยายส่วนใหญ่เป็นแค่นักเรียนโรงเรียนฮันเตอร์/เวท (เคสจริง: 생도 → นักเรียนนายร้อย)
 // AI บางตัวเห็นฉาก "집합 / เข้าแถว" แล้วตีเป็นทหาร → ถ้าต้นฉบับ + บริบทเรื่องไม่มีร่องรอยทหาร/อัศวินเลย ให้กลับเป็นความหมายกลาง
-const MILITARY_SETTING_RE = /사관|육군|해군|공군|군대|군인|군사|장교|병사|부대|기사단|기사 ?(?:학교|아카데미|양성)|士官|军校|軍校|军队|軍隊|military|army|navy|soldier|officer|knight/i;
+const MILITARY_SETTING_RE = /사관|육군|해군|공군|군대|군인|군사|장교|병사|부대|기사단|기사 ?(?:학교|아카데미|양성)|士官|军校|軍校|军队|軍隊|military|army|navy|soldier|officer|admiral|fleet|lieutenant|sergeant|knight|ทหาร|กองทัพ/i;
 const SENSE_TRAPS = [
   { re: /^(?:생도|cadets?)$/i, bad: /นักเรียนนายร้อย|นักเรียนนายเรือ(?:อากาศ)?|นักเรียนทหาร|นักเรียนอัศวิน|นักเรียนนายสิบ/, thai: 'นักเรียน' },
   { re: /^(?:교관|instructors?)$/i, bad: /ครูฝึกทหาร|นายทหารฝึก/, thai: 'ครูฝึก' },
@@ -921,7 +921,7 @@ function langifyGlossaryPrompt(tpl, ws, lang) {
   }
   const g = typeof getGenrePreset === 'function' ? getGenrePreset(ws) : null;
   if (g && g.lang === code && !t.includes('GENRE (')) {
-    t = _glossInsert(t, `GENRE (${g.name}) — follow these Thai conventions for new terms:\n${g.guide}\nStandard renderings for this genre: ${g.terms.map(([s, th]) => s + ' = ' + th).join(' · ')}`);
+    t = _glossInsert(t, `GENRE (${g.name}) — follow these Thai conventions for new terms:\n${g.guide}${g.gloss ? `\nWHAT TO LOCK IN THIS GENRE: ${g.gloss}` : ''}\nStandard renderings for this genre: ${g.terms.map(([s, th]) => s + ' = ' + th).join(' · ')}`);
   }
   return t;
 }

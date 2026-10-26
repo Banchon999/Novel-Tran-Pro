@@ -17,6 +17,7 @@ const GENRE_PRESETS = [
 • Martial terms are translated by meaning, never transliterated: 내공 พลังภายใน · 단전 ตันเถียน · 경공 วิชาตัวเบา · 초식 กระบวนท่า · 검기 ปราณกระบี่ · 주화입마 ธาตุไฟเข้าแทรก.
 • Realm names (일류/절정/초절정/화경/현경) are ranks: render them as ขั้น… and keep them identical every time.
 • 사형/사제/사저/사매 follow the gender of the person: ศิษย์พี่/ศิษย์น้อง (male) · ศิษย์พี่หญิง/ศิษย์น้องหญิง (female).`,
+    gloss: 'Lock sects, families and factions, martial arts and technique names, realm ranks, titles and nicknames (매화검수 · 천마), named weapons and manuals, and the forms of address between disciples. Do NOT lock ordinary food, inns or clothing (만두 · 객잔 · 도포).',
     terms: [
       ['무림', 'ยุทธภพ', 'place', '', 'murim — โลกของผู้ฝึกยุทธ์'], ['강호', 'ยุทธจักร', 'place', '', 'kangho'],
       ['무공', 'วรยุทธ', 'term', '', 'martial arts'], ['내공', 'พลังภายใน', 'term', '', 'internal energy'],
@@ -55,6 +56,7 @@ const GENRE_PRESETS = [
 • 회귀 is regression to the past (การย้อนเวลา / ย้อนกลับมา); 환생 is reincarnation (กลับชาติมาเกิด); 빙의 is waking up inside someone else's body (เข้าร่าง) — do not mix them up.
 • Skill and item names: translate the meaning when it is Korean, transliterate when it is an English loanword in the source.
 • 검 is ดาบ in this genre (검술 วิชาดาบ · 검기 ปราณดาบ · 검성 จอมดาบ · 검사 นักดาบ) — กระบี่ belongs to murim / Chinese settings.`,
+    gloss: 'Lock guilds, associations and hunter teams, gate and dungeon names and grades, skill, title and item names, monster names, rank words (S급 · 각성자) and System terms. Do NOT lock everyday modern words (휴대폰 · 편의점 · 지하철) or real places used plainly (서울 · 강남).',
     terms: [
       ['헌터', 'ฮันเตอร์', 'title', '', 'hunter'], ['각성자', 'ผู้ตื่นพลัง', 'title', '', 'awakened — บางเล่มใช้ ผู้ตื่นรู้'],
       ['각성', 'การตื่นพลัง', 'term', '', 'awakening'], ['게이트', 'เกต', 'place', '', 'gate'],
@@ -82,6 +84,7 @@ const GENRE_PRESETS = [
 • European noble ranks are transliterated, never mapped to Thai noble ranks: 공작 ดยุก · 후작 มาร์ควิส · 백작 เคานต์ · 자작 ไวเคานต์ · 남작 บารอน · 대공 แกรนด์ดยุก. Their wives: ดัชเชส · มาร์เชอเนส · เคาน์เตส.
 • 영애 (noble daughter) → คุณหนู; 영식 (noble son) → คุณชาย; "<family> 공작가" → ตระกูลดยุก<family>.
 • Keep European-sounding names in natural Thai transliteration (아델라이드 → อาเดเลด) and use one spelling throughout.`,
+    gloss: 'Lock the empire, kingdoms and territories, noble houses and their ranks, titles of recurring people (황태자 · 공녀 · 대공), temples and orders, balls and named events, and forms of address. Do NOT lock dresses, jewellery, tea or furniture unless it is a named plot object.',
     terms: [
       ['황제', 'จักรพรรดิ', 'title', '', 'emperor'], ['황후', 'จักรพรรดินี', 'title', '', 'empress (consort)'],
       ['황태자', 'มกุฎราชกุมาร', 'title', '', 'crown prince'], ['황태자비', 'พระชายามกุฎราชกุมาร', 'title', '', 'crown princess'],
@@ -111,6 +114,7 @@ const GENRE_PRESETS = [
 • 修炼/修行 → บำเพ็ญเพียร; 修士 → ผู้บำเพ็ญเพียร; 道友 → สหายเต๋า; 前辈 → ท่านผู้อาวุโส; 师尊/师父 → ท่านอาจารย์.
 • Treasures, pills and formations are translated by meaning: 法宝 ศาสตราวิเศษ · 丹药 โอสถ · 阵法 ค่ายกล · 灵石 ศิลาวิญญาณ.
 • Idioms (成语) are rendered naturally, never word by word.`,
+    gloss: 'Lock sects, peaks and halls, realms and sub-stages, techniques and manuals, pills, treasures and formations, spirit beasts, secret realms and Dao names. Do NOT lock ordinary food, clothing or furniture.',
     terms: [
       ['修炼', 'บำเพ็ญเพียร', 'term', '', 'cultivate'], ['修士', 'ผู้บำเพ็ญเพียร', 'title', '', 'cultivator'],
       ['炼气', 'ขั้นหลอมปราณ', 'rank', '', 'Qi Refining — บางเล่มใช้ ขั้นหลอมรวมปราณ'], ['筑基', 'ขั้นสร้างรากฐาน', 'rank', '', 'Foundation Establishment'],
@@ -139,6 +143,7 @@ const GENRE_PRESETS = [
 • Famous sects keep their classic Thai (Hokkien-era) names: 少林 เส้าหลิน · 武当 บู๊ตึ๊ง · 峨眉 ง้อไบ๊ · 丐帮 พรรคกระยาจก. Other names: Thai transliteration from Mandarin, one spelling throughout.
 • Martial terms translated by meaning: 内力 กำลังภายใน · 轻功 วิชาตัวเบา · 点穴 สกัดจุด · 走火入魔 ธาตุไฟเข้าแทรก · 招式 กระบวนท่า.
 • 江湖 ยุทธจักร, 武林 บู๊ลิ้ม — keep whichever the glossary already uses.`,
+    gloss: 'Lock sects and gangs, martial arts and their forms, manuals, famous swords and weapons, nicknames (外号) and titles, and inns or escort agencies that recur. Do NOT lock ordinary food, wine or clothing.',
     terms: [
       ['江湖', 'ยุทธจักร', 'place', '', 'jianghu'], ['武林', 'บู๊ลิ้ม', 'place', '', 'wulin — บางเล่มใช้ ยุทธภพ'],
       ['内力', 'กำลังภายใน', 'term', '', 'internal force'], ['真气', 'ลมปราณ', 'term', '', 'true qi'],
@@ -165,6 +170,7 @@ const GENRE_PRESETS = [
 • Status screens / system prompts keep their bracket formatting and numbers exactly.
 • Noble ranks are transliterated: Duke ดยุก · Marquis มาร์ควิส · Earl เอิร์ล · Count เคานต์ · Viscount ไวเคานต์ · Baron บารอน; Your Majesty → ฝ่าบาท.
 • Fantasy races: Elf เอลฟ์ · Dwarf ดวอร์ฟ · Orc ออร์ค · Goblin ก็อบลิน; Demon Lord → จอมมาร, Hero → ผู้กล้า.`,
+    gloss: 'Lock kingdoms, cities and regions, guilds and orders, classes, skills and spells, named items and monsters, noble titles of recurring people and System/LitRPG terms. Do NOT lock ordinary weapons, food and furniture (sword · bread · chair).',
     terms: [
       ['Status Window', 'หน้าต่างสถานะ', 'term', '', 'status screen'], ['Level', 'เลเวล', 'term', '', 'level'],
       ['Skill', 'สกิล', 'term', '', 'skill'], ['Class', 'คลาส', 'term', '', 'class'],
@@ -182,6 +188,323 @@ const GENRE_PRESETS = [
       ['Goblin', 'ก็อบลิน', 'monster', '', 'goblin'], ['Dragon', 'มังกร', 'monster', '', 'dragon'],
     ],
   },
+  {
+    id: 'ko-academy', lang: 'ko', name: 'เกาหลี · อะคาเดมี/โรงเรียนผู้มีพลัง (아카데미물)',
+    desc: 'โรงเรียนฝึกฮันเตอร์/นักเวท/ฮีโร่ ชั้นปี การสอบ หอพัก การจัดอันดับ มักเข้าร่างตัวประกอบในนิยาย — คำเรียกในโรงเรียนต้องคงที่ทั้งเล่ม',
+    guide: `• Contemporary school-life Thai: students talk casually among peers (ฉัน/นาย/เธอ; กู/มึง only for rough characters as the source shows) and politely to instructors (ครับ/ค่ะ).
+• 생도 is a student of this academy → นักเรียน, never นักเรียนนายร้อย unless the school is explicitly military (사관학교). Drills, roll calls and strict instructors do not make it military.
+• 교관 ครูฝึก (combat/field instructor) · 교수 อาจารย์ (lecturer) · 학장/원장 ผู้อำนวยการ — keep one choice for the whole book.
+• 선배/후배 รุ่นพี่/รุ่นน้อง · 동기 เพื่อนร่วมรุ่น · 수석 ที่หนึ่งของรุ่น · 차석 ที่สองของรุ่น.
+• 원작 (the original novel the narrator is trapped in) → นิยายต้นฉบับ; 엑스트라 → ตัวประกอบ; 주인공 → ตัวเอก.
+• 검 is ดาบ (검술 วิชาดาบ · 검사 นักดาบ).`,
+    gloss: 'Lock the academy name, its departments, classes, dormitories and clubs, ranking titles (수석 · 차석), exam and event names, instructor names, and the role words students and staff are called by (생도 · 교관 · 교수). Do NOT lock everyday school things (책상 · 교복 · 식당 · 교실).',
+    terms: [
+      ['아카데미', 'อะคาเดมี', 'place', '', 'academy'], ['생도', 'นักเรียน', 'title', '', 'student of the academy — นักเรียนนายร้อย เฉพาะโรงเรียนทหาร'],
+      ['교관', 'ครูฝึก', 'title', '', 'instructor'], ['교수', 'อาจารย์', 'title', '', 'professor/lecturer'],
+      ['학장', 'ผู้อำนวยการ', 'title', '', 'head of the academy — บางเล่มใช้ อธิการ'], ['신입생', 'นักเรียนใหม่', 'title', '', 'freshman'],
+      ['선배', 'รุ่นพี่', 'honorific', '', 'senior'], ['후배', 'รุ่นน้อง', 'honorific', '', 'junior'],
+      ['동기', 'เพื่อนร่วมรุ่น', 'term', '', 'same-year classmate'], ['수석', 'ที่หนึ่งของรุ่น', 'rank', '', 'top of the class'],
+      ['차석', 'ที่สองของรุ่น', 'rank', '', 'second of the class'], ['학년', 'ชั้นปี', 'term', '', 'school year (1학년 ปีหนึ่ง)'],
+      ['학기', 'ภาคเรียน', 'term', '', 'semester'], ['입학시험', 'การสอบเข้า', 'term', '', 'entrance exam'],
+      ['입학식', 'พิธีรับนักเรียนใหม่', 'term', '', 'entrance ceremony'], ['기숙사', 'หอพัก', 'place', '', 'dormitory'],
+      ['학생회', 'สภานักเรียน', 'clan', '', 'student council'], ['학생회장', 'ประธานสภานักเรียน', 'title', '', 'student council president'],
+      ['특별반', 'ห้องพิเศษ', 'term', '', 'special class'], ['실습', 'การฝึกภาคปฏิบัติ', 'term', '', 'field practice'],
+      ['실기', 'การสอบภาคปฏิบัติ', 'term', '', 'practical exam'], ['대련', 'การประลอง', 'term', '', 'sparring match'],
+      ['결투', 'การดวล', 'term', '', 'duel'], ['랭킹', 'อันดับ', 'term', '', 'ranking'],
+      ['중간고사', 'สอบกลางภาค', 'term', '', 'midterm'], ['기말고사', 'สอบปลายภาค', 'term', '', 'final exam'],
+      ['퇴학', 'ไล่ออก', 'term', '', 'expulsion'], ['원작', 'นิยายต้นฉบับ', 'term', '', 'the original novel (빙의 stories)'],
+      ['주인공', 'ตัวเอก', 'term', '', 'protagonist'], ['엑스트라', 'ตัวประกอบ', 'term', '', 'extra / side character'],
+      ['빙의', 'การเข้าร่าง', 'term', '', 'possession / transmigration into a body'],
+    ],
+  },
+  {
+    id: 'ko-fantasy', lang: 'ko', name: 'เกาหลี · แฟนตาซีตะวันตก/ดาบและเวท (정통 판타지·이세계)',
+    desc: 'อาณาจักร/จักรวรรดิแบบยุโรป ซอร์ดมาสเตอร์ ออร่า เซอร์เคิลเวท หอคอยเวท ผู้กล้า-จอมมาร หรือถูกส่งไปต่างโลก',
+    guide: `• Western-fantasy Thai prose: knights and nobles speak formally, commoners plainly. No Chinese martial-arts vocabulary — 검 is ดาบ, never กระบี่; no ยุทธภพ / กำลังภายใน.
+• Aura and sword ranks follow the Thai loanwords readers know: 오러 ออร่า · 소드 오러 ออร่าดาบ · 익스퍼트 เอ็กซ์เพิร์ต · 소드 마스터 ซอร์ดมาสเตอร์ · 그랜드 마스터 แกรนด์มาสเตอร์.
+• Magic: 마법사 จอมเวท · 대마법사 จอมเวทสูงสุด · 서클 เซอร์เคิล (7서클 마법사 → จอมเวทเจ็ดเซอร์เคิล) · 마나 하트 หัวใจมานา · 마탑 หอคอยเวท · 마법진 วงเวท.
+• Noble ranks are transliterated as in romance fantasy: 공작 ดยุก · 후작 มาร์ควิส · 백작 เคานต์ · 자작 ไวเคานต์ · 남작 บารอน.
+• 이세계 ต่างโลก · 소환 อัญเชิญ · 용사 ผู้กล้า · 마왕 จอมมาร.`,
+    gloss: 'Lock kingdoms and empires, noble houses, knight orders, magic towers and guilds, power ranks (익스퍼트 → 소드 마스터 → 그랜드 마스터 · each 서클 level), named swords, spells and artifacts, races and monster names. Do NOT lock generic weapons, armour or furniture (검 · 방패 · 갑옷 · 의자).',
+    terms: [
+      ['제국', 'จักรวรรดิ', 'place', '', 'empire'], ['왕국', 'อาณาจักร', 'place', '', 'kingdom'],
+      ['기사', 'อัศวิน', 'title', '', 'knight'], ['기사단', 'คณะอัศวิน', 'clan', '', 'knight order'],
+      ['견습기사', 'อัศวินฝึกหัด', 'title', '', 'squire / apprentice knight'], ['성기사', 'อัศวินศักดิ์สิทธิ์', 'title', '', 'paladin'],
+      ['오러', 'ออร่า', 'term', '', 'aura'], ['소드 오러', 'ออร่าดาบ', 'skill', '', 'sword aura'],
+      ['익스퍼트', 'เอ็กซ์เพิร์ต', 'rank', '', 'expert (sword rank)'], ['소드 마스터', 'ซอร์ดมาสเตอร์', 'rank', '', 'sword master'],
+      ['그랜드 마스터', 'แกรนด์มาสเตอร์', 'rank', '', 'grand master'], ['검술', 'วิชาดาบ', 'skill', '', 'swordsmanship'],
+      ['마법사', 'จอมเวท', 'title', '', 'mage — บางเล่มใช้ นักเวท'], ['대마법사', 'จอมเวทสูงสุด', 'title', '', 'archmage'],
+      ['서클', 'เซอร์เคิล', 'rank', '', 'mana circle (7서클 = เจ็ดเซอร์เคิล)'], ['마나 하트', 'หัวใจมานา', 'term', '', 'mana heart'],
+      ['마탑', 'หอคอยเวท', 'place', '', 'magic tower'], ['마탑주', 'เจ้าหอคอยเวท', 'title', '', 'master of the magic tower'],
+      ['마법진', 'วงเวท', 'skill', '', 'magic circle'], ['마정석', 'ผลึกมานา', 'item', '', 'mana crystal'],
+      ['정령', 'ภูตธาตุ', 'monster', '', 'elemental spirit'], ['정령사', 'ผู้ใช้ภูตธาตุ', 'title', '', 'spirit summoner'],
+      ['신성력', 'พลังศักดิ์สิทธิ์', 'term', '', 'divine power'], ['교황', 'สันตะปาปา', 'title', '', 'pope'],
+      ['용사', 'ผู้กล้า', 'title', '', 'hero'], ['마왕', 'จอมมาร', 'title', '', 'demon king'],
+      ['마족', 'เผ่ามาร', 'monster', '', 'demon race'], ['용병', 'ทหารรับจ้าง', 'title', '', 'mercenary'],
+      ['용병단', 'กองทหารรับจ้าง', 'clan', '', 'mercenary company'], ['모험가', 'นักผจญภัย', 'title', '', 'adventurer'],
+      ['이세계', 'ต่างโลก', 'place', '', 'another world'], ['엘프', 'เอลฟ์', 'monster', '', 'elf'],
+      ['드워프', 'ดวอร์ฟ', 'monster', '', 'dwarf'], ['드래곤', 'มังกร', 'monster', '', 'dragon'],
+    ],
+  },
+  {
+    id: 'ko-game', lang: 'ko', name: 'เกาหลี · เกม VR/เข้าร่างในเกม (게임 판타지)',
+    desc: 'เกมเสมือนจริง ผู้เล่นกับ NPC เลเวลอัป คลาสลับ กิลด์วอร์ หรือติดอยู่ในเกมที่เคยเล่น',
+    guide: `• Game vocabulary Thai gamers use stays as loanwords: เลเวล · สกิล · ไอเทม · บอส · เรด · ปาร์ตี้ · กิลด์ · ดรอป · บัฟ/ดีบัฟ.
+• 유저/플레이어 → ผู้เล่น · 랭커 → แรงก์เกอร์ · 직업 (class) → อาชีพ · 전직 → เปลี่ยนอาชีพ · 히든 클래스 → คลาสลับ.
+• System messages keep their bracket style ([ ] 『 』) and numbers exactly; translate them in a crisp, game-like tone.
+• Keep in-game nicknames apart from real names: a nickname is transliterated or translated once and reused (닉네임 → ชื่อในเกม).
+• In the real world the story uses modern Thai (ผม/ฉัน/นาย/เธอ).`,
+    gloss: 'Lock the game title, servers, regions and dungeons, class and job names, skill and item names, guild names, player nicknames and NPC names, rarity tiers and achievement titles. Do NOT lock real-world everyday words or UI words used once (버튼 · 화면 · 컴퓨터).',
+    terms: [
+      ['유저', 'ผู้เล่น', 'title', '', 'user/player'], ['플레이어', 'ผู้เล่น', 'title', '', 'player'],
+      ['NPC', 'เอ็นพีซี', 'title', '', 'non-player character'], ['랭커', 'แรงก์เกอร์', 'title', '', 'top-ranked player'],
+      ['캡슐', 'แคปซูล', 'item', '', 'VR capsule'], ['접속', 'การเชื่อมต่อ', 'term', '', 'log on/connect — บางเล่มใช้ ล็อกอิน'],
+      ['로그아웃', 'ล็อกเอาต์', 'term', '', 'log out'], ['닉네임', 'ชื่อในเกม', 'term', '', 'nickname'],
+      ['직업', 'อาชีพ', 'term', '', 'class/job'], ['전직', 'เปลี่ยนอาชีพ', 'term', '', 'class change'],
+      ['히든 클래스', 'คลาสลับ', 'term', '', 'hidden class'], ['레벨업', 'เลเวลอัป', 'term', '', 'level up'],
+      ['경험치', 'ค่าประสบการณ์', 'term', '', 'EXP'], ['스탯', 'ค่าสถานะ', 'term', '', 'stats'],
+      ['아이템', 'ไอเทม', 'item', '', 'item'], ['장비', 'อุปกรณ์สวมใส่', 'item', '', 'equipment'],
+      ['인벤토리', 'ช่องเก็บของ', 'term', '', 'inventory'], ['드롭', 'ดรอป', 'term', '', 'drop'],
+      ['보스', 'บอส', 'monster', '', 'boss'], ['파티', 'ปาร์ตี้', 'term', '', 'party'],
+      ['길드전', 'กิลด์วอร์', 'term', '', 'guild war'], ['공성전', 'สงครามชิงปราสาท', 'term', '', 'siege war'],
+      ['리스폰', 'รีสปอน', 'term', '', 'respawn'], ['운영자', 'ทีมงานเกม', 'title', '', 'game operator/GM'],
+      ['튜토리얼', 'บทฝึกสอน', 'term', '', 'tutorial — บางเล่มใช้ ทิวทอเรียล'], ['업적', 'ความสำเร็จ', 'term', '', 'achievement'],
+      ['칭호', 'ฉายา', 'term', '', 'title (in-game)'], ['전설 등급', 'ระดับตำนาน', 'rank', '', 'legendary grade'],
+      ['유니크', 'ยูนีก', 'rank', '', 'unique grade'], ['에픽', 'เอพิก', 'rank', '', 'epic grade'],
+    ],
+  },
+  {
+    id: 'ko-apocalypse', lang: 'ko', name: 'เกาหลี · วันสิ้นโลก/หอคอย/กลุ่มดาว (멸망·탑)',
+    desc: 'โลกล่มสลาย มอนสเตอร์บุก สถานการณ์เอาชีวิตรอด หอคอยให้ปีน กลุ่มดาวที่เฝ้าดูและให้การอุปถัมภ์',
+    guide: `• Tense, punchy survival prose; system or scenario messages keep their bracket style and are translated crisply.
+• 성좌 (the watching star beings) → กลุ่มดาว · 배후성 (a patron constellation) → ดาวผู้อุปถัมภ์ · 화신 (their chosen human) → อวตาร · 도깨비 → ทกเกบี (Korean goblin; not ก็อบลิน).
+• 시나리오 → ซีนาริโอ (main/sub: ซีนาริโอหลัก/ซีนาริโอรอง) · 코인 → เหรียญ · 간접 메시지 → ข้อความทางอ้อม.
+• Tower climbing: 탑 หอคอย · 층 ชั้น · 등반자 ผู้ปีนหอคอย · 시련 บททดสอบ.
+• Keep one choice for every coined term for the whole book — readers track them.`,
+    gloss: 'Lock the names of constellations and their modifiers/titles, scenarios, towers and floors, factions, survivor groups and shelters, skills, stigmas and coined system terms. Do NOT lock ordinary disaster words used once (불 · 연기 · 비명).',
+    terms: [
+      ['멸망', 'การล่มสลาย', 'term', '', 'destruction of the world'], ['종말', 'วันสิ้นโลก', 'term', '', 'the end of the world'],
+      ['아포칼립스', 'อะพอคาลิปส์', 'term', '', 'apocalypse'], ['생존자', 'ผู้รอดชีวิต', 'title', '', 'survivor'],
+      ['좀비', 'ซอมบี้', 'monster', '', 'zombie'], ['감염자', 'ผู้ติดเชื้อ', 'monster', '', 'infected'],
+      ['쉘터', 'ที่หลบภัย', 'place', '', 'shelter'], ['시나리오', 'ซีนาริโอ', 'term', '', 'scenario — บางเล่มใช้ ฉากทัศน์'],
+      ['메인 시나리오', 'ซีนาริโอหลัก', 'term', '', 'main scenario'], ['서브 시나리오', 'ซีนาริโอรอง', 'term', '', 'sub scenario'],
+      ['성좌', 'กลุ่มดาว', 'title', '', 'constellation (star being)'], ['배후성', 'ดาวผู้อุปถัมภ์', 'title', '', 'sponsor constellation'],
+      ['화신', 'อวตาร', 'title', '', 'incarnation (chosen of a constellation)'], ['도깨비', 'ทกเกบี', 'monster', '', 'dokkaebi'],
+      ['코인', 'เหรียญ', 'item', '', 'coin'], ['간접 메시지', 'ข้อความทางอ้อม', 'term', '', 'indirect message'],
+      ['성흔', 'สติกมา', 'skill', '', 'stigma — บางเล่มใช้ ตราศักดิ์สิทธิ์'], ['채널', 'แชนแนล', 'term', '', 'channel'],
+      ['탑', 'หอคอย', 'place', '', 'tower'], ['층', 'ชั้น', 'term', '', 'floor'],
+      ['등반자', 'ผู้ปีนหอคอย', 'title', '', 'climber'], ['시련', 'บททดสอบ', 'term', '', 'trial'],
+      ['튜토리얼', 'บทฝึกสอน', 'term', '', 'tutorial'], ['회귀자', 'ผู้ย้อนเวลา', 'title', '', 'regressor'],
+      ['예언자', 'ผู้หยั่งรู้', 'title', '', 'prophet / one who knows the future'], ['확률', 'ความน่าจะเป็น', 'term', '', 'probability'],
+    ],
+  },
+  {
+    id: 'ko-modern', lang: 'ko', name: 'เกาหลีปัจจุบัน · ออฟฟิศ/แชโบล/วงการบันเทิง/โรแมนซ์',
+    desc: 'บริษัท ตำแหน่งงาน ตระกูลแชโบล ไอดอลและเด็กฝึก อาชีพเฉพาะทาง นิยายรักร่วมสมัย — ตำแหน่งและคำเรียกต้องคงที่',
+    guide: `• Natural contemporary Thai: ผม/ฉัน/คุณ/นาย/เธอ; never ข้า/เจ้า.
+• Kinship terms used as address are rendered by who speaks: 오빠/형 → พี่ (male elder), 언니/누나 → พี่ (female elder) — add the name when the source does (민준 오빠 → พี่มินจุน). Keep the nuance of 오빠 in romance with พี่ + tone, not ออปป้า, unless the glossary says so.
+• Company titles keep one rendering for the whole book (see the standard renderings); -님 after a title becomes ท่าน/คุณ + title.
+• In modern stories 검사 is a prosecutor → อัยการ (not a sword word); 기사님 is a driver → คนขับรถ.
+• Brand names, apps and places stay as Thai readers know them.`,
+    gloss: 'Lock company and group names, job titles of recurring people (회장 · 본부장 · 팀장), agencies, idol groups and their members, shows and awards, schools and hospitals, and nicknames. Do NOT lock everyday modern words (휴대폰 · 커피 · 지하철 · 회의).',
+    terms: [
+      ['재벌', 'แชโบล', 'term', '', 'chaebol'], ['그룹', 'กลุ่มบริษัท', 'clan', '', 'conglomerate group'],
+      ['회장', 'ประธานใหญ่', 'title', '', 'chairman'], ['사장', 'ประธานบริษัท', 'title', '', 'company president'],
+      ['부사장', 'รองประธานบริษัท', 'title', '', 'vice president'], ['본부장', 'ผู้อำนวยการฝ่าย', 'title', '', 'division head'],
+      ['이사', 'กรรมการบริษัท', 'title', '', 'director (board)'], ['실장', 'หัวหน้าฝ่าย', 'title', '', 'office chief'],
+      ['부장', 'ผู้จัดการฝ่าย', 'title', '', 'department manager'], ['과장', 'หัวหน้าแผนก', 'title', '', 'section chief'],
+      ['대리', 'ผู้ช่วยผู้จัดการ', 'title', '', 'assistant manager'], ['팀장', 'หัวหน้าทีม', 'title', '', 'team leader'],
+      ['사원', 'พนักงาน', 'title', '', 'staff'], ['인턴', 'เด็กฝึกงาน', 'title', '', 'intern'],
+      ['비서', 'เลขา', 'title', '', 'secretary'], ['아이돌', 'ไอดอล', 'title', '', 'idol'],
+      ['연습생', 'เด็กฝึก', 'title', '', 'trainee — บางเล่มใช้ เทรนนี'], ['소속사', 'ต้นสังกัด', 'clan', '', 'agency'],
+      ['매니저', 'ผู้จัดการ', 'title', '', 'manager (entertainment)'], ['데뷔', 'เดบิวต์', 'term', '', 'debut'],
+      ['막내', 'น้องเล็ก', 'term', '', 'maknae — บางเล่มใช้ มักเน่'], ['센터', 'เซ็นเตอร์', 'term', '', 'center position'],
+      ['선배', 'รุ่นพี่', 'honorific', '', 'senior'], ['후배', 'รุ่นน้อง', 'honorific', '', 'junior'],
+      ['검사', 'อัยการ', 'title', '', 'prosecutor (modern)'], ['변호사', 'ทนายความ', 'title', '', 'lawyer'],
+      ['형사', 'นักสืบตำรวจ', 'title', '', 'detective'], ['레지던트', 'แพทย์ประจำบ้าน', 'title', '', 'resident doctor'],
+    ],
+  },
+  {
+    id: 'zh-palace', lang: 'zh', name: 'จีน · ราชสำนัก/วังหลัง/จวนขุนนาง (宫斗·宅斗)',
+    desc: 'ฮ่องเต้ ฮองเฮา สนมชิงอำนาจ ศึกในจวน บุตรีภรรยาเอกกับบุตรีอนุ — คำเรียกตามสำนวนนิยาย/ซีรีส์จีนฉบับไทย',
+    guide: `• Courtly Thai with light ราชาศัพท์ — readable, not textbook-heavy; servants speak humbly, nobles with restraint.
+• Self-reference carries rank — keep one choice per character: 朕 เรา (บางเล่มทับศัพท์ เจิ้น) · 本宫 ข้า/เปิ่นกง · 本王 ข้า/เปิ่นหวาง · 臣妾 หม่อมฉัน · 臣/微臣 กระหม่อม · 奴婢 บ่าว · 奴才 บ่าว (eunuch speech may end with พ่ะย่ะค่ะ).
+• Titles follow the Thai Chinese-drama convention: 皇上 ฝ่าบาท · 皇后 ฮองเฮา · 太后 ไทเฮา · 贵妃 กุ้ยเฟย · 王爷 ท่านอ๋อง · 世子 ซื่อจื่อ · 郡主 ท่านหญิง · 公公 ท่านขันที.
+• Household ranks matter to the plot — 嫡 = born of the main wife, 庶 = born of a concubine: 嫡女 บุตรีภรรยาเอก · 庶女 บุตรีอนุ · 姨娘 อนุ · 夫人 ฮูหยิน.
+• Personal names: Thai transliteration from Mandarin with tone marks, one spelling throughout.`,
+    gloss: 'Lock every rank and title of recurring people (贵妃 · 王爷 · 郡主), palace and residence names (宫 · 殿 · 府), clans and households, official posts, and the self-reference each rank uses. Do NOT lock clothing, food or furniture (簪子 · 茶 · 屏风) unless it is a named plot object.',
+    terms: [
+      ['皇上', 'ฝ่าบาท', 'honorific', '', 'His Majesty (address)'], ['皇帝', 'ฮ่องเต้', 'title', '', 'emperor'],
+      ['陛下', 'ฝ่าบาท', 'honorific', '', 'Your Majesty'], ['朕', 'เรา', 'honorific', '', "emperor's I — บางเล่มใช้ เจิ้น"],
+      ['皇后', 'ฮองเฮา', 'title', '', 'empress'], ['太后', 'ไทเฮา', 'title', '', 'empress dowager'],
+      ['贵妃', 'กุ้ยเฟย', 'title', '', 'noble consort'], ['妃', 'พระสนม', 'title', '', 'consort (เฟย)'],
+      ['娘娘', 'เหนียงเหนียง', 'honorific', '', 'address to a consort — บางเล่มใช้ พระนาง'], ['本宫', 'ข้า', 'honorific', '', "consort's I — บางเล่มใช้ เปิ่นกง"],
+      ['臣妾', 'หม่อมฉัน', 'honorific', 'female', 'consort speaking to the emperor'], ['太子', 'องค์รัชทายาท', 'title', 'male', 'crown prince — บางเล่มใช้ ไท่จื่อ'],
+      ['太子妃', 'พระชายารัชทายาท', 'title', 'female', 'crown princess'], ['皇子', 'องค์ชาย', 'title', 'male', 'imperial prince'],
+      ['公主', 'องค์หญิง', 'title', 'female', 'princess'], ['王爷', 'ท่านอ๋อง', 'title', 'male', 'prince (wang)'],
+      ['王妃', 'พระชายา', 'title', 'female', "prince's consort — บางเล่มใช้ หวังเฟย"], ['世子', 'ซื่อจื่อ', 'title', 'male', 'heir of a prince/duke'],
+      ['郡主', 'ท่านหญิง', 'title', 'female', 'commandery princess — บางเล่มใช้ จวิ้นจู่'], ['侯爷', 'ท่านโหว', 'title', 'male', 'marquis'],
+      ['丞相', 'อัครเสนาบดี', 'title', '', 'chancellor'], ['将军', 'ท่านแม่ทัพ', 'title', '', 'general'],
+      ['太监', 'ขันที', 'title', 'male', 'eunuch'], ['公公', 'ท่านขันที', 'honorific', 'male', 'address to a eunuch'],
+      ['宫女', 'นางกำนัล', 'title', 'female', 'palace maid'], ['嬷嬷', 'หมัวมัว', 'title', 'female', 'senior palace matron'],
+      ['后宫', 'วังหลัง', 'place', '', 'inner palace / harem'], ['冷宫', 'ตำหนักเย็น', 'place', '', 'cold palace'],
+      ['圣旨', 'ราชโองการ', 'item', '', 'imperial edict'], ['王府', 'จวนอ๋อง', 'place', '', "prince's residence"],
+      ['府', 'จวน', 'place', '', 'residence/manor'], ['嫡女', 'บุตรีภรรยาเอก', 'title', 'female', "main wife's daughter"],
+      ['庶女', 'บุตรีอนุ', 'title', 'female', "concubine's daughter"], ['姨娘', 'อนุ', 'title', 'female', 'concubine (household) — บางเล่มใช้ อี๋เหนียง'],
+      ['夫人', 'ฮูหยิน', 'honorific', 'female', 'madam / wife of rank'], ['老夫人', 'ฮูหยินผู้เฒ่า', 'honorific', 'female', 'old madam'],
+      ['小姐', 'คุณหนู', 'honorific', 'female', 'young lady'], ['少爷', 'คุณชาย', 'honorific', 'male', 'young master'],
+      ['丫鬟', 'สาวใช้', 'title', 'female', 'maidservant'], ['奴婢', 'บ่าว', 'honorific', '', 'servant\'s I'],
+    ],
+  },
+  {
+    id: 'zh-transmigration', lang: 'zh', name: 'จีน · ทะลุมิติ/เกิดใหม่/ระบบ (穿越·重生·快穿)',
+    desc: 'ทะลุมิติเข้าร่าง เข้าไปในนิยาย เกิดใหม่ย้อนเวลาแก้แค้น ระบบมอบภารกิจข้ามโลก — ศัพท์เมตาของนิยาย (นางเอก นางร้าย ตัวประกอบ) ต้องคงที่',
+    guide: `• Genre words: 穿越 ทะลุมิติ · 穿书 ทะลุมิติเข้าไปในนิยาย · 重生 เกิดใหม่ (ย้อนกลับไปในอดีต) · 快穿 ทะลุมิติข้ามโลก.
+• The System (系统) speaks in a crisp, slightly playful voice; its messages keep their brackets. 宿主 → โฮสต์.
+• Story-meta roles are locked terms: 女主 นางเอก · 男主 พระเอก · 女配 นางรอง · 恶毒女配 นางร้าย · 男配 พระรอง · 反派 ตัวร้าย · 炮灰 ตัวประกอบที่ถูกสังเวย · 原主 เจ้าของร่างเดิม.
+• Match the register to the world the heroine lands in: an ancient world → ข้า/เจ้า and court titles (see the palace genre); a modern world → ฉัน/คุณ.
+• Internet slang is rendered as natural Thai slang, not literally (白月光 รักแรกในใจ · 金手指 สูตรโกง).`,
+    gloss: 'Lock the System\'s name and its terms (points, missions, rewards, punishments), world/plane names, the original novel\'s title, the meta roles (女主 · 女配 · 反派 · 炮灰), and every character\'s name in each world. Do NOT lock everyday words of the world the heroine lands in.',
+    terms: [
+      ['穿越', 'ทะลุมิติ', 'term', '', 'transmigration'], ['穿书', 'ทะลุมิติเข้าไปในนิยาย', 'term', '', 'transmigrating into a book'],
+      ['重生', 'เกิดใหม่', 'term', '', 'rebirth (back to the past)'], ['快穿', 'ทะลุมิติข้ามโลก', 'term', '', 'quick transmigration'],
+      ['系统', 'ระบบ', 'term', '', 'the System'], ['宿主', 'โฮสต์', 'title', '', 'host'],
+      ['任务', 'ภารกิจ', 'term', '', 'mission'], ['积分', 'แต้มสะสม', 'term', '', 'points'],
+      ['奖励', 'รางวัล', 'term', '', 'reward'], ['惩罚', 'บทลงโทษ', 'term', '', 'punishment'],
+      ['位面', 'ระนาบโลก', 'place', '', 'plane — บางเล่มใช้ โลก'], ['小世界', 'โลกย่อย', 'place', '', 'small world'],
+      ['气运', 'โชคชะตา', 'term', '', 'fortune/luck'], ['原主', 'เจ้าของร่างเดิม', 'title', '', 'original owner of the body'],
+      ['原著', 'นิยายต้นฉบับ', 'term', '', 'the original novel'], ['剧情', 'เนื้อเรื่อง', 'term', '', 'plot'],
+      ['女主', 'นางเอก', 'title', 'female', 'heroine'], ['男主', 'พระเอก', 'title', 'male', 'male lead'],
+      ['女配', 'นางรอง', 'title', 'female', 'female supporting role'], ['恶毒女配', 'นางร้าย', 'title', 'female', 'villainess'],
+      ['男配', 'พระรอง', 'title', 'male', 'male supporting role'], ['反派', 'ตัวร้าย', 'title', '', 'villain'],
+      ['炮灰', 'ตัวประกอบที่ถูกสังเวย', 'title', '', 'cannon fodder — บางเล่มใช้ ตัวประกอบ'], ['白月光', 'รักแรกในใจ', 'term', '', 'white moonlight (unforgettable first love)'],
+      ['金手指', 'สูตรโกง', 'term', '', 'golden finger (cheat ability)'], ['空间', 'มิติพกพา', 'skill', '', 'portable space'],
+      ['灵泉', 'น้ำพุวิญญาณ', 'item', '', 'spirit spring'], ['前世', 'ชาติก่อน', 'term', '', 'past life'],
+    ],
+  },
+  {
+    id: 'zh-modern', lang: 'zh', name: 'จีนปัจจุบัน · เมือง/ประธานบริษัท/วงการบันเทิง (都市·总裁·娱乐圈)',
+    desc: 'ประธานบริษัทเผด็จการ ตระกูลมหาเศรษฐี ดาราและวงการบันเทิง ชีวิตมหาวิทยาลัย — สำนวนร่วมสมัย',
+    guide: `• Contemporary Thai: ผม/ฉัน/คุณ/นาย/เธอ — never ข้า/เจ้า or court register.
+• 老公/老婆 สามี/ภรรยา (ที่รัก when used as a pet name) · 哥/姐 พี่ · 宝贝 ที่รัก.
+• Company titles and entertainment terms keep one rendering (see the standard renderings).
+• Weibo/online slang is rendered as natural Thai internet slang (热搜 ติดเทรนด์ · 吃瓜 ดูดราม่า · 粉丝 แฟนคลับ).
+• Personal names: Thai transliteration from Mandarin; English names of Chinese characters stay in English-style Thai spelling.`,
+    gloss: 'Lock company and group names, job titles of recurring people (总裁 · 总经理), families, celebrities and their stage names, agencies, shows, awards, schools and nicknames. Do NOT lock everyday modern words (手机 · 咖啡 · 地铁).',
+    terms: [
+      ['总裁', 'ประธาน', 'title', '', 'CEO/president — บางเล่มใช้ ท่านประธาน'], ['董事长', 'ประธานกรรมการ', 'title', '', 'chairman'],
+      ['总经理', 'ผู้จัดการใหญ่', 'title', '', 'general manager'], ['经理', 'ผู้จัดการ', 'title', '', 'manager'],
+      ['秘书', 'เลขา', 'title', '', 'secretary'], ['助理', 'ผู้ช่วย', 'title', '', 'assistant'],
+      ['集团', 'กลุ่มบริษัท', 'clan', '', 'group/conglomerate'], ['豪门', 'ตระกูลมหาเศรษฐี', 'term', '', 'wealthy family'],
+      ['少爷', 'คุณชาย', 'honorific', 'male', 'young master'], ['大小姐', 'คุณหนูใหญ่', 'honorific', 'female', 'eldest young lady'],
+      ['老爷子', 'ท่านผู้เฒ่า', 'honorific', 'male', 'old master of the family'], ['娱乐圈', 'วงการบันเทิง', 'term', '', 'entertainment industry'],
+      ['影帝', 'ราชาจอเงิน', 'title', 'male', 'best-actor king'], ['影后', 'ราชินีจอเงิน', 'title', 'female', 'best-actress queen'],
+      ['顶流', 'ท็อปสตาร์', 'title', '', 'top-traffic star'], ['经纪人', 'ผู้จัดการส่วนตัว', 'title', '', 'agent/manager'],
+      ['粉丝', 'แฟนคลับ', 'term', '', 'fans'], ['热搜', 'ติดเทรนด์', 'term', '', 'Weibo hot search'],
+      ['微博', 'เวยป๋อ', 'term', '', 'Weibo'], ['综艺', 'รายการวาไรตี้', 'term', '', 'variety show'],
+      ['剧组', 'กองถ่าย', 'term', '', 'film crew'], ['导演', 'ผู้กำกับ', 'title', '', 'director'],
+      ['学长', 'รุ่นพี่', 'honorific', 'male', 'senior (school)'], ['学姐', 'รุ่นพี่', 'honorific', 'female', 'senior (school)'],
+      ['校草', 'เดือนโรงเรียน', 'title', 'male', 'school heartthrob'], ['校花', 'ดาวโรงเรียน', 'title', 'female', 'school belle'],
+    ],
+  },
+  {
+    id: 'zh-apocalypse', lang: 'zh', name: 'จีน · วันสิ้นโลก/พลังพิเศษ (末世·异能)',
+    desc: 'ซอมบี้บุก สัตว์กลายพันธุ์ ผู้มีพลังพิเศษ ฐานที่มั่น กักตุนเสบียง มักเกิดใหม่ย้อนกลับไปก่อนวันสิ้นโลก',
+    guide: `• Tense, modern survival prose (ฉัน/ผม/คุณ/นาย); no court or cultivation register unless the story mixes it in.
+• Power types are rendered สาย…: 雷系 สายสายฟ้า · 火系 สายไฟ · 冰系 สายน้ำแข็ง · 木系 สายพืช · 治愈系 สายรักษา · 精神系 สายจิต · 空间系 สายมิติ.
+• Tiers are ranks: 一阶/二阶 → ขั้นหนึ่ง/ขั้นสอง (keep the same pattern for every tier).
+• 晶核 แกนผลึก · 基地 ฐานที่มั่น · 物资 เสบียง · 尸潮 คลื่นซอมบี้ — keep them identical every time.`,
+    gloss: 'Lock bases and survivor groups, power types and tiers, mutated creature names, named weapons and items, and characters\' ability names. Do NOT lock ordinary supplies (米 · 水 · 罐头) or generic places (超市 · 医院).',
+    terms: [
+      ['末世', 'วันสิ้นโลก', 'term', '', 'apocalypse'], ['末日', 'วันสิ้นโลก', 'term', '', 'doomsday'],
+      ['丧尸', 'ซอมบี้', 'monster', '', 'zombie'], ['丧尸王', 'ราชาซอมบี้', 'monster', '', 'zombie king'],
+      ['尸潮', 'คลื่นซอมบี้', 'term', '', 'zombie tide'], ['变异', 'กลายพันธุ์', 'term', '', 'mutation'],
+      ['变异兽', 'สัตว์กลายพันธุ์', 'monster', '', 'mutated beast'], ['异能', 'พลังพิเศษ', 'term', '', 'supernatural ability'],
+      ['异能者', 'ผู้มีพลังพิเศษ', 'title', '', 'ability user'], ['进化者', 'ผู้วิวัฒน์', 'title', '', 'evolver'],
+      ['晶核', 'แกนผลึก', 'item', '', 'crystal core'], ['基地', 'ฐานที่มั่น', 'place', '', 'survivor base'],
+      ['幸存者', 'ผู้รอดชีวิต', 'title', '', 'survivor'], ['物资', 'เสบียง', 'item', '', 'supplies'],
+      ['囤货', 'กักตุนเสบียง', 'term', '', 'hoarding'], ['空间异能', 'พลังมิติ', 'skill', '', 'space ability'],
+      ['雷系', 'สายสายฟ้า', 'term', '', 'lightning type'], ['火系', 'สายไฟ', 'term', '', 'fire type'],
+      ['冰系', 'สายน้ำแข็ง', 'term', '', 'ice type'], ['木系', 'สายพืช', 'term', '', 'wood/plant type'],
+      ['治愈系', 'สายรักษา', 'term', '', 'healing type'], ['精神系', 'สายจิต', 'term', '', 'mental type'],
+      ['一阶', 'ขั้นหนึ่ง', 'rank', '', 'tier 1'], ['二阶', 'ขั้นสอง', 'rank', '', 'tier 2'],
+    ],
+  },
+  {
+    id: 'en-werewolf', lang: 'en', name: 'อังกฤษ · มนุษย์หมาป่า/แวมไพร์ (Werewolf·Paranormal romance)',
+    desc: 'อัลฟ่า ลูน่า คู่ครอง (mate) ฝูงหมาป่า แวมไพร์ แม่มด — นิยายรักแฟนตาซีจากแพลตฟอร์มอย่าง Dreame/GoodNovel',
+    guide: `• Modern romantic Thai: ฉัน/ผม/คุณ/เขา/เธอ; ข้า/เจ้า only for ancient beings or royalty as the source shows.
+• Pack ranks are transliterated and capitalised in the source: Alpha อัลฟ่า · Beta เบต้า · Gamma แกมม่า · Omega โอเมก้า · Luna ลูน่า · Alpha King ราชาอัลฟ่า · Lycan ไลแคน.
+• mate → คู่ครอง; "Mate!" (the wolf recognising them) → "คู่ของข้า!" spoken by the wolf; fated mate คู่แท้แห่งโชคชะตา · mate bond สายสัมพันธ์คู่ครอง · mark รอยประทับ · rejection การปฏิเสธคู่.
+• mind-link การเชื่อมจิต · shift แปลงร่าง · the inner wolf has its own name and voice — keep its quotes distinct.
+• Moon Goddess เทพีแห่งดวงจันทร์ · rogue โร้ก (หมาป่าไร้ฝูง).`,
+    gloss: 'Lock pack names, ranks used as titles (Alpha · Luna · Beta), each character\'s wolf name, territories, covens and clans, and coined lore terms (mate bond · mark · mind-link). Do NOT lock ordinary modern words (phone · car · school).',
+    terms: [
+      ['Alpha', 'อัลฟ่า', 'title', '', 'pack leader'], ['Beta', 'เบต้า', 'title', '', 'second in command'],
+      ['Gamma', 'แกมม่า', 'title', '', 'third in command'], ['Omega', 'โอเมก้า', 'title', '', 'lowest rank'],
+      ['Luna', 'ลูน่า', 'title', 'female', "Alpha's mate / pack mother"], ['Alpha King', 'ราชาอัลฟ่า', 'title', 'male', 'king of the alphas'],
+      ['Lycan', 'ไลแคน', 'monster', '', 'lycan'], ['Pack', 'ฝูง', 'clan', '', 'pack'],
+      ['Pack house', 'บ้านฝูง', 'place', '', 'pack house'], ['Mate', 'คู่ครอง', 'term', '', 'mate'],
+      ['Fated mate', 'คู่แท้แห่งโชคชะตา', 'term', '', 'fated mate — บางเล่มใช้ คู่แท้'], ['Second chance mate', 'คู่ครองโอกาสที่สอง', 'term', '', 'second chance mate'],
+      ['Mate bond', 'สายสัมพันธ์คู่ครอง', 'term', '', 'mate bond'], ['Mark', 'รอยประทับ', 'term', '', 'mating mark'],
+      ['Rejection', 'การปฏิเสธคู่', 'term', '', 'mate rejection'], ['Rogue', 'โร้ก', 'monster', '', 'packless wolf — หมาป่าไร้ฝูง'],
+      ['Mind-link', 'การเชื่อมจิต', 'skill', '', 'mind-link'], ['Shift', 'การแปลงร่าง', 'skill', '', 'shifting'],
+      ['Moon Goddess', 'เทพีแห่งดวงจันทร์', 'title', 'female', 'moon goddess'], ['Full moon', 'จันทร์เต็มดวง', 'term', '', 'full moon'],
+      ['Wolfsbane', 'วูล์ฟสเบน', 'item', '', 'wolfsbane'], ['Vampire', 'แวมไพร์', 'monster', '', 'vampire'],
+      ['Witch', 'แม่มด', 'title', 'female', 'witch'], ['Coven', 'กลุ่มแม่มด', 'clan', '', 'coven'],
+      ['Hybrid', 'ลูกผสม', 'term', '', 'hybrid'], ['Elder', 'ผู้อาวุโส', 'title', '', 'elder'],
+    ],
+  },
+  {
+    id: 'en-scifi', lang: 'en', name: 'อังกฤษ · ไซไฟ/อวกาศ/เมคา (Sci-fi·Space opera)',
+    desc: 'ยานอวกาศ กองยาน สหพันธ์-จักรวรรดิ หุ่นรบ AI และไซบอร์ก — ยศทหารต้องตรงตามระบบ',
+    guide: `• Clear, modern Thai; technical words Thai readers know stay as loanwords (เลเซอร์ · พลาสมา · วาร์ป · ไซบอร์ก · แอนดรอยด์).
+• Military ranks follow Thai rank names when the source uses a navy/army system: Admiral พลเรือเอก · Commander ผู้บัญชาการ (or นาวาโท as a rank) · Lieutenant ร้อยโท · Ensign เรือตรี · Sergeant จ่า · Cadet นักเรียนนายร้อย (here the academy IS military).
+• Ship names, AI names and call signs are proper names — transliterate, keep the prefix (ISS, HMS) in Latin letters.
+• Units and numbers stay exact; light-years ปีแสง.`,
+    gloss: 'Lock ship names and classes, fleets, factions and governments (Federation · Empire), planets and stations, military ranks of recurring people, mech and weapon models, AI names and coined tech terms. Do NOT lock generic tools and rooms (console · corridor · screen).',
+    terms: [
+      ['Starship', 'ยานอวกาศ', 'item', '', 'starship'], ['Fleet', 'กองยาน', 'clan', '', 'fleet'],
+      ['Flagship', 'ยานธง', 'item', '', 'flagship'], ['Bridge', 'สะพานเดินเรือ', 'place', '', 'ship bridge'],
+      ['Captain', 'กัปตัน', 'title', '', 'ship captain'], ['Commander', 'ผู้บัญชาการ', 'title', '', 'commander'],
+      ['Admiral', 'พลเรือเอก', 'rank', '', 'admiral'], ['Lieutenant', 'ร้อยโท', 'rank', '', 'lieutenant'],
+      ['Ensign', 'เรือตรี', 'rank', '', 'ensign'], ['Sergeant', 'จ่า', 'rank', '', 'sergeant'],
+      ['Cadet', 'นักเรียนนายร้อย', 'title', '', 'cadet (military academy)'], ['Federation', 'สหพันธ์', 'clan', '', 'federation'],
+      ['Empire', 'จักรวรรดิ', 'clan', '', 'empire'], ['Colony', 'อาณานิคม', 'place', '', 'colony'],
+      ['Space station', 'สถานีอวกาศ', 'place', '', 'space station'], ['Hyperspace', 'ไฮเปอร์สเปซ', 'term', '', 'hyperspace'],
+      ['Warp', 'วาร์ป', 'term', '', 'warp'], ['Jump gate', 'ประตูวาร์ป', 'place', '', 'jump gate'],
+      ['Mech', 'หุ่นรบ', 'item', '', 'mech — บางเล่มใช้ เมคา'], ['Pilot', 'นักบิน', 'title', '', 'pilot'],
+      ['Android', 'แอนดรอยด์', 'monster', '', 'android'], ['Cyborg', 'ไซบอร์ก', 'monster', '', 'cyborg'],
+      ['Implant', 'อุปกรณ์ฝังร่าง', 'item', '', 'implant'], ['Shield', 'โล่พลังงาน', 'item', '', 'energy shield'],
+      ['Credits', 'เครดิต', 'item', '', 'currency'], ['Alien', 'มนุษย์ต่างดาว', 'monster', '', 'alien'],
+    ],
+  },
+  {
+    id: 'en-cultivation', lang: 'en', name: 'อังกฤษ · บำเพ็ญเพียรแบบตะวันตก (Cultivation·Progression)',
+    desc: 'นิยายบำเพ็ญเพียร/Progression ที่เขียนเป็นภาษาอังกฤษ (Royal Road ฯลฯ) — ใช้ศัพท์เซียนแบบฉบับแปลจีนไทย',
+    guide: `• Treat it like a Chinese cultivation novel written in English: use the Thai จีนกำลังภายใน/เซียน vocabulary (ปราณ · ตันเถียน · ค่ายกล · โอสถ · สำนัก), ข้า/เจ้า between cultivators, ท่าน for seniors.
+• Realms are ranks rendered ขั้น…: Qi Condensation ขั้นรวบรวมปราณ · Foundation Establishment ขั้นสร้างรากฐาน · Core Formation/Golden Core ขั้นแก่นทองคำ · Nascent Soul ขั้นวิญญาณก่อกำเนิด. If the author coins a new realm system, translate each tier by meaning once and keep it.
+• A sword in this genre is กระบี่ when it is a cultivator's jian (Sword Intent เจตจำนงกระบี่); a Western broadsword stays ดาบ.
+• English names stay English-style Thai (Lindon ลินดอน); pinyin names follow Mandarin transliteration.`,
+    gloss: 'Lock every realm and sub-stage, sects and clans, techniques and manuals, pills, treasures and formations, Paths/Daos, and coined power-system words. Do NOT lock ordinary food, clothing or rooms.',
+    terms: [
+      ['Qi', 'ลมปราณ', 'term', '', 'qi — บางเล่มใช้ ชี่'], ['Cultivation', 'การบำเพ็ญเพียร', 'term', '', 'cultivation'],
+      ['Cultivator', 'ผู้บำเพ็ญเพียร', 'title', '', 'cultivator'], ['Sect', 'สำนัก', 'clan', '', 'sect'],
+      ['Elder', 'ผู้อาวุโส', 'title', '', 'elder'], ['Patriarch', 'บรรพชน', 'title', '', 'patriarch / founder'],
+      ['Disciple', 'ศิษย์', 'title', '', 'disciple'], ['Inner disciple', 'ศิษย์สายใน', 'title', '', 'inner disciple'],
+      ['Outer disciple', 'ศิษย์สายนอก', 'title', '', 'outer disciple'], ['Senior brother', 'ศิษย์พี่', 'honorific', 'male', 'senior brother'],
+      ['Junior sister', 'ศิษย์น้องหญิง', 'honorific', 'female', 'junior sister'], ['Dantian', 'ตันเถียน', 'term', '', 'dantian'],
+      ['Meridians', 'เส้นลมปราณ', 'term', '', 'meridians'], ['Qi Condensation', 'ขั้นรวบรวมปราณ', 'rank', '', 'Qi Condensation'],
+      ['Foundation Establishment', 'ขั้นสร้างรากฐาน', 'rank', '', 'Foundation Establishment'], ['Golden Core', 'ขั้นแก่นทองคำ', 'rank', '', 'Golden Core'],
+      ['Nascent Soul', 'ขั้นวิญญาณก่อกำเนิด', 'rank', '', 'Nascent Soul'], ['Breakthrough', 'การทะลวงขั้น', 'term', '', 'breakthrough'],
+      ['Bottleneck', 'คอขวด', 'term', '', 'bottleneck'], ['Dao', 'เต๋า', 'term', '', 'dao'],
+      ['Heavenly Tribulation', 'ทัณฑ์สวรรค์', 'term', '', 'tribulation'], ['Pill', 'โอสถ', 'item', '', 'pill'],
+      ['Alchemist', 'นักปรุงโอสถ', 'title', '', 'alchemist'], ['Formation', 'ค่ายกล', 'skill', '', 'formation'],
+      ['Spirit stone', 'ศิลาวิญญาณ', 'item', '', 'spirit stone'], ['Spiritual root', 'รากวิญญาณ', 'term', '', 'spiritual root'],
+      ['Talisman', 'ยันต์', 'item', '', 'talisman'], ['Sword Intent', 'เจตจำนงกระบี่', 'skill', '', 'sword intent'],
+      ['Spatial ring', 'แหวนมิติ', 'item', '', 'storage ring'], ['Manual', 'คัมภีร์', 'item', '', 'technique manual'],
+    ],
+  },
 ];
 
 function getGenrePreset(ws) {
@@ -193,7 +516,12 @@ function getGenrePreset(ws) {
 function genreTermHints(g, text, glossary, max = 40) {
   const have = new Set((glossary || []).map(e => _normGenreKey(e.korean)));
   const src = String(text || '').toLowerCase();
-  return g.terms.filter(([s]) => !have.has(_normGenreKey(s)) && (!text || src.includes(s.toLowerCase()))).slice(0, max).map(([s, t]) => `${s} = ${t}`);
+  return g.terms.filter(([s]) => !have.has(_normGenreKey(s)) && (!text || _genreTermIn(src, s.toLowerCase()))).slice(0, max).map(([s, t]) => `${s} = ${t}`);
+}
+// คำอังกฤษต้องตรงทั้งคำ (Mark ไม่ใช่ market) · อักษรเกาหลี/จีนไม่มีเว้นวรรค → หาแบบ substring
+function _genreTermIn(src, k) {
+  if (!/^[a-z0-9][a-z0-9 '\-]*$/.test(k)) return src.includes(k);
+  return new RegExp(`(^|[^a-z])${k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}s?(?![a-z])`).test(src);
 }
 function _normGenreKey(s) { return String(s || '').normalize('NFC').trim().toLowerCase(); }
 
@@ -230,7 +558,7 @@ function gpRender() {
   const L = getSourceLang(S.currentWs);
   document.getElementById('gpDesc').textContent = g.desc;
   document.getElementById('gpLangWarn').textContent = g.lang !== L.code ? `⚠ ชุดนี้สำหรับต้นฉบับ${ {ko:'เกาหลี',zh:'จีน',en:'อังกฤษ'}[g.lang] } แต่เรื่องนี้เป็นต้นฉบับ${L.th}` : '';
-  document.getElementById('gpGuide').textContent = g.guide;
+  document.getElementById('gpGuide').textContent = g.guide + (g.gloss ? `\n\n📖 สิ่งที่ลงคลังศัพท์ในแนวนี้:\n${g.gloss}` : '');
   document.getElementById('gpUse').checked = cur === g.id;
   document.getElementById('gpActive').textContent = cur ? `ตอนนี้ใช้: ${GENRE_PRESETS.find(x => x.id === cur)?.name || cur}` : 'ตอนนี้ยังไม่ได้ใช้แนวใด';
   const have = new Map((S.currentWs?.glossary || []).map(e => [_normGenreKey(e.korean), e.thai]));
