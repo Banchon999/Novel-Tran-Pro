@@ -53,7 +53,8 @@ const GENRE_PRESETS = [
 • Ranks keep the Latin letter: S급 → แรงก์ S · E급 헌터 → ฮันเตอร์แรงก์ E. Numbers in stats stay as digits.
 • System messages / status windows keep their bracket style from the source ([ ] or 『 』) and are translated in a crisp, game-like tone.
 • 회귀 is regression to the past (การย้อนเวลา / ย้อนกลับมา); 환생 is reincarnation (กลับชาติมาเกิด); 빙의 is waking up inside someone else's body (เข้าร่าง) — do not mix them up.
-• Skill and item names: translate the meaning when it is Korean, transliterate when it is an English loanword in the source.`,
+• Skill and item names: translate the meaning when it is Korean, transliterate when it is an English loanword in the source.
+• 검 is ดาบ in this genre (검술 วิชาดาบ · 검기 ปราณดาบ · 검성 จอมดาบ · 검사 นักดาบ) — กระบี่ belongs to murim / Chinese settings.`,
     terms: [
       ['헌터', 'ฮันเตอร์', 'title', '', 'hunter'], ['각성자', 'ผู้ตื่นพลัง', 'title', '', 'awakened — บางเล่มใช้ ผู้ตื่นรู้'],
       ['각성', 'การตื่นพลัง', 'term', '', 'awakening'], ['게이트', 'เกต', 'place', '', 'gate'],
