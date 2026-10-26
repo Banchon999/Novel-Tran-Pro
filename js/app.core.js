@@ -479,13 +479,14 @@ const AUTOGLOSSARY_PROMPTS = {
     senses: `• 생도 — dictionary: military cadet (นักเรียนนายร้อย). At a hunter / mage / ability academy whose students train to clear dungeons it is simply a student of that academy → นักเรียน (or นักเรียน + the school's Thai name). Roll calls, drills, lining up and strict instructors happen at any academy — they do NOT make it military. Only a real military or knight academy (사관학교, an army, future knights or officers) makes it นักเรียนนายร้อย / นักเรียนอัศวิน.
 • 교관 — ครูฝึก at a hunter academy; ครูฝึกทหาร only in a military setting. 교수 — อาจารย์ at an academy.
 • 기사 — อัศวิน only in a world with knights. In a modern setting 기사님 is a driver and 기사 can be a news article — neither is a term.
+• 검 (sword) and every compound (검성 · 검술 · 검기 · 검사 · 마검 · 대검 · 단검) — ดาบ in a modern, future, hunter, game or Western-fantasy world (검성 จอมดาบ · 검술 วิชาดาบ · 검기 ปราณดาบ · 검사 นักดาบ · 마검 ดาบมาร — but in a modern office/legal story 검사 is a prosecutor, อัยการ); กระบี่ ONLY in a murim / Chinese-style world of sects and martial arts (내공 · 문파 · 무림), where 검법 is วิชากระบี่ and 검기 ปราณกระบี่.
 • 각하 / 전하 / 영애 / 공작 — noble meanings only when the world has nobility; 선배 / 후배 — รุ่นพี่ / รุ่นน้อง in a school, ศิษย์พี่ / ศิษย์น้อง only in a sect.`,
     src: `"source" — the Korean term exactly as written in the text, in base form:
 - Strip particles and endings (은/는/이/가/을/를/의/에게/에서/께서/으로/이다…). Keep 님 only when it is part of a form of address (도련님).
 - One concept per entry: split "숨겨진 퀘스트 '회귀자의 맹세'" into the quest name only (회귀자의 맹세); split "오크 군단장 그로칸" into 그로칸 (character) and 오크 군단장 (title). Never include quotes or brackets.`, thai: `"thai" — Thai script only (no Hangul, no brackets, no explanations), one canonical spelling:
 - Korean personal names: transliterate syllable by syllable the way Thai publishers do — 김 คิม · 이 อี · 박 พัค · 최 ชเว · 정 จอง · 강 คัง · 조 โจ · 윤 ยุน · 장 จัง · 한 ฮัน · 오 โอ · 서 ซอ · 신 ชิน · 권 ควอน · 황 ฮวัง · 송 ซง · 백 แพ็ก; syllables: 준 จุน · 민 มิน · 서 ซอ · 지 จี · 훈 ฮุน · 현 ฮยอน · 우 อู · 영 ยอง · 은 อึน · 희 ฮี · 수 ซู · 연 ยอน · 태 แท · 하 ฮา · 진 จิน. Example: 이서준 อีซอจุน.
 - Sino-Korean names (murim / Chinese-style settings): ALWAYS transliterate the KOREAN reading written in the text — never convert to Mandarin or to old Thai-Chinese names. Compound surnames: 제갈 เจกัล · 사마 ซามา · 구양 กูยาง · 상관 ซังกวาน · 남궁 นัมกุง · 모용 โมยง · 황보 ฮวังโบ · 동방 ดงบัง · 서문 ซอมุน · 독고 ทกโก · 장손 จังซน · 영호 ยองโฮ. Sects, families and places likewise: 화산 ฮวาซาน · 소림 โซริม · 무당 มูดัง · 아미 อามี · 당가 ตระกูลดัง · 사천 ซาชอน · 남궁세가 ตระกูลนัมกุง — the Chinese-style Thai names (เส้าหลิน บู๊ตึ๊ง ง้อไบ๊ ถัง เสฉวน หัวซาน) are WRONG for a Korean source. Only purely descriptive names are translated (개방 พรรคกระยาจก · 마교 พรรคมาร · 무림맹 พันธมิตรยุทธภพ · 구파일방 เก้าสำนักหนึ่งพรรค).
-- Meaningful names (skills, items, places, guilds, quests): translate the meaning in natural Thai web-novel style (검성 ราชันกระบี่, 붉은 달 길드 กิลด์จันทร์แดง); transliterate only when the name has no meaning to translate. A real place inside a term keeps its standard Thai name (서울 게이트 터미널 → เกตเทอร์มินัลโซล).
+- Meaningful names (skills, items, places, guilds, quests): translate the meaning in natural Thai web-novel style (검성 จอมดาบ, 붉은 달 길드 กิลด์จันทร์แดง); transliterate only when the name has no meaning to translate. A real place inside a term keeps its standard Thai name (서울 게이트 터미널 → เกตเทอร์มินัลโซล).
 - English loanwords written in Hangul → the Thai loanword readers know: 게이트 เกต · 던전 ดันเจี้ยน · 던전 브레이크 ดันเจี้ยนเบรก · 레이드 เรด · 스킬 สกิล · 퀘스트 เควสต์ · 길드 กิลด์ · 레벨 เลเวล · 인벤토리 ช่องเก็บของ — except 시스템 (the System) → ระบบ.
 - Sino-Korean martial / fantasy terms follow the established Thai renderings (내공 พลังภายใน · 단전 ตันเถียน · 마석 หินเวท · 기사단 คณะอัศวิน · 공작 ดยุก).
 - Forms of address carry the gender of the person ADDRESSED: 도련님/공자님 → คุณชาย (male) · 아가씨/영애 → คุณหนู (female) · 부인 → ท่านหญิง/คุณนาย.`, gender: `"gender" — REQUIRED for type "character": male | female | neutral. Evidence, strongest first: 그/그는/그가 → male, 그녀 → female; kinship or role words used FOR the person (형/오빠/아버지/아들/왕자 male · 언니/누나/어머니/딸/영애/하녀/공주 female); how others address them; Thai pronouns in the Thai translation if given (เขา male · เธอ/นาง female — weak evidence; ผม/ฉัน prove nothing). 나/저 prove nothing. If unsure → "neutral".`, example: `[{"source":"이서준","thai":"อีซอจุน","type":"character","gender":"male","note":"protagonist · ทับศัพท์"},{"source":"붉은 달 길드","thai":"กิลด์จันทร์แดง","type":"clan","note":"Red Moon Guild · แปลความหมาย"},{"source":"마석","thai":"หินเวท","type":"item","note":"mana stone · แปลความหมาย"}]`,
@@ -548,13 +549,17 @@ function fixAddressGenderText(text) {
 }
 // คำที่ความหมายในพจนานุกรมเป็น "ทหาร" แต่ในนิยายส่วนใหญ่เป็นแค่นักเรียนโรงเรียนฮันเตอร์/เวท (เคสจริง: 생도 → นักเรียนนายร้อย)
 // AI บางตัวเห็นฉาก "집합 / เข้าแถว" แล้วตีเป็นทหาร → ถ้าต้นฉบับ + บริบทเรื่องไม่มีร่องรอยทหาร/อัศวินเลย ให้กลับเป็นความหมายกลาง
-const MILITARY_SETTING_RE = /사관|육군|해군|공군|군대|군인|군사|장교|병사|부대|기사단|기사 ?(?:학교|아카데미|양성)|士官|军校|軍校|军队|軍隊|military|army|navy|soldier|officer|knight/i;
+const MILITARY_SETTING_RE = /사관|육군|해군|공군|군대|군인|군사|장교|병사|부대|기사단|기사 ?(?:학교|아카데미|양성)|士官|军校|軍校|军队|軍隊|military|army|navy|soldier|officer|admiral|fleet|lieutenant|sergeant|knight|ทหาร|กองทัพ/i;
 const SENSE_TRAPS = [
   { re: /^(?:생도|cadets?)$/i, bad: /นักเรียนนายร้อย|นักเรียนนายเรือ(?:อากาศ)?|นักเรียนทหาร|นักเรียนอัศวิน|นักเรียนนายสิบ/, thai: 'นักเรียน' },
   { re: /^(?:교관|instructors?)$/i, bad: /ครูฝึกทหาร|นายทหารฝึก/, thai: 'ครูฝึก' },
 ];
+// 검 ในโลกปัจจุบัน/อนาคต/ฮันเตอร์ = ดาบ · กระบี่ ใช้เฉพาะโลกยุทธภพแบบจีน — AI ชอบติด "กระบี่" มาจากนิยายจีนกำลังภายใน
+// (เคสจริง: เรื่องเกิดใหม่ยุคอนาคตมีดันเจี้ยน แต่คลังได้ 검성 = ราชันกระบี่) → ต้นฉบับเกาหลี + ไม่มีร่องรอยยุทธภพ → เปลี่ยนเป็น ดาบ
+const MURIM_SETTING_RE = /무림|무협|강호|문파|세가|무공|내공|단전|검법|초식|협객|정파|사파|마교|구파일방|경공|장문인|사형|사매|武林|江湖|宗门|门派|修炼|丹田|真气|灵气|มู่หลิน|ยุทธภพ|ยุทธจักร|กำลังภายใน|บำเพ็ญ|wuxia|xianxia|murim|cultivation/i;
 function fixSenseByContext(source, thai, context) {
   const k = String(source || '').trim(), t = String(thai || '');
+  if (t.includes('กระบี่') && /[가-힣]/.test(k) && !MURIM_SETTING_RE.test(String(context || ''))) return t.split('กระบี่').join('ดาบ');
   if (!t || MILITARY_SETTING_RE.test(String(context || ''))) return thai;
   for (const a of SENSE_TRAPS) if (a.re.test(k) && a.bad.test(t)) return t.replace(a.bad, a.thai);
   return thai;
@@ -916,7 +921,7 @@ function langifyGlossaryPrompt(tpl, ws, lang) {
   }
   const g = typeof getGenrePreset === 'function' ? getGenrePreset(ws) : null;
   if (g && g.lang === code && !t.includes('GENRE (')) {
-    t = _glossInsert(t, `GENRE (${g.name}) — follow these Thai conventions for new terms:\n${g.guide}\nStandard renderings for this genre: ${g.terms.map(([s, th]) => s + ' = ' + th).join(' · ')}`);
+    t = _glossInsert(t, `GENRE (${g.name}) — follow these Thai conventions for new terms:\n${g.guide}${g.gloss ? `\nWHAT TO LOCK IN THIS GENRE: ${g.gloss}` : ''}\nStandard renderings for this genre: ${g.terms.map(([s, th]) => s + ' = ' + th).join(' · ')}`);
   }
   return t;
 }
