@@ -556,7 +556,7 @@ async function confirmGlossaryCSVImport() {
   if (!toAdd.length) { showToast('ไม่มีรายการที่จะ import', 'error'); return; }
   toAdd.forEach(r => {
     const entry = { korean: r.korean, thai: r.thai, type: r.type, note: r.note };
-    if (r.type === 'character' && r.gender) entry.gender = r.gender;
+    if (isGenderableType(r.type) && r.gender) entry.gender = r.gender;
     S.currentWs.glossary.push(entry);
   });
   S.glossaryData = S.currentWs.glossary;

@@ -1117,7 +1117,7 @@ function particleScanText(text, characters = []) {
 
 function _genderedCharacters() {
   return (S.currentWs?.glossary || []).filter(g =>
-    g.type === 'character' && (g.gender === 'male' || g.gender === 'female') && g.thai);
+    isGenderableType(g.type) && (g.gender === 'male' || g.gender === 'female') && g.thai);
 }
 
 function particleHighCount(text) {

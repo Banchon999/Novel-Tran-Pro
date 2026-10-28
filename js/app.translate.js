@@ -65,7 +65,11 @@ function buildGlossaryStr(wsGlossary) {
   if (!entries.length) return '(ไม่มี)';
   return entries.map(([k, v]) => {
     const parts = [fixAddressGender(k, v.thai)];   // แก้คำเรียกขานผิดเพศในคลังเดิมตอนส่งเข้า prompt
-    if (v.type === 'character' && v.gender && v.gender !== 'neutral') {
+    if (v.type === 'title' && (v.gender === 'male' || v.gender === 'female')) {
+      // ตำแหน่งที่หมายถึงคนเดียวในเรื่อง (원장 = ผู้อำนวยการหญิง) — ต้นฉบับมักละสรรพนาม → บอกให้ใช้ เขา/เธอ ตามเพศคนนั้น
+      parts.push(`title held by one ${v.gender === 'male' ? 'man' : 'woman'} in this story → ${PRONOUN_3RD[v.gender]}`);
+      parts.push(PARTICLE[v.gender]);
+    } else if (v.type === 'character' && v.gender && v.gender !== 'neutral') {
       parts.push(`gender:${GENDER_MAP[v.gender] || v.gender}`);
       parts.push(PRONOUN_3RD[v.gender]);
       parts.push(PRONOUN_1ST[v.gender]);
@@ -314,7 +318,7 @@ function speakerMapPromptBlock(map, ws = S.currentWs) {
   if (!map?.length) return '';
   // ตารางสรรพนามบุรุษที่ 3 ของตัวละครที่พูดในตอนนี้ (จาก glossary + แผนที่ผู้พูด) — กันบรรยาย "เขา" กับตัวละครหญิง
   const sheet = new Map();
-  for (const g of (ws?.glossary || [])) if (g.type === 'character' && (g.gender === 'male' || g.gender === 'female') && map.some(m => m.speaker && (m.speaker.includes(g.korean) || g.korean.includes(m.speaker)))) sheet.set(g.thai || g.korean, g.gender);
+  for (const g of (ws?.glossary || [])) if (isGenderableType(g.type) && (g.gender === 'male' || g.gender === 'female') && map.some(m => m.speaker && (m.speaker.includes(g.korean) || g.korean.includes(m.speaker)))) sheet.set(g.thai || g.korean, g.gender);
   for (const m of map) if ((m.gender === 'male' || m.gender === 'female') && m.speaker && m.speaker !== '-' && m.speaker !== '?' && ![...sheet.keys()].some(k => k.includes(m.speaker))) {
     const g = (ws?.glossary || []).find(c => c.korean && (m.speaker.includes(c.korean) || c.korean.includes(m.speaker)));
     sheet.set(g?.thai || m.speaker, m.gender);
@@ -552,7 +556,7 @@ function _genderDirection(before, after) {
 }
 
 function _genderCandidates(thaiText, ws) {
-  const chars = (ws?.glossary || []).filter(g => g.type === 'character' && g.thai && (g.gender === 'male' || g.gender === 'female'));
+  const chars = (ws?.glossary || []).filter(g => isGenderableType(g.type) && g.thai && (g.gender === 'male' || g.gender === 'female'));
   if (!chars.length) return [];
   const paras = thaiText.split('\n');
   const out = [];
@@ -596,8 +600,8 @@ async function genderProofread(srcText, thaiText, model, ws = S.currentWs) {
     return kNon.slice(Math.max(0, c - back), c + 3).map(i => kParas[i]).join('\n');
   };
   const thaiBefore = k => tNon.slice(Math.max(0, tNon.indexOf(k) - 3), tNon.indexOf(k)).map(i => paras[i]).join('\n');
-  const glossChars = (ws?.glossary || []).filter(g => g.type === 'character' && g.korean && (g.gender === 'male' || g.gender === 'female'));
-  const chars = glossChars.map(g => `- ${g.korean} = ${g.thai} (${g.gender === 'male' ? 'ชาย → เขา' : 'หญิง → เธอ/นาง'})`).join('\n');
+  const glossChars = (ws?.glossary || []).filter(g => isGenderableType(g.type) && g.korean && (g.gender === 'male' || g.gender === 'female'));
+  const chars = glossChars.map(g => `- ${g.korean} = ${g.thai} (${g.type === 'title' ? 'title of one person · ' : ''}${g.gender === 'male' ? 'ชาย → เขา' : 'หญิง → เธอ/นาง'})`).join('\n');
   const items = cand.map((k, n) => `#${n + 1}\nKOREAN:\n${korFor(k)}\nTHAI:\n${paras[k]}`).join('\n\n');
   const prompt = `You proofread a Korean→Thai web-novel translation for GENDER errors only.
 
@@ -865,7 +869,7 @@ function glossaryMisses(srcText, thaiText, glossary = S.currentWs?.glossary) {
 // คืน null ถ้าคำแปลไทยมีอักษรเกาหลี/จีน/ญี่ปุ่นปน (เช่น "เซ피อา") — ห้ามเข้าคลัง ไม่งั้นจะลามไปทุกตอน
 function sanitizeGlossaryEntry(entry) {
   if (!entry || /[\u3131-\u318e\uac00-\ud7a3\u4e00-\u9fff\u3040-\u30ff]/.test(String(entry.thai || ''))) return null;
-  if (entry.type !== 'character' || !['male', 'female', 'neutral'].includes(entry.gender)) delete entry.gender;
+  if (!isGenderableType(entry.type) || !['male', 'female', 'neutral'].includes(entry.gender)) delete entry.gender;
   entry.thai = fixSinoKoreanReading(entry.korean, fixAddressGender(entry.korean, entry.thai));
   // AI บางครั้งคืนชื่อซ้ำสองรอบ ("세피아 세피아" = "เซเปีย เซเปีย") → ยุบเหลือชื่อเดียว
   for (const f of ['korean', 'thai']) {
@@ -932,8 +936,8 @@ async function autoExtractGlossaryAfterTranslation(sourceText, model, chapterInf
       const existingEntry = S.currentWs.glossary.find(g => g.korean === term.korean);
       if (existingEntry) {
         // เติมเพศให้ตัวละครเดิมที่ยังไม่มีเพศ
-        if (existingEntry.type === 'character' && !['male', 'female', 'neutral'].includes(existingEntry.gender)
-            && term.type === 'character' && ['male', 'female'].includes(term.gender)) {
+        if (isGenderableType(existingEntry.type) && !['male', 'female', 'neutral'].includes(existingEntry.gender)
+            && existingEntry.type === term.type && ['male', 'female'].includes(term.gender)) {
           existingEntry.gender = term.gender; genderFilled++;
         }
         return;

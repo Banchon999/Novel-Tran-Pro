@@ -474,7 +474,7 @@ function editGlossaryEntry(korean) {
   document.getElementById('gType').value = entry.type || 'term';
   document.getElementById('gNote').value = entry.note || '';
   // gender: แสดงเฉพาะ character
-  const isChar = (entry.type || 'term') === 'character';
+  const isChar = isGenderableType(entry.type || 'term');
   document.getElementById('gGenderGroup').style.display = isChar ? '' : 'none';
   document.getElementById('gGender').value = entry.gender || '';
   openModal('modal-add-glossary');
@@ -490,7 +490,7 @@ async function saveGlossaryEntry() {
   if (!PRESET_TYPES[type] && S.currentWs && !(S.currentWs.customGlossaryTypes || []).includes(type)) {
     S.currentWs.customGlossaryTypes = [...(S.currentWs.customGlossaryTypes || []), type];
   }
-  const gender = type === 'character' ? document.getElementById('gGender').value : '';
+  const gender = isGenderableType(type) ? document.getElementById('gGender').value : '';
   const entry = { korean, thai, type, note: document.getElementById('gNote').value.trim(), ...(gender ? { gender } : {}) };
   if (S.editingGlossaryKorean) {
     // ลบ entry เก่าก่อน (กรณีผู้ใช้เปลี่ยน Korean term ด้วย)
