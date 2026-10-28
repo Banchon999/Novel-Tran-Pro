@@ -74,8 +74,10 @@ function buildGlossaryStr(wsGlossary) {
       parts.push(PRONOUN_3RD[v.gender]);
       parts.push(PRONOUN_1ST[v.gender]);
       if (PARTICLE[v.gender]) parts.push(PARTICLE[v.gender]);
-    } else if (v.type === 'character' && v.gender === 'neutral') {
-      parts.push('gender:neutral/กลาง');
+    } else if (isGenderableType(v.type)) {
+      // ไม่รู้เพศ → ห้ามเดา เขา/เธอ (โมเดลถือว่า "เขา" เป็นกลาง แต่คนอ่านไทยอ่านเป็นผู้ชาย) — บอกไว้ข้างคำเลย กฎรวมด้านบนอย่างเดียวไม่พอ
+      const t = fixAddressGender(k, v.thai);
+      parts.push(`${v.gender === 'neutral' ? 'gender:neutral/กลาง' : 'gender unknown'} → never เขา/เธอ/นาง for ${v.type === 'title' ? 'whoever holds this title' : 'this person'}: repeat "${t}" or use a neutral word (ท่าน · อีกฝ่าย · คนผู้นั้น) — unless the source text itself gives a he/she pronoun for them`);
     }
     if (v.note) parts.push(v.note);
     return `${k} = ${parts.join(' | ')}`;

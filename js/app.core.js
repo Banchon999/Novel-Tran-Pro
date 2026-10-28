@@ -39,7 +39,7 @@ const SHARED_CORE_RULES = `CONSISTENCY & READING FLOW (keep the reader's immersi
 const SHARED_PRONOUN_RULES = `THAI PRONOUN RULES — CRITICAL, NO EXCEPTIONS:
 • Male (gender:male) → 3rd: เขา/ของเขา | 1st in spoken dialogue: ผม/กู/ข้า (match register). NEVER use เธอ/นาง for males (ฉัน is fine in first-person narration and inner thoughts — see NARRATOR VOICE).
 • Female (gender:female) → 3rd: เธอ/นาง/ของเธอ | 1st: ฉัน/หนู/อิฉัน. NEVER use ผม/กู for females.
-• Unknown gender → use เขา (3rd) / ฉัน (1st) as default until clarified.
+• Unknown or unclear gender (no glossary gender, no 그/그녀 or he/she, no gendered address) → NEVER guess เขา or เธอ: repeat the name or title, or use a neutral form that fits the sentence (ท่าน for a superior or elder · อีกฝ่าย · คนผู้นั้น). This repetition is intended — do not "fix" it into เขา for flow. 1st person → ฉัน.
 • First-person narration and inner thoughts (나/저/我 etc.) → follow NARRATOR VOICE.`;
 
 const SHARED_PROOFREAD_RULES = `PROFESSIONAL PROOFREADING (พิสูจน์อักษรระดับมืออาชีพ) — the output must be publish-ready Thai:
@@ -312,6 +312,7 @@ ${rule}
 const _OLD_PRONOUN_LINES = [
   ['| 1st: ผม/กู/ข้า (match register). NEVER use ฉัน/เธอ/นาง for males.', '| 1st in spoken dialogue: ผม/กู/ข้า (match register). NEVER use เธอ/นาง for males (ฉัน is fine in first-person narration and inner thoughts — see NARRATOR VOICE).'],
   ["• First-person narration (나/저/我 etc.) → use the narrator's gender from the glossary; do not default blindly.", '• First-person narration and inner thoughts (나/저/我 etc.) → follow NARRATOR VOICE.'],
+  ['• Unknown gender → use เขา (3rd) / ฉัน (1st) as default until clarified.', '• Unknown or unclear gender (no glossary gender, no 그/그녀 or he/she, no gendered address) → NEVER guess เขา or เธอ: repeat the name or title, or use a neutral form that fits the sentence (ท่าน for a superior or elder · อีกฝ่าย · คนผู้นั้น). This repetition is intended — do not "fix" it into เขา for flow. 1st person → ฉัน.'],
   ['• Thai pronouns: Male→เขา/ผม | Female→เธอ/ฉัน', '• Thai pronouns: Male→เขา, ผม in spoken dialogue | Female→เธอ/ฉัน · narration & inner thoughts → NARRATOR VOICE'],
 ];
 function applyNarratorVoice(systemPrompt, ws) {
@@ -388,6 +389,7 @@ RULES:
 • Preserve all glossary terms exactly as given.
 • Do NOT change the gender of speech particles (ครับ ↔ ค่ะ/คะ) unless one contradicts the speaker's gender given in the glossary; never mix both in one line of dialogue.
 • Keep every self-pronoun as translated: a male narrator saying ฉัน in narration or inner thoughts is correct — never change ฉัน ↔ ผม.
+• Never turn a repeated name, title or neutral word (ท่าน · อีกฝ่าย · คนผู้นั้น) into เขา/เธอ/นาง unless that person's gender is given in the glossary — it was left neutral on purpose.
 
 GLOSSARY (preserve these terms):
 {glossary}
