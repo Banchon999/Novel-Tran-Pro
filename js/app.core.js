@@ -421,7 +421,7 @@ SOURCE LANGUAGE: ${L.desc}
 STORY CONTEXT (title, synopsis, genre, story so far — use it to understand this novel's world):
 {story_context}
 
-TERMBASE ENTRIES THAT APPEAR IN THIS TEXT — already decided: never output them again (except a character marked [gender?], which you may output once more only to give its gender, with the same Thai). Reuse these Thai renderings inside any new compound term:
+TERMBASE ENTRIES THAT APPEAR IN THIS TEXT — already decided: do not output them again — EXCEPT entries marked [gender?]: output those again with their gender whenever this text shows it (STEP 6 · GENDER FILL). Reuse these Thai renderings inside any new compound term:
 {existing}
 
 ${L.NAME} SOURCE TEXT:
@@ -456,6 +456,7 @@ ${L.thai}
 
 ━━ STEP 6 · GENDER ━━
 ${L.gender}
+GENDER FILL — REQUIRED: for every termbase entry above marked [gender?], check this text. If it reveals that person's gender (a he/she pronoun for them, kinship or role words, how others address them), you MUST output that entry again — same "source", "thai" and "type" — with its "gender". This is the only case where a known entry is repeated; skip it if the text does not show the gender, or if a title is shared by several people.
 
 ━━ STEP 7 · CHECK EVERY ENTRY BEFORE ANSWERING ━━
 For each entry confirm: (1) it passes STEP 2 — drop everyday objects and devices, real countries and cities and evaluative words even when they appear in the text, but keep every proper name and recurring role word; (2) the Thai fits the sentence where it appears and fits this world (STEP 3); (3) parts shared with existing termbase entries use the same Thai; (4) Thai script only, one spelling. Fix or drop anything that fails. Then scan the text once more for any proper name you have not listed yet, and for recurring role words of the institutions (how people are addressed or called as members of a school, guild, sect, order or army) and make sure each one has an entry with its in-story meaning.
@@ -889,7 +890,7 @@ function glossaryStoryContext(ws, lang) {
 function glossaryKnownTerms(glossary, text, extra = []) {
   const t = String(text || '');
   const lines = (glossary || []).filter(g => g.korean && t.includes(g.korean)).slice(0, 150)
-    .map(g => `${g.korean} = ${g.thai || ''}${g.type === 'character' && !['male', 'female', 'neutral'].includes(g.gender) ? ' [gender?]' : ''}`);
+    .map(g => `${g.korean} = ${g.thai || ''}${isGenderableType(g.type) && !['male', 'female', 'neutral'].includes(g.gender) ? (g.type === 'title' ? ' [gender? — only if this title means one specific person]' : ' [gender?]') : ''}`);
   for (const k of extra) if (k && t.includes(k) && !lines.some(l => l.startsWith(k + ' = '))) lines.push(k);
   return lines.join('\n') || '(none)';
 }
