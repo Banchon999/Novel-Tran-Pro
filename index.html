@@ -625,7 +625,7 @@
       <div class="sf-group"><div class="sf-label">คำต้นฉบับ *</div><input id="gKorean" type="text" class="text-input" placeholder="เช่น 검제 / 林动 / Leon"/></div>
       <div class="sf-group"><div class="sf-label">ภาษาไทย *</div><input id="gThai" type="text" class="text-input" placeholder="จักรพรรดิดาบ"/></div>
       <div class="sf-group"><div class="sf-label">ประเภท</div>
-        <select id="gType" class="select-input" onchange="document.getElementById('gGenderGroup').style.display=this.value==='character'?'':'none';if(this.value!=='character')document.getElementById('gGender').value=''">
+        <select id="gType" class="select-input" onchange="const gx=isGenderableType(this.value);document.getElementById('gGenderGroup').style.display=gx?'':'none';if(!gx)document.getElementById('gGender').value=''">
           <option value="term">คำศัพท์ทั่วไป</option>
           <option value="character">ตัวละคร</option>
           <option value="title">ตำแหน่ง/ยศ</option>
@@ -638,7 +638,7 @@
           <option value="monster">มอนสเตอร์/สัตว์</option>
         </select>
       </div>
-      <div class="sf-group" id="gGenderGroup" style="display:none"><div class="sf-label">เพศ <span style="font-size:0.72rem;color:var(--text-muted)">(ช่วย AI เลือกสรรพนาม)</span></div>
+      <div class="sf-group" id="gGenderGroup" style="display:none"><div class="sf-label">เพศ <span style="font-size:0.72rem;color:var(--text-muted)">(ช่วย AI เลือกสรรพนาม · ตำแหน่ง/ยศ: ใส่เมื่อหมายถึงคนเดียวในเรื่อง เช่น ผู้อำนวยการที่เป็นผู้หญิง)</span></div>
         <select id="gGender" class="select-input">
           <option value="">— ไม่ระบุ —</option>
           <option value="male">ชาย (เขา/พระเอก/ผม)</option>

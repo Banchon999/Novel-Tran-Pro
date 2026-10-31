@@ -39,7 +39,7 @@ const SHARED_CORE_RULES = `CONSISTENCY & READING FLOW (keep the reader's immersi
 const SHARED_PRONOUN_RULES = `THAI PRONOUN RULES — CRITICAL, NO EXCEPTIONS:
 • Male (gender:male) → 3rd: เขา/ของเขา | 1st in spoken dialogue: ผม/กู/ข้า (match register). NEVER use เธอ/นาง for males (ฉัน is fine in first-person narration and inner thoughts — see NARRATOR VOICE).
 • Female (gender:female) → 3rd: เธอ/นาง/ของเธอ | 1st: ฉัน/หนู/อิฉัน. NEVER use ผม/กู for females.
-• Unknown gender → use เขา (3rd) / ฉัน (1st) as default until clarified.
+• Unknown or unclear gender (no glossary gender, no 그/그녀 or he/she, no gendered address) → NEVER guess เขา or เธอ: repeat the name or title, or use a neutral form that fits the sentence (ท่าน for a superior or elder · อีกฝ่าย · คนผู้นั้น). This repetition is intended — do not "fix" it into เขา for flow. 1st person → ฉัน.
 • First-person narration and inner thoughts (나/저/我 etc.) → follow NARRATOR VOICE.`;
 
 const SHARED_PROOFREAD_RULES = `PROFESSIONAL PROOFREADING (พิสูจน์อักษรระดับมืออาชีพ) — the output must be publish-ready Thai:
@@ -312,6 +312,7 @@ ${rule}
 const _OLD_PRONOUN_LINES = [
   ['| 1st: ผม/กู/ข้า (match register). NEVER use ฉัน/เธอ/นาง for males.', '| 1st in spoken dialogue: ผม/กู/ข้า (match register). NEVER use เธอ/นาง for males (ฉัน is fine in first-person narration and inner thoughts — see NARRATOR VOICE).'],
   ["• First-person narration (나/저/我 etc.) → use the narrator's gender from the glossary; do not default blindly.", '• First-person narration and inner thoughts (나/저/我 etc.) → follow NARRATOR VOICE.'],
+  ['• Unknown gender → use เขา (3rd) / ฉัน (1st) as default until clarified.', '• Unknown or unclear gender (no glossary gender, no 그/그녀 or he/she, no gendered address) → NEVER guess เขา or เธอ: repeat the name or title, or use a neutral form that fits the sentence (ท่าน for a superior or elder · อีกฝ่าย · คนผู้นั้น). This repetition is intended — do not "fix" it into เขา for flow. 1st person → ฉัน.'],
   ['• Thai pronouns: Male→เขา/ผม | Female→เธอ/ฉัน', '• Thai pronouns: Male→เขา, ผม in spoken dialogue | Female→เธอ/ฉัน · narration & inner thoughts → NARRATOR VOICE'],
 ];
 function applyNarratorVoice(systemPrompt, ws) {
@@ -388,6 +389,7 @@ RULES:
 • Preserve all glossary terms exactly as given.
 • Do NOT change the gender of speech particles (ครับ ↔ ค่ะ/คะ) unless one contradicts the speaker's gender given in the glossary; never mix both in one line of dialogue.
 • Keep every self-pronoun as translated: a male narrator saying ฉัน in narration or inner thoughts is correct — never change ฉัน ↔ ผม.
+• Never turn a repeated name, title or neutral word (ท่าน · อีกฝ่าย · คนผู้นั้น) into เขา/เธอ/นาง unless that person's gender is given in the glossary — it was left neutral on purpose.
 
 GLOSSARY (preserve these terms):
 {glossary}
@@ -421,7 +423,7 @@ SOURCE LANGUAGE: ${L.desc}
 STORY CONTEXT (title, synopsis, genre, story so far — use it to understand this novel's world):
 {story_context}
 
-TERMBASE ENTRIES THAT APPEAR IN THIS TEXT — already decided: never output them again (except a character marked [gender?], which you may output once more only to give its gender, with the same Thai). Reuse these Thai renderings inside any new compound term:
+TERMBASE ENTRIES THAT APPEAR IN THIS TEXT — already decided: do not output them again — EXCEPT entries marked [gender?]: output those again with their gender whenever this text shows it (STEP 6 · GENDER FILL). Reuse these Thai renderings inside any new compound term:
 {existing}
 
 ${L.NAME} SOURCE TEXT:
@@ -456,11 +458,12 @@ ${L.thai}
 
 ━━ STEP 6 · GENDER ━━
 ${L.gender}
+GENDER FILL — REQUIRED: for every termbase entry above marked [gender?], check this text. If it reveals that person's gender (a he/she pronoun for them, kinship or role words, how others address them), you MUST output that entry again — same "source", "thai" and "type" — with its "gender". This is the only case where a known entry is repeated; skip it if the text does not show the gender, or if a title is shared by several people.
 
 ━━ STEP 7 · CHECK EVERY ENTRY BEFORE ANSWERING ━━
 For each entry confirm: (1) it passes STEP 2 — drop everyday objects and devices, real countries and cities and evaluative words even when they appear in the text, but keep every proper name and recurring role word; (2) the Thai fits the sentence where it appears and fits this world (STEP 3); (3) parts shared with existing termbase entries use the same Thai; (4) Thai script only, one spelling. Fix or drop anything that fails. Then scan the text once more for any proper name you have not listed yet, and for recurring role words of the institutions (how people are addressed or called as members of a school, guild, sect, order or army) and make sure each one has an entry with its in-story meaning.
 
-FIELDS: "source" (STEP 4) · "thai" (STEP 5) · "type": one of character | title | rank | term | honorific | place | skill | item | clan | monster · "gender" (type "character" only) · "note": in-story meaning in English + "ทับศัพท์" (transliterated) or "แปลความหมาย" (translated) — keep that decision for the whole novel
+FIELDS: "source" (STEP 4) · "thai" (STEP 5) · "type": one of character | title | rank | term | honorific | place | skill | item | clan | monster · "gender" (type "character", or a "title" held by one specific person — STEP 6) · "note": in-story meaning in English + "ทับศัพท์" (transliterated) or "แปลความหมาย" (translated) — keep that decision for the whole novel
 
 OUTPUT: ONLY a raw JSON array — no markdown fences, no text before or after. Return [] if there is nothing new.
 Example:
@@ -489,7 +492,7 @@ const AUTOGLOSSARY_PROMPTS = {
 - Meaningful names (skills, items, places, guilds, quests): translate the meaning in natural Thai web-novel style (검성 จอมดาบ, 붉은 달 길드 กิลด์จันทร์แดง); transliterate only when the name has no meaning to translate. A real place inside a term keeps its standard Thai name (서울 게이트 터미널 → เกตเทอร์มินัลโซล).
 - English loanwords written in Hangul → the Thai loanword readers know: 게이트 เกต · 던전 ดันเจี้ยน · 던전 브레이크 ดันเจี้ยนเบรก · 레이드 เรด · 스킬 สกิล · 퀘스트 เควสต์ · 길드 กิลด์ · 레벨 เลเวล · 인벤토리 ช่องเก็บของ — except 시스템 (the System) → ระบบ.
 - Sino-Korean martial / fantasy terms follow the established Thai renderings (내공 พลังภายใน · 단전 ตันเถียน · 마석 หินเวท · 기사단 คณะอัศวิน · 공작 ดยุก).
-- Forms of address carry the gender of the person ADDRESSED: 도련님/공자님 → คุณชาย (male) · 아가씨/영애 → คุณหนู (female) · 부인 → ท่านหญิง/คุณนาย.`, gender: `"gender" — REQUIRED for type "character": male | female | neutral. Evidence, strongest first: 그/그는/그가 → male, 그녀 → female; kinship or role words used FOR the person (형/오빠/아버지/아들/왕자 male · 언니/누나/어머니/딸/영애/하녀/공주 female); how others address them; Thai pronouns in the Thai translation if given (เขา male · เธอ/นาง female — weak evidence; ผม/ฉัน prove nothing). 나/저 prove nothing. If unsure → "neutral".`, example: `[{"source":"이서준","thai":"อีซอจุน","type":"character","gender":"male","note":"protagonist · ทับศัพท์"},{"source":"붉은 달 길드","thai":"กิลด์จันทร์แดง","type":"clan","note":"Red Moon Guild · แปลความหมาย"},{"source":"마석","thai":"หินเวท","type":"item","note":"mana stone · แปลความหมาย"}]`,
+- Forms of address carry the gender of the person ADDRESSED: 도련님/공자님 → คุณชาย (male) · 아가씨/영애 → คุณหนู (female) · 부인 → ท่านหญิง/คุณนาย.`, gender: `"gender" — REQUIRED for type "character": male | female | neutral. Evidence, strongest first: 그/그는/그가 → male, 그녀 → female; kinship or role words used FOR the person (형/오빠/아버지/아들/왕자 male · 언니/누나/어머니/딸/영애/하녀/공주 female); how others address them; Thai pronouns in the Thai translation if given (เขา male · เธอ/นาง female — weak evidence; ผม/ฉัน prove nothing). 나/저 prove nothing. If unsure → "neutral". For type "title": give "gender" only when the title points to ONE specific person in this story (the academy's 원장 who is a woman → "female"; a 공작 who is the heroine's father → "male") — the source often calls that person only by the title and drops the pronoun. Leave it out for titles many people share (교관 · 기사).`, example: `[{"source":"이서준","thai":"อีซอจุน","type":"character","gender":"male","note":"protagonist · ทับศัพท์"},{"source":"붉은 달 길드","thai":"กิลด์จันทร์แดง","type":"clan","note":"Red Moon Guild · แปลความหมาย"},{"source":"마석","thai":"หินเวท","type":"item","note":"mana stone · แปลความหมาย"}]`,
   }),
   zh: _agPrompt({
     name: 'Chinese', NAME: 'CHINESE', desc: 'Chinese (中文, simplified or traditional) — read it as Mandarin.',
@@ -512,7 +515,7 @@ const AUTOGLOSSARY_PROMPTS = {
   NEVER spell a whole sect, realm or technique phonetically (天剑宗 is NOT เทียนเจี้ยนจง; 炼气 is NOT เลี่ยนชี่).
 - Genre vocabulary: 江湖 ยุทธจักร · 武林 บู๊ลิ้ม · 灵气 ปราณวิญญาณ · 灵力 พลังวิญญาณ · 丹田 ตันเถียน · 剑意 เจตจำนงกระบี่ · 储物袋 ถุงเก็บของ · 玉简 แผ่นหยก · 闭关 ปิดด่านบำเพ็ญ · 宗门大比 การประลองใหญ่ของสำนัก · 内门弟子 ศิษย์สายใน · 外门弟子 ศิษย์สายนอก.
 - Realms: 炼气 ขั้นหลอมปราณ · 筑基 ขั้นสร้างรากฐาน · 金丹 ขั้นแก่นทองคำ · 元婴 ขั้นวิญญาณก่อกำเนิด · 化神 ขั้นแปลงเทพ (期/境 add nothing).
-- Forms of address: 师兄 ศิษย์พี่ · 师弟 ศิษย์น้อง · 师姐 ศิษย์พี่หญิง · 师妹 ศิษย์น้องหญิง · 师尊/师父 ท่านอาจารย์ · 前辈 ท่านผู้อาวุโส · 长老 ผู้อาวุโส · 掌门 เจ้าสำนัก · 公子/少爷 คุณชาย (male) · 小姐/姑娘 คุณหนู/แม่นาง (female).`, gender: `"gender" — REQUIRED for type "character": male | female | neutral. Evidence, strongest first: 他 → male, 她 → female; 少年/公子/少爷/老者/师兄/父/子 male · 少女/小姐/姑娘/仙子/师姐/师妹/母/女 female; how others address them; Thai pronouns in the Thai translation if given (weak evidence). If unsure → "neutral".`, example: `[{"source":"韩立","thai":"หานลี่","type":"character","gender":"male","note":"protagonist · ทับศัพท์"},{"source":"藏经阁","thai":"หอคัมภีร์","type":"place","note":"Scripture Pavilion · แปลความหมาย"},{"source":"金丹","thai":"ขั้นแก่นทองคำ","type":"rank","note":"Golden Core realm · แปลความหมาย"}]`,
+- Forms of address: 师兄 ศิษย์พี่ · 师弟 ศิษย์น้อง · 师姐 ศิษย์พี่หญิง · 师妹 ศิษย์น้องหญิง · 师尊/师父 ท่านอาจารย์ · 前辈 ท่านผู้อาวุโส · 长老 ผู้อาวุโส · 掌门 เจ้าสำนัก · 公子/少爷 คุณชาย (male) · 小姐/姑娘 คุณหนู/แม่นาง (female).`, gender: `"gender" — REQUIRED for type "character": male | female | neutral. Evidence, strongest first: 他 → male, 她 → female; 少年/公子/少爷/老者/师兄/父/子 male · 少女/小姐/姑娘/仙子/师姐/师妹/母/女 female; how others address them; Thai pronouns in the Thai translation if given (weak evidence). If unsure → "neutral". For type "title": give "gender" only when the title points to ONE specific person in this story (a 掌门 who is a woman → "female"; the 王爷 of this story → "male"). Leave it out for titles many people share (长老 · 弟子).`, example: `[{"source":"韩立","thai":"หานลี่","type":"character","gender":"male","note":"protagonist · ทับศัพท์"},{"source":"藏经阁","thai":"หอคัมภีร์","type":"place","note":"Scripture Pavilion · แปลความหมาย"},{"source":"金丹","thai":"ขั้นแก่นทองคำ","type":"rank","note":"Golden Core realm · แปลความหมาย"}]`,
   }),
   en: _agPrompt({
     name: 'English', NAME: 'ENGLISH', desc: 'English.',
@@ -530,12 +533,16 @@ const AUTOGLOSSARY_PROMPTS = {
 - Personal names: transliterate by English pronunciation, following Royal Institute practice — readable, without tone marks unless the common spelling has them, ์ on silent final letters, given name and family name separated by a space (Leon Ashford เลออน แอชฟอร์ด · Elena เอเลนา · Victor วิกเตอร์ · Arthur อาร์เธอร์).
 - Meaningful names (places, organizations, skills, items, quests): translate the meaning when it reads naturally in Thai fantasy (Whispering Forest ป่ากระซิบ · Silver Tower หอคอยเงิน); transliterate coined or opaque names (Ravenmoor เรเวนมัวร์).
 - Game terms → the Thai loanwords readers know: Level เลเวล · Skill สกิล · Quest เควสต์ · Class คลาส · Dungeon ดันเจี้ยน · Guild กิลด์ · Status Window หน้าต่างสถานะ.
-- Titles: Duke ดยุก · Marquis มาร์ควิส · Earl เอิร์ล · Count เคานต์ · Baron บารอน · Lady เลดี้ · Lord ลอร์ด · Sir เซอร์ · Archmage จอมเวทสูงสุด · Young master คุณชาย (male) · Young lady/Miss คุณหนู (female).`, gender: `"gender" — REQUIRED for type "character": male | female | neutral. Evidence: he/him/his → male, she/her → female; Mr/Sir/Lord/King/Prince/Duke/brother/father → male; Ms/Mrs/Miss/Lady/Queen/Princess/Duchess/sister/mother → female. If unsure → "neutral".`, example: `[{"source":"Leon Ashford","thai":"เลออน แอชฟอร์ด","type":"character","gender":"male","note":"protagonist · ทับศัพท์"},{"source":"Silver Tower","thai":"หอคอยเงิน","type":"place","note":"mage tower · แปลความหมาย"},{"source":"Status Window","thai":"หน้าต่างสถานะ","type":"term","note":"system UI · แปลความหมาย"}]`,
+- Titles: Duke ดยุก · Marquis มาร์ควิส · Earl เอิร์ล · Count เคานต์ · Baron บารอน · Lady เลดี้ · Lord ลอร์ด · Sir เซอร์ · Archmage จอมเวทสูงสุด · Young master คุณชาย (male) · Young lady/Miss คุณหนู (female).`, gender: `"gender" — REQUIRED for type "character": male | female | neutral. Evidence: he/him/his → male, she/her → female; Mr/Sir/Lord/King/Prince/Duke/brother/father → male; Ms/Mrs/Miss/Lady/Queen/Princess/Duchess/sister/mother → female. If unsure → "neutral". For type "title": give "gender" only when the title points to ONE specific person in this story (the Headmaster who is a woman → "female"; the Duke who is the heroine's father → "male"). Leave it out for titles many people share (Knight · Guard).`, example: `[{"source":"Leon Ashford","thai":"เลออน แอชฟอร์ด","type":"character","gender":"male","note":"protagonist · ทับศัพท์"},{"source":"Silver Tower","thai":"หอคอยเงิน","type":"place","note":"mage tower · แปลความหมาย"},{"source":"Status Window","thai":"หน้าต่างสถานะ","type":"term","note":"system UI · แปลความหมาย"}]`,
   }),
 };
 const AUTOGLOSSARY_PROMPT = AUTOGLOSSARY_PROMPTS.ko;   // ชื่อเดิม (เผื่อโค้ดเก่าอ้างถึง)
 
 // คำเรียกขานที่บอกเพศของ "คนที่ถูกเรียก" — AI คลังศัพท์เคยใส่ 도련님 = คุณหนู (ผิดเพศ) แล้วลามทุกตอน
+// ประเภทคำที่ใส่เพศได้: ตัวละคร + ตำแหน่ง/ยศที่หมายถึง "คนเดียว" ในเรื่อง (원장 = ผู้อำนวยการที่เป็นผู้หญิง)
+// — ต้นฉบับมักเรียกแค่ตำแหน่งแล้วละสรรพนาม → ไม่รู้เพศ AI จึงเดา "เขา"
+function isGenderableType(type) { return type === 'character' || type === 'title'; }
+
 const ADDRESS_GENDER = [
   { re: /^(도련님|공자님|도령님?|소공자님?|젊은 ?주인님|公子|少爷|少主|young (?:master|lord))$/i, bad: /คุณหนู|คุณหญิง|ท่านหญิง|คุณนาย/, thai: 'คุณชาย' },
   { re: /^(아가씨|영애님?|공녀님?|아씨|小姐|young lady|miss)$/i, bad: /คุณชาย|ท่านชาย|นายน้อย/, thai: 'คุณหนู' },
@@ -885,7 +892,7 @@ function glossaryStoryContext(ws, lang) {
 function glossaryKnownTerms(glossary, text, extra = []) {
   const t = String(text || '');
   const lines = (glossary || []).filter(g => g.korean && t.includes(g.korean)).slice(0, 150)
-    .map(g => `${g.korean} = ${g.thai || ''}${g.type === 'character' && !['male', 'female', 'neutral'].includes(g.gender) ? ' [gender?]' : ''}`);
+    .map(g => `${g.korean} = ${g.thai || ''}${isGenderableType(g.type) && !['male', 'female', 'neutral'].includes(g.gender) ? (g.type === 'title' ? ' [gender? — only if this title means one specific person]' : ' [gender?]') : ''}`);
   for (const k of extra) if (k && t.includes(k) && !lines.some(l => l.startsWith(k + ' = '))) lines.push(k);
   return lines.join('\n') || '(none)';
 }

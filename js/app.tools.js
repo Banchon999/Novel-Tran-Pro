@@ -1694,7 +1694,7 @@ function glossaryExportPreview() {
     if (cols.korean) row.push(g.korean || '');
     if (cols.thai)   row.push(g.thai || '');
     if (cols.type)   row.push(g.type || '');
-    if (cols.gender) row.push(g.type === 'character' ? (g.gender || '') : '');
+    if (cols.gender) row.push(isGenderableType(g.type) ? (g.gender || '') : '');
     if (cols.note)   row.push(g.note || '');
     if (cols.source) row.push(g.sourceChapterTitle ? `#${g.sourceChapterNum||'?'} ${g.sourceChapterTitle}` : '');
     return row.map(v => v.includes(',') || v.includes('"') ? `"${v.replace(/"/g,'""')}"` : v).join(',');
@@ -1732,7 +1732,7 @@ function doExportGlossary(format) {
     if (cols.korean) row.push(g.korean || '');
     if (cols.thai)   row.push(g.thai || '');
     if (cols.type)   row.push(g.type || '');
-    if (cols.gender) row.push(g.type === 'character' ? (g.gender || '') : '');
+    if (cols.gender) row.push(isGenderableType(g.type) ? (g.gender || '') : '');
     if (cols.note)   row.push(g.note || '');
     if (cols.source) row.push(g.sourceChapterTitle ? `#${g.sourceChapterNum||'?'} ${g.sourceChapterTitle}` : '');
     return row;

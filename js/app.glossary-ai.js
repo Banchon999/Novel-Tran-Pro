@@ -839,7 +839,7 @@ async function runGlossaryAnalyze() {
           if (best && !options.some(o => o.thai === best)) options.unshift({ thai: best, why: '' });
           const issues = (Array.isArray(r.issues) ? r.issues : []).filter(x => x && x.problem).map(x => ({ kind: x.kind === 'consistency' ? 'consistency' : 'correctness', problem: clean(x.problem) }));
           const type = PRESET_TYPES[r.type] && r.type !== (e.type || 'term') ? r.type : '';
-          const gender = ['male', 'female', 'neutral'].includes(r.gender) && r.gender !== e.gender && (type || e.type) === 'character' ? r.gender : '';
+          const gender = ['male', 'female', 'neutral'].includes(r.gender) && r.gender !== e.gender && isGenderableType(type || e.type) ? r.gender : '';
           if (!issues.length && !options.length && !type && !gender) continue;
           _gaResults.push({ entry: e, issues, options, best, type, gender });
         }
@@ -905,7 +905,7 @@ async function gaApplySelected() {
     let did = false;
     if (v && v !== e.thai) { e.thai = fixAddressGender(e.korean, v); did = true; }
     if (r.type) { e.type = r.type; did = true; }
-    if (r.gender && e.type === 'character') { e.gender = r.gender; did = true; }
+    if (r.gender && isGenderableType(e.type)) { e.gender = r.gender; did = true; }
     if (did) changed++;
   });
   if (!changed) { showToast('ไม่มีรายการที่เปลี่ยน', ''); return; }
