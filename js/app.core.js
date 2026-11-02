@@ -542,6 +542,21 @@ const AUTOGLOSSARY_PROMPT = AUTOGLOSSARY_PROMPTS.ko;   // ชื่อเดิ�
 // ประเภทคำที่ใส่เพศได้: ตัวละคร + ตำแหน่ง/ยศที่หมายถึง "คนเดียว" ในเรื่อง (원장 = ผู้อำนวยการที่เป็นผู้หญิง)
 // — ต้นฉบับมักเรียกแค่ตำแหน่งแล้วละสรรพนาม → ไม่รู้เพศ AI จึงเดา "เขา"
 function isGenderableType(type) { return type === 'character' || type === 'title'; }
+// ตำแหน่งที่ต้นฉบับบอกว่ามีหลายคน (교관들 · 다른 교관 · 其他教官 · 教官们 · the other instructors) → ห้ามมีเพศ
+// ทดสอบจริง: Gemini Flash Lite ใส่ 教官 = male ทั้งที่ข้อความมี "其他教官" → ครูฝึกทุกคนจะกลายเป็น "เขา"
+function titleLooksShared(title, text) {
+  const t = String(title || '').trim(), s = String(text || '');
+  if (!t || !s) return false;
+  const e = t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  if (/[가-힣]/.test(t)) return new RegExp(`${e}들|(?:다른|여러|모든|다른 모든) ?${e}|${e} 중`).test(s);
+  if (/[\u4e00-\u9fff]/.test(t)) return new RegExp(`${e}们|(?:其他|其余|各位|诸位|众|几位|几名|几个|所有|别的)${e}`).test(s);
+  return new RegExp(`\\b${e}(?:s|es)\\b|\\b(?:other|all the|several|many|fellow) ${e}`, 'i').test(s);
+}
+// AI ส่งเพศมาให้ตำแหน่งที่หลายคนใช้ → ตัดเพศทิ้ง (คืน entry เดิม)
+function dropSharedTitleGender(entry, text) {
+  if (entry?.type === 'title' && entry.gender && titleLooksShared(entry.korean, text)) delete entry.gender;
+  return entry;
+}
 
 const ADDRESS_GENDER = [
   { re: /^(도련님|공자님|도령님?|소공자님?|젊은 ?주인님|公子|少爷|少主|young (?:master|lord))$/i, bad: /คุณหนู|คุณหญิง|ท่านหญิง|คุณนาย/, thai: 'คุณชาย' },

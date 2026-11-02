@@ -937,7 +937,7 @@ async function autoExtractGlossaryAfterTranslation(sourceText, model, chapterInf
       normalizeTermKeys(raw);
       if (!raw?.korean || !raw?.thai) return;
       raw.thai = fixSenseByContext(raw.korean, raw.thai, senseCtx);
-      const term = sanitizeGlossaryEntry({ ...raw });
+      const term = sanitizeGlossaryEntry(dropSharedTitleGender({ ...raw }, sourceText));
       if (!term) { rejected++; return; }
       const existingEntry = S.currentWs.glossary.find(g => g.korean === term.korean);
       if (existingEntry) {

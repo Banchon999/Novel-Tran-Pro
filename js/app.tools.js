@@ -382,7 +382,7 @@ async function runAutoGlossary() {
         if (Array.isArray(terms)) {
           terms.forEach(t => {
             normalizeTermKeys(t);
-            if (t?.korean) t.thai = fixSenseByContext(t.korean, t.thai, chunk + '\n' + storyCtx);
+            if (t?.korean) { t.thai = fixSenseByContext(t.korean, t.thai, chunk + '\n' + storyCtx); dropSharedTitleGender(t, chunk); }
             if (t?.korean && !seenKorean.has(t.korean)) {
               seenKorean.add(t.korean);
               // Attach source chapter info
