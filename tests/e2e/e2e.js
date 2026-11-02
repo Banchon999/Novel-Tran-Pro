@@ -242,6 +242,45 @@ const { chromium } = require(process.env.PLAYWRIGHT_PATH || 'playwright');
   });
   ok('shared titles (其他教官 · 助教们) never get a gender; a one-person title does', sh.dir === 'female' && sh.inst === undefined && sh.ta === 'none' && sh.ko && sh.en && !sh.solo);
 
+  // 11) Bible ของนิยาย: สแกนต้นฉบับ → เสนอ ภาษา/แนว/สไตล์/คำแทนตัว/เรื่องย่อ + Bible + ตัวละคร → ตรวจแล้วใช้ → ไหลเข้า prompt แปลและ prompt สกัดคำ
+  const bb = await ev(async () => {
+    const now = Date.now();
+    const ko = '나는 시요람 1학년 생도였다. 원장은 창가에 서 있었다. 그녀는 시요람을 세웠다.\n"앉게, 이하율 학생." 원장이 말했다.\n[스킬 \'공간지각\'이 활성화되었습니다.]';
+    const w = { id: 'bb' + now, name: 'Bible', glossary: [{ korean: '이하율', thai: 'อีฮายุล', type: 'character' }], customStyles: [], presets: [], styleSheet: { terms: 'เดิม' },
+      chapters: [{ id: 'b1', title: 'บทนำ', chapterNum: 1, sourceText: ko, translation: '', status: 'pending' }], settings: { sourceLang: 'en', speakerMap: false }, createdAt: now };
+    await lsSaveWorkspace(w); await selectWorkspace(w.id);
+    const built = buildBiblePrompt(S.currentWs, S.currentWs.chapters);
+    const pid = (S.currentWs.presets || []).find(x => x.id === 'seed-webtoon') ? 'seed-webtoon' : (S.currentWs.presets[0]?.id || 'seed-webtoon');
+    window.__bodies = []; const f = window.fetch; window.fetch = async (u, o) => { if (String(u).includes('openrouter')) window.__bodies.push(JSON.parse(o.body)); return f(u, o); };
+    window.__plan = ['ok:' + JSON.stringify({ genre: 'ko-academy', preset: pid, narratorSelf: '', reasons: { genre: 'มีอะคาเดมีและสกิล', preset: 'อ่านมือถือ', narratorSelf: 'เล่าบุรุษที่ 1' },
+      synopsis: 'อีฮายุลเข้าเรียนที่ชียอรัม', world: '• เกาหลียุคอนาคต มีดันเจี้ยน\n• ชียอรัม = อะคาเดมีฝึกฮันเตอร์ ไม่ใช่โรงเรียนทหาร', translit: '• ชื่อคน: ทับศัพท์', terms: '• 생도 = นักเรียน',
+      narration: '• บุรุษที่ 1 ใช้ ฉัน', format: '• ข้อความระบบ […]', voices: '• ผู้อำนวยการ: ห้วน เย็นชา', glossRules: '• 원장 = ผู้อำนวยการ (หญิงคนเดียว)\n• ไม่ต้องเก็บอุปกรณ์ทั่วไป',
+      characters: [{ source: '이하율', thai: 'อีฮายุล', gender: 'male', role: 'ตัวเอก' }, { source: '엘리아', thai: 'เอเลีย', gender: 'female', role: 'เพื่อน' }, { source: '나쁜이름', thai: '나쁜', gender: 'male' }],
+      titles: [{ source: '원장', thai: 'ผู้อำนวยการ', gender: 'female', role: 'หัวหน้าชียอรัม' }] })];
+    await scanNovelBible();
+    window.fetch = f;
+    const shown = document.getElementById('modal-bible').classList.contains('open');
+    const sentPrompt = window.__bodies[0]?.messages?.[0]?.content || '';
+    const ids = [...document.querySelectorAll('#modal-bible input[type=checkbox]')].map(x => x.id + (x.checked ? '+' : '-'));
+    const peopleTxt = document.getElementById('bbPeople').textContent;
+    await applyBible();
+    const ws = S.currentWs, g = k => ws.glossary.find(x => x.korean === k);
+    const tp = buildTranslatePrompt({ sourceText: ko, ws });
+    const gp = fillGlossaryPrompt(agGetPrompt('ko'), { ws, text: ko, lang: 'ko' });
+    return { built: built.lang === 'ko' && built.prompt.includes('ko-academy —') && !built.prompt.includes('zh-xianxia —') && built.prompt.includes('[KO]'), sent: sentPrompt.includes('NOVEL') || sentPrompt.includes('BIBLE'), shown, ids,
+      peopleOk: peopleTxt.includes('เติมเพศ') && peopleTxt.includes('เอเลีย') && !peopleTxt.includes('나쁜이름'),
+      lang: ws.settings.sourceLang, genre: ws.settings.genrePreset, preset: ws.presetId === pid, narr: ws.settings.narratorSelf, desc: ws.description,
+      world: ws.styleSheet.world?.includes('อะคาเดมีฝึกฮันเตอร์'), termsKept: ws.styleSheet.terms === 'เดิม', glossRules: !!ws.styleSheet.glossRules,
+      hayul: g('이하율')?.gender, elia: g('엘리아')?.gender, dir: g('원장') && g('원장').type === 'title' && g('원장').gender === 'female',
+      tpWorld: tp.includes('WORLD OF THIS NOVEL') && tp.includes('อะคาเดมีฝึกฮันเตอร์'), tpNoRules: !tp.includes('หญิงคนเดียว'),
+      gpWorld: gp.includes('World (from the novel bible)') && gp.includes("This novel's glossary rules") && gp.includes('หญิงคนเดียว'), gpGenre: gp.includes('GENRE (เกาหลี · อะคาเดมี') };
+  });
+  ok('bible scan: language detected from source, genres of that language only, review opens', bb.built && bb.sent && bb.shown);
+  ok('bible review: existing field unticked, empty fields ticked, bad Thai name dropped, gender fill offered', bb.ids.includes('bb-f-terms-') && bb.ids.includes('bb-f-world+') && bb.ids.includes('bb-set-desc+') && bb.peopleOk);
+  ok('bible apply: language + genre + preset + narrator + synopsis set', bb.lang === 'ko' && bb.genre === 'ko-academy' && bb.preset && (bb.narr || '') === '' && !bb.ids.some(x => x.startsWith('bb-set-narr')) && bb.desc === 'อีฮายุลเข้าเรียนที่ชียอรัม');
+  ok('bible apply: fields saved, old field kept, characters/titles added with gender', bb.world && bb.termsKept && bb.glossRules && bb.hayul === 'male' && bb.elia === 'female' && bb.dir);
+  ok('bible feeds prompts: world → translate + glossary · glossary rules → glossary only', bb.tpWorld && bb.tpNoRules && bb.gpWorld && bb.gpGenre);
+
   ok('no page errors', errors.length === 0); if (errors.length) console.log(errors);
   await browser.close(); process.exit(fail ? 1 : 0);
 })();

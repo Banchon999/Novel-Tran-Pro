@@ -442,18 +442,18 @@
             </div>
           </div>
 
-          <!-- ── คู่มือการแปลของนิยาย (Style Sheet + Voice) ── -->
+          <!-- ── Bible ของนิยาย (เดิม: คู่มือการแปล) — สแกนต้นฉบับแล้วตั้งค่าทั้งเรื่อง ── -->
           <div class="sf-group" style="border-top:1px solid var(--border);padding-top:10px;margin-top:2px">
             <div class="sf-label" style="margin-bottom:6px">
-              📘 คู่มือการแปลของนิยาย
-              <span style="font-size:0.70rem;color:var(--text-muted);font-weight:400"> — การตัดสินใจที่ AI ต้องยึดทุกตอน ให้อ่านเหมือนนักแปลคนเดียว</span>
+              📖 Bible ของนิยาย
+              <span style="font-size:0.70rem;color:var(--text-muted);font-weight:400"> — สแกนต้นฉบับครั้งเดียว แล้วกำหนดภาษา แนวนิยาย สไตล์การแปล คำแทนตัวผู้เล่า โลกของเรื่อง กฎลงคลังศัพท์ และตัวละคร</span>
             </div>
-            <div id="wsStyleSheetFields" style="display:flex;flex-direction:column;gap:8px"></div>
-            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px">
-              <button class="btn btn-secondary btn-sm" id="wsStyleDraftBtn" onclick="draftStyleSheet()">🤖 ร่างคู่มือจากต้นฉบับ + ตอนที่แปลแล้ว</button>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+              <button class="btn btn-primary btn-sm" id="wsStyleDraftBtn" onclick="scanNovelBible()">🔍 สแกนต้นฉบับ สร้าง Bible</button>
               <span id="wsStyleDraftStatus" style="font-size:0.72rem;color:var(--text-muted)"></span>
             </div>
-            <div style="font-size:0.70rem;color:var(--text-muted);margin-top:6px">ช่องที่เว้นว่างจะไม่ถูกส่งให้ AI · AI คำนวณคำที่วนซ้ำจากต้นฉบับทุกตอน (ใช้ได้แม้ยังไม่แปล) แล้วร่างเติมเฉพาะช่องที่ว่าง → ตรวจ/แก้แล้วกด 💾 บันทึก ด้านล่าง · ใช้กับทุกการแปล (แท็บแปล, Batch, อ่าน/แก้ไข, อ่านเต็มจอ)</div>
+            <div id="wsStyleSheetFields" style="display:flex;flex-direction:column;gap:8px"></div>
+            <div style="font-size:0.70rem;color:var(--text-muted);margin-top:6px">ส่งเข้า prompt แปลทุกตอน (ยกเว้น "กฎลงคลังศัพท์" ที่ใช้ตอนสกัดคำ) · "โลกของเรื่อง" ใช้ทั้งตอนแปลและตอนสกัดคำ เพื่อเลือกความหมายให้ตรงเรื่อง · ช่องว่างไม่ถูกส่ง · แก้เองได้ทุกช่อง แล้วกด 💾 บันทึก</div>
           </div>
 
           <!-- ── Speaker Map (ระบุผู้พูดก่อนแปล) ── -->
@@ -1207,6 +1207,27 @@
 </div>
 
 <!-- GLOSSARY EXPORT MODAL -->
+<div class="modal-backdrop" id="modal-bible">
+  <div class="modal modal-wide">
+    <div class="modal-header">
+      <span>📖 Bible ของนิยาย — ตรวจก่อนใช้</span>
+      <button class="icon-btn" onclick="closeModal('modal-bible')">✕</button>
+    </div>
+    <div class="modal-body" style="gap:10px">
+      <div class="sf-label" style="margin:0">⚙ ตั้งค่าเรื่อง</div>
+      <div id="bbSettings" class="bible-list"></div>
+      <div class="sf-label" style="margin:6px 0 0">📖 Bible (แก้ข้อความได้ก่อนใช้)</div>
+      <div id="bbFields" class="bible-list"></div>
+      <div class="sf-label" style="margin:6px 0 0">📚 เพิ่มลงคลังศัพท์ (ตัวละคร + ตำแหน่งที่หมายถึงคนเดียว)</div>
+      <div id="bbPeople" class="bible-list"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-bible')">ยกเลิก</button>
+      <button class="btn btn-primary" onclick="applyBible()">✓ ใช้ Bible นี้</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-backdrop" id="modal-genre-preset">
   <div class="modal modal-wide">
     <div class="modal-header">

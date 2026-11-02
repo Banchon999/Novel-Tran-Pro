@@ -165,8 +165,11 @@ function translateTemp(t, ws = S.currentWs) {
   return stableTempOn(ws) ? Math.min(v, STABLE_TEMP_MAX) : v;
 }
 
-// 2) คู่มือการแปลของนิยาย (Style Sheet + Voice Bible) — การตัดสินใจที่ต้องยึดทุกตอน
+// 2) Bible ของนิยาย (เดิม "คู่มือการแปล") — การตัดสินใจที่ต้องยึดทุกตอน · สร้างจากการสแกนต้นฉบับ (scanNovelBible)
+// [key, ป้ายไทย, หัวข้อใน prompt (null = ใช้เฉพาะ prompt สกัดคำ), ตัวอย่าง]
 const STYLE_SHEET_FIELDS = [
+  ['world',     'โลกของเรื่อง (ยุค · เทคโนโลยี · สถาบัน · ระบบพลัง)', 'WORLD OF THIS NOVEL (decides which meaning a word has)',
+    'เช่น เกาหลียุคอนาคต มีเกตและดันเจี้ยน · อะคาเดมีฝึกฮันเตอร์ (ไม่ใช่โรงเรียนทหาร) · ไม่มีขุนนาง/ยุทธภพ'],
   ['translit',  'นโยบายทับศัพท์ / แปลความหมาย (แยกตามหมวด)', 'TRANSLITERATE vs TRANSLATE POLICY (by category)',
     'เช่น ชื่อคน/สถานที่: ทับศัพท์ · ชื่อสกิล/ท่า: แปลความหมาย · ศัพท์เกม (마나 레벨 스탯): ทับศัพท์ มานา เลเวล สเตตัส · ยศขุนนาง: แปล (공작=ดยุก)'],
   ['terms',     'คำประจำเรื่อง / วลีติดปาก (ต้องเหมือนเดิมทุกครั้ง)', 'RECURRING TERMS & CATCHPHRASES (render identically every time)',
@@ -177,10 +180,12 @@ const STYLE_SHEET_FIELDS = [
     'เช่น ความคิดใช้ ‘…’ · ข้อความระบบใช้ […] · เสียงประกอบทับศัพท์ ไม่แปล'],
   ['voices',    'น้ำเสียงตัวละครหลัก', 'CHARACTER VOICES',
     'เช่น เลออน: สุภาพแต่ห้วน ใช้ "ผม" กับผู้ใหญ่ · อาเรีย: อ่อนหวาน ลงท้าย ค่ะ/คะ'],
+  ['glossRules', 'กฎลงคลังศัพท์ของเรื่องนี้ (ใช้ตอนสกัดคำ)', null,
+    'เช่น ล็อกชื่อกิลด์/สกิล/ยศฮันเตอร์ทุกตัว · 원장 = ผู้อำนวยการ (หญิงคนเดียว) · ไม่ต้องเก็บชื่อแบรนด์/อุปกรณ์ทั่วไป'],
 ];
 function buildStyleSheetBlock(ws) {
   const ss = ws?.styleSheet || {};
-  const parts = STYLE_SHEET_FIELDS.filter(([k]) => String(ss[k] || '').trim()).map(([k, , en]) => `${en}:\n${fixAddressGenderText(String(ss[k]).trim())}`);
+  const parts = STYLE_SHEET_FIELDS.filter(([k, , en]) => en && String(ss[k] || '').trim()).map(([k, , en]) => `${en}:\n${fixAddressGenderText(String(ss[k]).trim())}`);
   if (!parts.length) return '';
   return `━━━━━━━━━━━━━━━━━━━━
 TRANSLATION STYLE SHEET for this novel — decisions already made by the translator; follow them exactly in every chapter
@@ -897,7 +902,9 @@ function glossaryStoryContext(ws, lang) {
   const g = typeof getGenrePreset === 'function' ? getGenrePreset(ws) : null;
   if (g && (!lang || g.lang === lang)) parts.push(`Genre: ${g.name} — ${g.desc}`);
   const ss = ws?.styleSheet || {};
+  if (String(ss.world || '').trim()) parts.push(`World (from the novel bible):\n${String(ss.world).trim().slice(0, 700)}`);
   if (String(ss.terms || '').trim()) parts.push(`Translator's decided terms:\n${String(ss.terms).trim().slice(0, 800)}`);
+  if (String(ss.glossRules || '').trim()) parts.push(`This novel's glossary rules (follow them over the generic STEP 2 lists):\n${String(ss.glossRules).trim().slice(0, 700)}`);
   const ctx = typeof ctxGetPromptText === 'function' ? ctxGetPromptText(ws) : '';
   if (ctx) parts.push(`Story so far (Thai chapter summaries, latest last):\n${ctx.slice(-1500)}`);
   return parts.join('\n') || '(not provided — infer the setting from the text)';

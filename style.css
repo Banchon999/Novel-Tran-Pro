@@ -1299,3 +1299,13 @@ img.cover-xs, img.cover-sm, img.cover-lg { display: block; }
 .ga-opt { font-size: 0.78rem; cursor: pointer; display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; }
 .ga-best { font-size: 0.66rem; color: #6FCF97; border: 1px solid rgba(111,207,151,0.4); border-radius: 999px; padding: 0 6px; }
 .ga-why { color: var(--text-muted); font-size: 0.72rem; }
+
+/* ── Bible ของนิยาย: หน้าตรวจก่อนใช้ ── */
+.bible-list { display: flex; flex-direction: column; gap: 6px; }
+.bible-row { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; font-size: 0.8rem; cursor: pointer; }
+.bible-row input { flex: none; }
+.bible-k { font-weight: 600; color: var(--text-primary); min-width: 120px; }
+.bible-v { color: var(--text-secondary); flex: 1; min-width: 180px; overflow-wrap: anywhere; }
+.bible-v small { display: block; color: var(--text-muted); font-size: 0.72rem; margin-top: 2px; }
+.bible-field { display: flex; flex-direction: column; gap: 4px; }
+.bible-empty { font-size: 0.76rem; color: var(--text-muted); }
