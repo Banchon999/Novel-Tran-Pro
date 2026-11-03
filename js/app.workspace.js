@@ -126,7 +126,8 @@ async function selectWorkspace(id) {
   checkHealth();
 
   // ระบบ "สไตล์" รวมเข้า Bible แล้ว — ย้ายสไตล์ที่ผู้ใช้เลือกใช้อยู่ไปเป็นช่อง "คำสั่งเพิ่มเติม" ครั้งเดียว
-  if (migrateStyleToBible(ws)) await lsSaveWorkspace(ws).catch(() => {});
+  const _mStyle = migrateStyleToBible(ws), _mPreset = migrateGenrePresets(ws);
+  if (_mStyle || _mPreset) await lsSaveWorkspace(ws).catch(() => {});
   S.activeStyleId = '';
 
   await loadWorkspaceList();

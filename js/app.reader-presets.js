@@ -234,7 +234,7 @@ async function deletePreset() {
   showToast('ลบ Preset แล้ว', '');
 }
 
-// เพิ่มชุด Preset ตัวอย่าง 6 แบบ (เฉพาะที่ยังไม่มี) — สำหรับ workspace เดิม
+// เพิ่มชุด Preset ตัวอย่าง (สไตล์การแปล 4 แบบ) (เฉพาะที่ยังไม่มี) — สำหรับ workspace เดิม
 async function addMissingSeedPresets() {
   if (!S.currentWs) return;
   if (!Array.isArray(S.currentWs.presets)) S.currentWs.presets = [];

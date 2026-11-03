@@ -319,7 +319,7 @@ const { chromium } = require(process.env.PLAYWRIGHT_PATH || 'playwright');
     const r = {};
     let ws = await mk(); r.textOn = archaicSpeechInfo(ws, murimSrc).on && !archaicSpeechInfo(ws, murimSrc).sure; r.modernOff = !archaicSpeech(ws, modernSrc);
     ws = await mk({ genrePreset: 'ko-hunter' }); r.modernGenreBlocksText = !archaicSpeech(ws, murimSrc);
-    ws = await mk(); ws.presetId = (ws.presets.find(p => p.id === 'seed-wuxia') || {}).id; r.preset = archaicSpeechInfo(ws).sure;
+    ws = await mk(); ws.presets.push({ id: 'my-murim', name: 'ของฉัน', systemPrompt: 'MURIM STYLE: ...' }); ws.presetId = 'my-murim'; r.preset = archaicSpeechInfo(ws).sure;
     ws = await mk({}, [{ id: 'c1', chapterNum: 1, title: '1', sourceText: 'x', translation: '“ข้าน้อยเข้าใจแล้วขอรับ” เขากล่าว “เจ้าอย่าประมาท” “ข้ารอท่านอยู่เจ้าค่ะ”\n'.repeat(5) }]); r.prev = archaicSpeechInfo(ws).sure;
     ws = await mk({}, [{ id: 'c1', chapterNum: 1, title: '1', sourceText: 'x', translation: '“ผมเข้าใจแล้วครับ” เขากล่าว “ฉันรอคุณอยู่ค่ะ” ข้างๆ มีข้าวของ\n'.repeat(5) }]); r.prevModern = !archaicSpeechInfo(ws).sure;
     ws = await mk({ narratorSelf: 'ข้า' });
@@ -507,6 +507,28 @@ const { chromium } = require(process.env.PLAYWRIGHT_PATH || 'playwright');
   });
   ok('speaker map: helper model error → retries with the translate model', fb.fallback);
   ok('speaker map: failure is shown to the user (was silent)', fb.warn);
+
+  // 21) preset แนวเรื่อง (กำลังภายใน/ยุคกลาง) ถูกเอาออก: preset ใหม่มีแค่สไตล์การแปล · workspace เดิมที่ใช้อยู่ → ตั้งแนวนิยายแทน ระบบภาษาโบราณยังทำงาน · preset ที่ผู้ใช้แก้เองไม่แตะ
+  const gp = await ev(async () => {
+    const r = {};
+    r.seeds = SEED_PRESETS.map(p => p.id).join() === 'seed-literal,seed-literary,seed-dialogue,seed-webtoon';
+    const oldWuxia = { id: 'seed-wuxia', name: 'แปลจีนกำลังภายใน', systemPrompt: 'You are...\nWUXIA / MURIM STYLE:\n• old rules' };
+    const oldMed = { id: 'seed-medieval', name: 'แปลยุคกลางตะวันตก', systemPrompt: 'MEDIEVAL FANTASY STYLE:\n• x' };
+    const mk = async (extra) => { const w = { id: 'gp' + Math.random(), name: 'gp', glossary: [], customStyles: [], chapters: [], createdAt: Date.now(), ...extra }; await lsSaveWorkspace(w); await selectWorkspace(w.id); return lsGetWorkspace(w.id); };
+    let w = await mk({ settings: { sourceLang: 'zh' }, presets: [{ ...SEED_PRESETS[0] }, oldWuxia, oldMed, { ...SEED_PRESETS[1] }], presetId: 'seed-wuxia' });
+    r.active = w.presets.length === 2 && w.presetId === 'seed-literary' && w.settings.genrePreset === 'zh-wuxia' && archaicSpeechInfo(w).sure;
+    w = await mk({ settings: { sourceLang: 'ko', genrePreset: 'ko-hunter' }, presets: [{ ...SEED_PRESETS[0] }, oldWuxia], presetId: 'seed-wuxia' });
+    r.keepGenre = w.settings.genrePreset === 'ko-hunter' && w.presetId === 'seed-literal' && w.presets.length === 1;
+    w = await mk({ settings: { sourceLang: 'ko' }, presets: [{ ...oldWuxia, name: 'กำลังภายในของฉัน' }, { ...oldMed, systemPrompt: 'แก้เองทั้งหมด' }], presetId: 'seed-wuxia' });
+    r.userEdited = w.presets.length === 2 && w.presetId === 'seed-wuxia' && !w.settings.genrePreset;
+    w = await mk({ settings: { sourceLang: 'ko' }, presets: [oldMed], presetId: 'seed-medieval' });
+    r.onlyLegacy = w.settings.genrePreset === 'ko-fantasy' && w.presets.length === SEED_PRESETS.length && w.presetId === 'seed-literary';
+    return r;
+  });
+  ok('presets are translation styles only (genre presets removed)', gp.seeds);
+  ok('workspace using the old wuxia preset → genre set instead, archaic speech still on', gp.active);
+  ok('old preset removal never overrides a genre the user chose', gp.keepGenre && gp.onlyLegacy);
+  ok('presets the user edited are kept untouched', gp.userEdited);
 
   ok('no page errors', errors.length === 0); if (errors.length) console.log(errors);
   await browser.close(); process.exit(fail ? 1 : 0);

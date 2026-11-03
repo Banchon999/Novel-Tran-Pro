@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════
-// NovelTrans v13.5 Pro — Multi-file Edition
+// NovelTrans v13.5.1 Pro — Multi-file Edition
 // IndexedDB backend + OpenRouter API (SSE streaming)
 // ═══════════════════════════════════════════════
 'use strict';
@@ -26,7 +26,7 @@ const SEED_STYLES = [
   { id: 'sample-natural', emoji: '🌿', name: 'Natural (ตัวอย่าง)', prompt: 'แปลให้เป็นธรรมชาติ อ่านง่าย เหมือนนิยายไทยต้นฉบับ' },
 ];
 
-// ─── Translation Presets (ตัวอย่างเริ่มต้น 6 แบบ) ───
+// ─── Translation Presets (ตัวอย่างเริ่มต้น 4 แบบ — สไตล์การแปลเท่านั้น · แนวเรื่องอยู่ที่ "แนวนิยาย") ───
 // บล็อกกฎที่ใช้ร่วมกันทุก preset + auto-glossary เพื่อ "คุมการแปลให้เหมือนกัน"
 // ทำให้สำนวน/อารมณ์อ่านต่อเนื่อง และมีการพิสูจน์อักษรระดับมืออาชีพในตัว prompt
 const SHARED_CORE_RULES = `CONSISTENCY & READING FLOW (keep the reader's immersion unbroken across the whole chapter):
@@ -80,20 +80,6 @@ const SEED_PRESETS = [
 • Stay as close to the source meaning and sentence structure as Thai grammar allows.
 • Do NOT add creative embellishment, interpretation, or extra description beyond the source.
 • Prefer the most direct, accurate Thai equivalent for each phrase; keep sentence count where possible.`),
-  mkSeedPreset('seed-wuxia', 'แปลจีนกำลังภายใน', '🥋', 0.6, true,
-    'You specialize in Chinese-style wuxia / murim (กำลังภายใน) cultivation webnovels.',
-`WUXIA / MURIM STYLE:
-• Use a classical, slightly archaic Thai martial-arts register (เกียรติยศ, วรยุทธ์, ชี่, จอมยุทธ์, สำนัก, ตระกูล).
-• Render cultivation/realm/sect/technique terms consistently; keep honorifics (ท่าน, อาวุโส) per glossary.
-• Battle scenes: rhythmic and forceful; inner-energy descriptions vivid but controlled.
-• Keep the epic, honor-bound tone throughout.`),
-  mkSeedPreset('seed-medieval', 'แปลยุคกลางตะวันตก', '🏰', 0.6, true,
-    'You specialize in medieval / European high-fantasy webnovels (knights, kingdoms, magic).',
-`MEDIEVAL FANTASY STYLE:
-• Use a refined, slightly formal Thai register fitting nobility, knights, clergy, and royal courts.
-• Keep titles/ranks (อัศวิน, ขุนนาง, ราชา, ราชินี, เจ้าชาย) consistent with the glossary.
-• Render magic, monsters, and place names cleanly; preserve the grand, storybook atmosphere.
-• Nobles' dialogue elevated; commoners plainer — keep the contrast.`),
   mkSeedPreset('seed-literary', 'นิยายทั่วไป (วรรณกรรม)', '📖', 0.65, true,
     'You produce literary Thai prose that reads as if written by a gifted Thai novelist.',
 `LITERARY STYLE:
@@ -112,6 +98,34 @@ const SEED_PRESETS = [
 • Easy to scan, contemporary Thai for young-adult readers; no dense blocks.
 • Action stays kinetic and visceral.`),
 ];
+
+// preset แนวเรื่อง (กำลังภายใน / ยุคกลางตะวันตก) ถูกเอาออก — preset เหลือแค่ "สไตล์การแปล" ส่วนแนวเรื่องย้ายไปที่ "แนวนิยาย" (genrePreset)
+// ซึ่งมีคำศัพท์ + ระดับภาษาครบกว่า · เดิมมีสองที่ซ้ำกัน และเลือกขัดกันได้ (preset กำลังภายใน + แนวฮันเตอร์)
+// ตัวระบุ "ยังไม่ได้แก้" = ชื่อเดิม + บรรทัดหัวสไตล์เดิมยังอยู่ · ถ้าผู้ใช้แก้ไว้ → เก็บไว้ไม่แตะ
+const LEGACY_GENRE_PRESETS = {
+  'seed-wuxia':    { name: 'แปลจีนกำลังภายใน',  mark: 'WUXIA / MURIM STYLE:', genre: { ko: 'ko-murim', zh: 'zh-wuxia', en: 'en-cultivation' } },
+  'seed-medieval': { name: 'แปลยุคกลางตะวันตก', mark: 'MEDIEVAL FANTASY STYLE:', genre: { ko: 'ko-fantasy', en: 'en-fantasy' } },
+};
+// คืน true ถ้าเปลี่ยนข้อมูล · preset ที่เลือกใช้อยู่ → เปลี่ยนเป็น "นิยายทั่วไป" และตั้งแนวนิยายแทน (ถ้ายังไม่ได้ตั้ง) — ระบบภาษาโบราณ ข้า/ขอรับ ยังทำงานเหมือนเดิม
+function migrateGenrePresets(ws) {
+  if (!ws || !Array.isArray(ws.presets)) return false;
+  let changed = false;
+  ws.presets = ws.presets.filter(p => {
+    const legacy = LEGACY_GENRE_PRESETS[p?.id];
+    if (!legacy || p.name !== legacy.name || !String(p.systemPrompt || '').includes(legacy.mark)) return true;
+    if (ws.presetId === p.id) {
+      ws.settings = { ...(ws.settings || {}) };
+      const g = legacy.genre[ws.settings.sourceLang || 'ko'];
+      if (!ws.settings.genrePreset && g) ws.settings.genrePreset = g;
+      ws.presetId = '';
+    }
+    changed = true; return false;
+  });
+  if (!changed) return false;
+  if (!ws.presets.length) ws.presets = SEED_PRESETS.map(p => ({ ...p }));
+  if (!ws.presets.some(p => p.id === ws.presetId)) ws.presetId = (ws.presets.find(p => p.id === 'seed-literary') || ws.presets[0]).id;
+  return true;
+}
 
 // ─── User Styles & Presets helpers ───
 // รับประกันว่า workspace มี style/preset ของผู้ใช้อย่างน้อย 1 รายการ (seed ตัวอย่างให้ครั้งแรก)
