@@ -372,13 +372,18 @@ function _prevTranslationsArchaic(ws) {
     .sort((a, b) => (b.chapterNum || 0) - (a.chapterNum || 0)).slice(0, 3);
   if (!done.length) return false;
   const t = done.map(c => c.translation.slice(-6000)).join('\n');
-  const old = _reCount(t, /ข้า(?![งวมรศ])|ขอรับ|เจ้าค่ะ|เจ้าคะ/g);
+  // "ข้า" ต้องไม่ใช่ส่วนของ เข้า/แข้ง/ข้าง/ข้าว/ข้าม/ข้าราชการ/ข้าศึก/ข้าพเจ้า — เดิมนับ "เข้า" (เข้าเรียน เข้าใจ) ด้วย
+  // → นิยายปัจจุบันถูกมองเป็นเรื่องโบราณ แล้วตัวแก้เปลี่ยน ค่ะ → เจ้าค่ะ · ฉัน → ข้า ทุกครั้งที่แปล (เคสจริง: อะคาเดมีฮันเตอร์ ตอน 3)
+  const old = _reCount(t, /(?<![เแ])ข้า(?![งวมรศพ])|ขอรับ|เจ้าค่ะ|เจ้าคะ/g);
   const mod = _reCount(t, /ครับ|(?<!เจ้า)ค่ะ|(?<!เจ้า)คะ(?!แนน)/g) + _reCount(t.replace(/เส้นผม|ทรงผม|ผมยาว|ผมสั้น|ผมสี|ผมขาว|ผมดำ/g, ''), /ผม/g);
-  return old >= 8 && old > mod * 1.5;
+  // ต้องโบราณเป็นหลักชัดเจน (3 เท่า) — ตอนที่เคยถูกแก้ผิดเป็น เจ้าค่ะ ปนกับ ครับ จะไม่ลากตอนต่อไปให้ผิดตาม
+  return old >= 8 && old > mod * 3;
 }
 // สัญญาณ "แน่ใจ" ที่ไม่ขึ้นกับคำแทนตัวผู้เล่า (ใช้ตัดสินค่าอัตโนมัติของคำแทนตัว — กันวนซ้ำ)
 function _archaicSure(ws) {
   const genre = ws?.settings?.genrePreset || '';
+  // ผู้ใช้เลือกแนวปัจจุบันไว้เอง = ชัดเจนที่สุด → ไม่อนุมานจาก preset / Bible / ตอนก่อน
+  if (MODERN_SPEECH_GENRES.includes(genre)) return false;
   return ARCHAIC_SPEECH_GENRES.includes(genre)
     || (typeof getActivePreset === 'function' && ARCHAIC_PRESET_RE.test(getActivePreset(ws)?.systemPrompt || ''))
     || ARCHAIC_SHEET_RE.test(Object.values(ws?.styleSheet || {}).join(' '))
@@ -387,7 +392,7 @@ function _archaicSure(ws) {
 function archaicSpeechInfo(ws, text = '') {
   const st = ws?.settings || {}, genre = st.genrePreset || '';
   const explicitNarr = (st.consistencyLock && st.consistencySelfRef && st.consistencySelfRef !== 'auto' ? st.consistencySelfRef : '') || st.narratorSelf || '';
-  const sure = explicitNarr === 'ข้า' || _archaicSure(ws);
+  const sure = (explicitNarr === 'ข้า' && !MODERN_SPEECH_GENRES.includes(genre)) || _archaicSure(ws);
   const fromText = !sure && !MODERN_SPEECH_GENRES.includes(genre) && !!text
     && (_reCount(text, MURIM_SETTING_RE) + _reCount(text, ZH_ARCHAIC_TEXT_RE) + _reCount(text, KO_ARCHAIC_TEXT_RE)) >= 2;
   return { on: sure || fromText, sure };

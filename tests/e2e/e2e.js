@@ -460,6 +460,21 @@ const { chromium } = require(process.env.PLAYWRIGHT_PATH || 'playwright');
   ok('reader theme follows the device by default, manual choice remembered, also in the reading tab', rd.autoTheme && rd.chosen && rd.backAuto);
   ok('tap highlighted term → source + edit, apply to this & earlier chapters, compounds untouched, undo', rd.replace && rd.pop && rd.applied && rd.undo);
 
+  // 18) เรื่องปัจจุบันต้องไม่ถูกมองเป็นเรื่องโบราณ: "เข้า" ไม่ใช่ "ข้า" · แนวปัจจุบันที่ตั้งไว้ชนะการอนุมาน · ตอนที่เคยถูกแก้ผิดไม่ลากต่อ
+  const md = await ev(async () => {
+    const r = {};
+    const enter = 'ฉันเดินเข้าไปในห้อง เข้าใจแล้ว เธอเข้าเรียนที่นี่ ทุกคนเข้าแถว '.repeat(6);
+    const mk = async (st, trs) => { const w = { id: 'md' + Math.random(), name: 'md', glossary: [], customStyles: [], presets: [], chapters: trs.map((t, i) => ({ id: 'm' + i, chapterNum: i + 1, title: '' + (i + 1), sourceText: 'x', translation: t })), settings: { sourceLang: 'ko', ...st }, createdAt: Date.now() }; await lsSaveWorkspace(w); await selectWorkspace(w.id); return S.currentWs; };
+    let ws = await mk({}, [enter, enter, enter]);
+    r.enter = !archaicSpeechInfo(ws).sure && getNarratorSelf(ws) === 'ฉัน';
+    ws = await mk({ genrePreset: 'ko-modern' }, ['“ข้าน้อยเข้าใจแล้วขอรับ” “ข้ารออยู่เจ้าค่ะ”\n'.repeat(8)]);
+    r.modernWins = !archaicSpeechInfo(ws, '사부님 포권').on && applySpeakerFixes('“สวัสดีค่ะ ฉันชื่อเอเลีย”', null, ws).text === '“สวัสดีค่ะ ฉันชื่อเอเลีย”';
+    ws = await mk({}, ['“สวัสดีเจ้าค่ะ” “ยินดีครับ” “ข้าชื่อเอเลียเจ้าค่ะ” “ผมชื่อฮายูลครับ” '.repeat(5)]);
+    r.poisoned = !archaicSpeechInfo(ws).sure;
+    return r;
+  });
+  ok('modern story never flagged archaic ("เข้า" ≠ "ข้า", modern genre wins, a mis-fixed chapter does not spread)', md.enter && md.modernWins && md.poisoned);
+
   ok('no page errors', errors.length === 0); if (errors.length) console.log(errors);
   await browser.close(); process.exit(fail ? 1 : 0);
 })();

@@ -48,7 +48,7 @@ function llm(prompt, max = 4000) {
       }, [c, sm, GENRE[key] || '', MODEL]);
       const dl = (o.t.match(/[“"「][^”"」]*[”"」]/g) || []).join(' ');
       const n = re => (dl.match(re) || []).length;
-      const modern = n(/ผม(?!เผ้า|ขาว|ยาว)/g) + n(/ครับ/g) + n(/(?<!เจ้า)ค่ะ|(?<!เจ้า)คะ(?!แนน|เน)/g) + n(/(?<!ศิษย์)พี่/g), old = n(/ข้า(?![งวม])/g) + n(/ขอรับ/g) + n(/เจ้าค่ะ|เจ้าคะ/g);
+      const modern = n(/ผม(?!เผ้า|ขาว|ยาว)/g) + n(/ครับ/g) + n(/(?<!เจ้า)ค่ะ|(?<!เจ้า)คะ(?!แนน|เน)/g) + n(/(?<!ศิษย์)พี่/g), old = n(/(?<![เแ])ข้า(?![งวมรศพ])/g) + n(/ขอรับ/g) + n(/เจ้าค่ะ|เจ้าคะ/g);
       res.push(`${key} map=${sm ? 'ON ' : 'off'} modern(ผม/ครับ/ค่ะ/พี่)=${modern} old(ข้า/ขอรับ/เจ้าค่ะ)=${old}`);
       fs.appendFileSync(__dirname + `/out/archaic-${key}-${sm ? 'on' : 'off'}.txt`, o.t + '\n----BLOCK----\n' + o.block + '\n=====\n');
     }
