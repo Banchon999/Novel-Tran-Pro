@@ -531,7 +531,7 @@ function buildGenreBlock(ws, text) {
   if (!g) return '';
   const hints = genreTermHints(g, text, (ws || S.currentWs)?.glossary);
   return `━━━━━━━━━━━━━━━━━━━━
-GENRE GUIDE: ${g.name} — Thai conventions for this genre (the glossary always wins over this guide)
+GENRE GUIDE: ${g.name} — Thai conventions for this genre (the glossary and the style sheet always win over this guide)
 ━━━━━━━━━━━━━━━━━━━━
 ${g.guide}${hints.length ? `\n• Standard Thai renderings for this genre (use them unless the glossary says otherwise):\n${hints.join(' · ')}` : ''}`;
 }

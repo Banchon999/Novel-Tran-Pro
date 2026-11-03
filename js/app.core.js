@@ -33,19 +33,19 @@ const SHARED_CORE_RULES = `CONSISTENCY & READING FLOW (keep the reader's immersi
 • Write natural, fluent Thai that reads as continuous prose — never word-by-word or choppy MTL.
 • Follow the GLOSSARY exactly: same name/term → the same Thai every time; never invent variant spellings.
 • Keep tone, register, and each character's voice consistent sentence-to-sentence and chapter-wide.
-• Preserve paragraph breaks, sentence count, and pacing. Never add, omit, summarize, or reorder content.
-• Do not translate proper names unless they appear in the glossary.`;
+• Preserve paragraph breaks and pacing; keep the sentence count unless the style above says to split long sentences. Never add, omit, summarize, or reorder content.
+• Proper names not in the glossary: follow the style sheet's TRANSLITERATE vs TRANSLATE POLICY when there is one; otherwise transliterate them.`;
 
 const SHARED_PRONOUN_RULES = `THAI PRONOUN RULES — CRITICAL, NO EXCEPTIONS:
 • Male (gender:male) → 3rd: เขา/ของเขา | 1st in spoken dialogue: ผม/กู/ข้า (match register). NEVER use เธอ/นาง for males (ฉัน is fine in first-person narration and inner thoughts — see NARRATOR VOICE).
-• Female (gender:female) → 3rd: เธอ/นาง/ของเธอ | 1st: ฉัน/หนู/อิฉัน. NEVER use ผม/กู for females.
-• Unknown or unclear gender (no glossary gender, no 그/그녀 or he/she, no gendered address) → NEVER guess เขา or เธอ: repeat the name or title, or use a neutral form that fits the sentence (ท่าน for a superior or elder · อีกฝ่าย · คนผู้นั้น). This repetition is intended — do not "fix" it into เขา for flow. 1st person → ฉัน.
+• Female (gender:female) → 3rd: เธอ/นาง/ของเธอ | 1st in spoken dialogue: ฉัน/ดิฉัน/หนู/ข้า (match register; กู only for a rough speaker as the source shows). NEVER use ผม or เขา for females.
+• Unknown or unclear gender (no glossary gender, no 그/그녀 or he/she, no gendered address) → NEVER guess เขา or เธอ: repeat the name or title, or use a neutral form that fits the sentence (ท่าน for a superior or elder · อีกฝ่าย · คนผู้นั้น). This repetition is intended — do not "fix" it into เขา for flow. 1st person in spoken dialogue → ฉัน (narration → NARRATOR VOICE).
 • First-person narration and inner thoughts (나/저/我 etc.) → follow NARRATOR VOICE.`;
 
 const SHARED_PROOFREAD_RULES = `PROFESSIONAL PROOFREADING (พิสูจน์อักษรระดับมืออาชีพ) — the output must be publish-ready Thai:
 • Correct Thai spelling, vowels and tone marks (วรรณยุกต์), and word spacing; zero typos or doubled characters.
 • Clean Thai punctuation/spacing around quotes & parentheses; remove any leftover source-language characters or stray symbols.
-• Replace flat or repeated word choices with precise, idiomatic Thai; fix awkward word order.
+• Replace flat word choices with precise, idiomatic Thai and fix awkward word order — but never vary glossary terms, names, titles or pronouns, and keep a name or title that is repeated on purpose instead of เขา/เธอ.
 • Keep numbers, units, and names formatted cleanly and consistently.
 • Re-read the finished text once for naturalness and consistency before output.`;
 
@@ -202,16 +202,31 @@ function applyStyleSheet(systemPrompt, ws) {
 function applyContext(systemPrompt, contextStr) {
   if (!contextStr || !String(contextStr).trim() || systemPrompt.includes('{context}')) return systemPrompt;
   return injectPromptBlock(systemPrompt, `━━━━━━━━━━━━━━━━━━━━
-CONTEXT FROM EARLIER CHAPTERS (for consistency of names, terms and wording only — do NOT translate or output this)
+CONTEXT FROM EARLIER CHAPTERS (for consistency of names, terms and wording only — do NOT translate or output this; where it differs from the GLOSSARY, the glossary wins)
 ━━━━━━━━━━━━━━━━━━━━
 ${contextStr}`);
+}
+
+// ลำดับความสำคัญเมื่อกฎขัดกัน — prompt แปลประกอบจากหลายบล็อก (preset · คลังศัพท์ · Bible · ผู้เล่า · แผนที่ผู้พูด · แนวนิยาย · บริบท)
+// ไม่บอกลำดับ → โมเดลเลือกเองคนละแบบในแต่ละตอน
+const RULE_PRIORITY_BLOCK = `━━━━━━━━━━━━━━━━━━━━
+WHEN TWO RULES DISAGREE — follow the one higher in this list
+━━━━━━━━━━━━━━━━━━━━
+1. GLOSSARY — names, terms, and each character's gender / pronoun note.
+2. TRANSLATION STYLE SHEET (this novel's bible) — world, transliteration policy, recurring terms, character voices.
+3. NARRATOR VOICE and the DIALOGUE SPEAKER MAP — the narration word, each line's self-pronoun and particle.
+4. The style rules above, the GENRE GUIDE and the STYLE GUIDE.
+5. Context from earlier chapters — a wording reference only; where it differs from 1–3, follow 1–3.`;
+function applyRulePriority(systemPrompt) {
+  if (typeof systemPrompt !== 'string' || systemPrompt.includes('WHEN TWO RULES DISAGREE')) return systemPrompt;
+  return injectPromptBlock(systemPrompt, RULE_PRIORITY_BLOCK);
 }
 
 function buildTranslatePrompt({ sourceText, glossaryStr = '', contextStr = '', styleNote = '', ws = null, mtlDraft = '', speakerMap = null }) {
   const preset = getActivePreset(ws);
   const lws = wsForText(ws, sourceText);   // กฎภาษาตามต้นฉบับที่แปลจริง
   // langify ทำท้ายสุด: บล็อกกฎที่แทรกภายหลัง (ครับ/ค่ะ, เพศ) มีตัวอย่างภาษาเกาหลี — ตัดออกเมื่อต้นฉบับไม่ใช่เกาหลี
-  return langify(applyContext(applySpeakerMap(applyNarratorVoice(applyParticleRules(applyStyleSheet(applyConsistencyLock(applyGenreNotes(applyLangNotes(preset.systemPrompt, lws), lws, sourceText), ws), ws)), ws), speakerMap), contextStr), lws)
+  return langify(applyRulePriority(applyContext(applySpeakerMap(applyNarratorVoice(applyParticleRules(applyStyleSheet(applyConsistencyLock(applyGenreNotes(applyLangNotes(preset.systemPrompt, lws), lws, sourceText), ws), ws)), ws), speakerMap), contextStr)), lws)
     .replace('{style_note}', styleNote ? `STYLE GUIDE:\n${styleNote}\n` : '')
     .replace('{glossary}',   glossaryStr || '(ไม่มี)')
     .replace('{context}',   contextStr)
@@ -225,21 +240,21 @@ function buildTranslatePrompt({ sourceText, glossaryStr = '', contextStr = '', s
 function buildConsistencyBlock(selfRef, narr = 'ฉัน') {
   const sr = (selfRef && selfRef !== 'auto') ? selfRef : (narr && narr !== 'gender' ? narr : '');
   const defaultRule = sr
-    ? `• Unless the source explicitly indicates otherwise, render first-person narration/self-reference as "${sr}" and keep it fixed for the ENTIRE passage.\n• Do NOT substitute other first-person forms (ฉัน/ผม/ข้า/ข้าพเจ้า/กระผม/ดิฉัน ฯลฯ) and do NOT upgrade or downgrade the level of formality.`
-    : `• When the source does not specify, derive the narrator's 1st-person Thai word from the glossary gender (male→ผม, female→ฉัน, unknown→ฉัน) and keep it fixed for the whole passage.\n• Do NOT upgrade or downgrade the level of formality beyond what the source/glossary supports.`;
+    ? `• Unless the source explicitly indicates otherwise, render first-person NARRATION and inner thoughts as "${sr}" and keep it fixed for the ENTIRE passage.\n• In narration, do NOT substitute other first-person forms (ฉัน/ผม/ข้า/ข้าพเจ้า/กระผม/ดิฉัน ฯลฯ). Spoken dialogue is not narration: each speaker's self-pronoun follows NARRATOR VOICE, CHARACTER VOICES and the speaker map.`
+    : `• When the source does not specify, derive the narrator's 1st-person NARRATION word from the glossary gender (male→ผม, female→ฉัน, unknown→ฉัน) and keep it fixed for the whole passage. Spoken dialogue follows NARRATOR VOICE and the speaker map.`;
   return `━━━━━━━━━━━━━━━━━━━━
 PRONOUN CONSISTENCY CONTROL (ล็อกสรรพนาม) — CRITICAL
 ━━━━━━━━━━━━━━━━━━━━
-• Once a 1st/2nd/3rd-person reference is established for a character within the current passage, keep that EXACT Thai form for the rest of the passage unless the source explicitly requires a change.
-• Do NOT alternate Thai pronouns for stylistic variation (e.g. ฉัน↔ผม↔ข้าพเจ้า, นาย↔คุณ↔แก, เขา↔เธอ).
-• When the source omits the subject or uses bare forms (나는/내가/저는/제가 or a dropped subject), REUSE the previously established form — never re-interpret it.
+• Once a 1st/2nd/3rd-person reference is established for a character in a given use — the narration word, their spoken self-pronoun toward a given listener, how others address them — keep that EXACT Thai form for the rest of the passage unless the source explicitly requires a change.
+• Do NOT alternate Thai pronouns for stylistic variation (e.g. ผม↔ข้าพเจ้า in one speaker's lines, นาย↔คุณ↔แก, เขา↔เธอ). The narration word and each speaker's dialogue pronoun are locked separately (see NARRATOR VOICE).
+• When the source omits the subject or uses bare forms (나는/내가/저는/제가 or a dropped subject), REUSE the form already established for that same use (narration, or that speaker's dialogue) — never re-interpret it.
 • Narrative consistency outweighs stylistic diversity. Use the minimum interpretation needed to stay consistent.
 
 ━━━━━━━━━━━━━━━━━━━━
 REGISTER CONSISTENCY (ล็อกระดับภาษา)
 ━━━━━━━━━━━━━━━━━━━━
-• Once a speaker's Thai speech register is established, preserve it throughout the passage.
-• Do NOT fluctuate between colloquial / neutral / polite / formal / literary / archaic Thai without explicit evidence from the source.
+• Once a speaker's Thai speech register toward a given listener is established, preserve it throughout the passage.
+• Do NOT fluctuate between colloquial / neutral / polite / formal / literary / archaic Thai without explicit evidence from the source. A change of listener or situation that the source shows (casual to a peer, polite to a superior) is evidence.
 • Avoid unnecessary variation in self-reference and address terms.
 • Keep each speaker's polite particles (ครับ/ค่ะ/คะ…) consistent with their gender and established register.
 
@@ -273,9 +288,9 @@ SPEECH PARTICLE RULES (คำลงท้าย ครับ/ค่ะ) — CRIT
 • Royal register: male speaker → พ่ะย่ะค่ะ · female speaker → เพคะ.
 • NEVER mix male and female particles inside one line of dialogue.
 • The particle must agree with the speaker's self-pronoun in the same line (ผม/กระผม → ครับ · ดิฉัน/อิฉัน → ค่ะ/คะ).
-• If the speaker or their gender is unclear, do NOT guess: use a gender-neutral ending (นะ, จ้ะ, or no particle) instead.
+• If the speaker or their gender is unclear, do NOT guess: use a gender-neutral ending (นะ, or no particle) instead.
 • Forms of address follow the gender of the person ADDRESSED (공자님/도련님 → คุณชาย · 아가씨/영애 → คุณหนู · 부인 → ท่านหญิง/คุณนาย); never call a male character คุณหนู or a female one คุณชาย.
-• Narration pronouns follow each character's gender: male → เขา · female → เธอ/นาง — check the glossary before every เขา/เธอ/นาง.
+• Narration pronouns follow each character's gender: male → เขา · female → เธอ/นาง · unknown → no เขา/เธอ/นาง (repeat the name/title, as the glossary line says) — check the glossary before every เขา/เธอ/นาง.
 • If the Korean source itself uses a wrong-gender pronoun for a character whose gender is in the glossary (a typo such as 그녀 for a male), follow the glossary gender — silently: never add notes, brackets or explanations to the translation.`;
 
 // แทรกบล็อกกฎเข้า prompt ของ preset — วางต่อจาก {glossary} (ห่างจากต้นฉบับ)
@@ -303,6 +318,11 @@ function narratorSelfFor(ws, gender) {
   const n = getNarratorSelf(ws);
   return n !== 'gender' ? n : gender === 'male' ? 'ผม' : 'ฉัน';
 }
+// ฉากยุคโบราณ/ยุทธภพ/วังจีน: บทพูดสุภาพใช้ ข้า/ข้าน้อย + ขอรับ/เจ้าค่ะ ไม่ใช่ ผม + ครับ (เดิมกฎ "ชายสุภาพ → ผม" ขัดกับแนวทางแนวนิยาย)
+const ARCHAIC_SPEECH_GENRES = ['ko-murim', 'zh-xianxia', 'zh-wuxia', 'zh-palace', 'en-cultivation'];
+function archaicSpeech(ws) {
+  return getNarratorSelf(ws) === 'ข้า' || ARCHAIC_SPEECH_GENRES.includes(ws?.settings?.genrePreset);
+}
 function buildNarratorBlock(ws) {
   const n = getNarratorSelf(ws);
   const rule = n === 'gender'
@@ -310,21 +330,31 @@ function buildNarratorBlock(ws) {
     : `• First-person narration and inner thoughts / self-talk (‘…’ thoughts, monologue, anything not said aloud) → "${n}" for the narrator, male or female alike${n === 'ฉัน' ? ' — the standard of published Thai web-novel translations; a male narrator using ฉัน here is NOT a gender error' : ''}.`;
   return `NARRATOR VOICE (คำแทนตัวผู้เล่า) — CRITICAL:
 ${rule}
-• Spoken dialogue (“…”) follows the speaker and whom they address: a male speaking politely → ผม + ครับ · a female → ฉัน/ดิฉัน + ค่ะ · rough or archaic speech → กู / ข้า as the source shows.
+${archaicSpeech(ws)
+  ? '• Spoken dialogue (“…”) follows the speaker, whom they address and this historical setting: ข้า (humble ข้าน้อย, or the rank words in the GENRE GUIDE) — a male speaking politely ends with ขอรับ · a female with เจ้าค่ะ · rough speech as the source shows. Do not use modern ผม + ครับ here unless the style sheet says so.'
+  : '• Spoken dialogue (“…”) follows the speaker and whom they address: a male speaking politely → ผม + ครับ · a female → ฉัน/ดิฉัน + ค่ะ · rough or archaic speech → กู / ข้า as the source shows.'}
 • Keep the narration word identical for the whole chapter — never switch the narration between ฉัน and ผม.`;
 }
 // preset ที่ผู้ใช้บันทึกไว้ก่อนหน้ามีกฎเก่า "NEVER use ฉัน for males" ฝังอยู่ → แก้ตอนสร้าง prompt
 const _OLD_PRONOUN_LINES = [
   ['| 1st: ผม/กู/ข้า (match register). NEVER use ฉัน/เธอ/นาง for males.', '| 1st in spoken dialogue: ผม/กู/ข้า (match register). NEVER use เธอ/นาง for males (ฉัน is fine in first-person narration and inner thoughts — see NARRATOR VOICE).'],
   ["• First-person narration (나/저/我 etc.) → use the narrator's gender from the glossary; do not default blindly.", '• First-person narration and inner thoughts (나/저/我 etc.) → follow NARRATOR VOICE.'],
-  ['• Unknown gender → use เขา (3rd) / ฉัน (1st) as default until clarified.', '• Unknown or unclear gender (no glossary gender, no 그/그녀 or he/she, no gendered address) → NEVER guess เขา or เธอ: repeat the name or title, or use a neutral form that fits the sentence (ท่าน for a superior or elder · อีกฝ่าย · คนผู้นั้น). This repetition is intended — do not "fix" it into เขา for flow. 1st person → ฉัน.'],
+  ['• Unknown gender → use เขา (3rd) / ฉัน (1st) as default until clarified.', '• Unknown or unclear gender (no glossary gender, no 그/그녀 or he/she, no gendered address) → NEVER guess เขา or เธอ: repeat the name or title, or use a neutral form that fits the sentence (ท่าน for a superior or elder · อีกฝ่าย · คนผู้นั้น). This repetition is intended — do not "fix" it into เขา for flow. 1st person in spoken dialogue → ฉัน (narration → NARRATOR VOICE).'],
   ['• Thai pronouns: Male→เขา/ผม | Female→เธอ/ฉัน', '• Thai pronouns: Male→เขา, ผม in spoken dialogue | Female→เธอ/ฉัน · narration & inner thoughts → NARRATOR VOICE'],
 ];
+// กฎในชุด preset ที่ขัดกับบล็อกอื่น (แก้ใน workspace เดิมตอนสร้าง prompt — preset เก็บข้อความเต็มไว้)
+const _CONFLICT_LINES = [
+  ['• Preserve paragraph breaks, sentence count, and pacing. Never add, omit, summarize, or reorder content.', '• Preserve paragraph breaks and pacing; keep the sentence count unless the style above says to split long sentences. Never add, omit, summarize, or reorder content.'],   // ขัดกับสไตล์เว็บตูน "แตกประโยคยาว"
+  ['• Do not translate proper names unless they appear in the glossary.', "• Proper names not in the glossary: follow the style sheet's TRANSLITERATE vs TRANSLATE POLICY when there is one; otherwise transliterate them."],   // ขัดกับนโยบายทับศัพท์/แปลความหมายใน Bible
+  ['• Female (gender:female) → 3rd: เธอ/นาง/ของเธอ | 1st: ฉัน/หนู/อิฉัน. NEVER use ผม/กู for females.', '• Female (gender:female) → 3rd: เธอ/นาง/ของเธอ | 1st in spoken dialogue: ฉัน/ดิฉัน/หนู/ข้า (match register; กู only for a rough speaker as the source shows). NEVER use ผม or เขา for females.'],   // ห้าม กู ขัดกับ "พูดหยาบ → กู" · 1st ไม่ระบุว่าเฉพาะบทพูด
+  ['do not "fix" it into เขา for flow. 1st person → ฉัน.', 'do not "fix" it into เขา for flow. 1st person in spoken dialogue → ฉัน (narration → NARRATOR VOICE).'],   // ขัดกับผู้เล่าใช้ ข้า/ผม
+  ['• Replace flat or repeated word choices with precise, idiomatic Thai; fix awkward word order.', '• Replace flat word choices with precise, idiomatic Thai and fix awkward word order — but never vary glossary terms, names, titles or pronouns, and keep a name or title that is repeated on purpose instead of เขา/เธอ.'],   // "เปลี่ยนคำซ้ำ" ขัดกับคลังศัพท์ + การเรียกชื่อซ้ำแทน เขา/เธอ
+];
 function applyNarratorVoice(systemPrompt, ws) {
-  if (typeof systemPrompt !== 'string' || systemPrompt.includes('NARRATOR VOICE (คำแทนตัวผู้เล่า)')) return systemPrompt;
+  if (typeof systemPrompt !== 'string') return systemPrompt;
   let t = systemPrompt;
-  for (const [a, b] of _OLD_PRONOUN_LINES) t = t.split(a).join(b);
-  return injectPromptBlock(t, buildNarratorBlock(ws));
+  for (const [a, b] of [..._OLD_PRONOUN_LINES, ..._CONFLICT_LINES]) t = t.split(a).join(b);   // แก้เสมอ แม้ prompt จะมีบล็อกผู้เล่าอยู่แล้ว
+  return t.includes('NARRATOR VOICE (คำแทนตัวผู้เล่า)') ? t : injectPromptBlock(t, buildNarratorBlock(ws));
 }
 
 function applyParticleRules(systemPrompt) {
@@ -388,7 +418,7 @@ const POLISH_PROMPT = `You are a professional Thai literary editor and proofread
 Refine this Thai translation for natural flow, readability, and narrative immersion — without changing meaning.
 
 RULES:
-• Fix unnatural structures and awkward word order; improve flat or repeated word choices.
+• Fix unnatural structures and awkward word order; improve flat word choices — but never vary a glossary term, name, title or pronoun, and keep a repeated name or title that stands in for เขา/เธอ.
 • Correct Thai spelling, vowels, tone marks (วรรณยุกต์), and word spacing; remove typos, doubled characters, and any stray source-language characters or symbols.
 • Keep tone, character voice, and pacing consistent; do NOT add, omit, or alter meaning.
 • Preserve all glossary terms exactly as given.
@@ -903,8 +933,9 @@ function glossaryStoryContext(ws, lang) {
   if (g && (!lang || g.lang === lang)) parts.push(`Genre: ${g.name} — ${g.desc}`);
   const ss = ws?.styleSheet || {};
   if (String(ss.world || '').trim()) parts.push(`World (from the novel bible):\n${String(ss.world).trim().slice(0, 700)}`);
-  if (String(ss.terms || '').trim()) parts.push(`Translator's decided terms:\n${String(ss.terms).trim().slice(0, 800)}`);
-  if (String(ss.glossRules || '').trim()) parts.push(`This novel's glossary rules (follow them over the generic STEP 2 lists):\n${String(ss.glossRules).trim().slice(0, 700)}`);
+  if (String(ss.translit || '').trim()) parts.push(`Transliterate vs translate policy (from the novel bible — follow it over the generic STEP 5 rules):\n${String(ss.translit).trim().slice(0, 600)}`);
+  if (String(ss.terms || '').trim()) parts.push(`Translator's decided terms (use these renderings over the genre's standard ones):\n${String(ss.terms).trim().slice(0, 800)}`);
+  if (String(ss.glossRules || '').trim()) parts.push(`This novel's glossary rules (follow them over the generic STEP 2–5 rules and the genre lists):\n${String(ss.glossRules).trim().slice(0, 700)}`);
   const ctx = typeof ctxGetPromptText === 'function' ? ctxGetPromptText(ws) : '';
   if (ctx) parts.push(`Story so far (Thai chapter summaries, latest last):\n${ctx.slice(-1500)}`);
   return parts.join('\n') || '(not provided — infer the setting from the text)';
@@ -950,7 +981,7 @@ function langifyGlossaryPrompt(tpl, ws, lang) {
   }
   const g = typeof getGenrePreset === 'function' ? getGenrePreset(ws) : null;
   if (g && g.lang === code && !t.includes('GENRE (')) {
-    t = _glossInsert(t, `GENRE (${g.name}) — follow these Thai conventions for new terms:\n${g.guide}${g.gloss ? `\nWHAT TO LOCK IN THIS GENRE: ${g.gloss}` : ''}\nStandard renderings for this genre: ${g.terms.map(([s, th]) => s + ' = ' + th).join(' · ')}`);
+    t = _glossInsert(t, `GENRE (${g.name}) — follow these Thai conventions for new terms (the translator's decided terms and glossary rules in STORY CONTEXT win over them):\n${g.guide}${g.gloss ? `\nWHAT TO LOCK IN THIS GENRE: ${g.gloss}` : ''}\nStandard renderings for this genre: ${g.terms.map(([s, th]) => s + ' = ' + th).join(' · ')}`);
   }
   return t;
 }

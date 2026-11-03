@@ -114,7 +114,7 @@ const { chromium } = require(process.env.PLAYWRIGHT_PATH || 'playwright');
       block: p1.includes('NARRATOR VOICE') && p1.includes('→ "ฉัน" for the narrator, male or female alike'), oldGone: !p1.includes('NEVER use ฉัน/เธอ/นาง for males') && !p1.includes("use the narrator's gender from the glossary; do not default blindly"),
       once: p1.split('NARRATOR VOICE (').length === 2,
       smThought: sm.includes('‘…’ thought → 이하율') && /thought[^\n]*self: ฉัน/.test(sm), smSpoken: /“…”[^\n]*self: ผม/.test(sm),
-      lock: cl.includes('render first-person narration/self-reference as "ฉัน"'),
+      lock: cl.includes('render first-person NARRATION and inner thoughts as "ฉัน"'),
       def, saved, p2: p2.includes('→ "ผม" for the narrator'), sm2: /thought[^\n]*self: ผม/.test(sm2), p3: p3.includes('male → ผม · female → ฉัน'),
       polish: POLISH_PROMPT.includes('never change ฉัน ↔ ผม'),
     };
@@ -280,6 +280,35 @@ const { chromium } = require(process.env.PLAYWRIGHT_PATH || 'playwright');
   ok('bible apply: language + genre + preset + narrator + synopsis set', bb.lang === 'ko' && bb.genre === 'ko-academy' && bb.preset && (bb.narr || '') === '' && !bb.ids.some(x => x.startsWith('bb-set-narr')) && bb.desc === 'อีฮายุลเข้าเรียนที่ชียอรัม');
   ok('bible apply: fields saved, old field kept, characters/titles added with gender', bb.world && bb.termsKept && bb.glossRules && bb.hayul === 'male' && bb.elia === 'female' && bb.dir);
   ok('bible feeds prompts: world → translate + glossary · glossary rules → glossary only', bb.tpWorld && bb.tpNoRules && bb.gpWorld && bb.gpGenre);
+
+  // 12) prompt ไม่สั่งขัดกันเอง: ลำดับความสำคัญ · ล็อกสรรพนามแยกบรรยาย/บทพูด · preset เก่าถูกแก้กฎที่ขัด · ยุทธภพใช้ ข้า ไม่ใช่ ผม
+  const cf = await ev(async () => {
+    const now = Date.now();
+    const old = 'You translate.\n• Preserve paragraph breaks, sentence count, and pacing. Never add, omit, summarize, or reorder content.\n• Do not translate proper names unless they appear in the glossary.\n• Female (gender:female) → 3rd: เธอ/นาง/ของเธอ | 1st: ฉัน/หนู/อิฉัน. NEVER use ผม/กู for females.\n• Replace flat or repeated word choices with precise, idiomatic Thai; fix awkward word order.\nGLOSSARY:\n{glossary}\n\n{text}';
+    const w = { id: 'cf' + now, name: 'ขัดกัน', glossary: [{ korean: '레온', thai: 'เลออน', type: 'character', gender: 'male' }], customStyles: [],
+      presets: [{ id: 'p-old', name: 'เก่า', emoji: '📖', systemPrompt: old, temperature: 0.5 }], presetId: 'p-old', chapters: [],
+      settings: { sourceLang: 'ko', genrePreset: 'ko-academy', consistencyLock: true, consistencySelfRef: 'auto' }, createdAt: now };
+    await lsSaveWorkspace(w); await selectWorkspace(w.id);
+    const src = '레온은 고개를 끄덕였다. “알겠습니다.”';
+    const p = buildTranslatePrompt({ sourceText: src, glossaryStr: buildGlossaryStr({ 레온: w.glossary[0] }), ws: S.currentWs });
+    const map = [{ speaker: '레온', gender: 'male', kind: 'dq', q: '알겠습니다.' }, { speaker: '레온', gender: 'male', kind: 'dq', q: '가자' }];
+    const smModern = speakerMapPromptBlock(map, S.currentWs);
+    S.currentWs.settings.genrePreset = 'ko-murim';
+    const smMurim = speakerMapPromptBlock(map, S.currentWs), pMurim = buildTranslatePrompt({ sourceText: src, ws: S.currentWs });
+    const pri = p.indexOf('WHEN TWO RULES DISAGREE');
+    return { pri: pri > p.indexOf('GLOSSARY:') && pri < p.indexOf('NARRATOR VOICE'),
+      oldFixed: !p.includes('sentence count, and pacing') && !p.includes('unless they appear in the glossary') && !p.includes('NEVER use ผม/กู for females') && !p.includes('flat or repeated'),
+      lockScoped: p.includes('first-person NARRATION and inner thoughts as "ฉัน"') && p.includes('Spoken dialogue is not narration') && !p.includes('narration/self-reference'),
+      registerByListener: p.includes('toward a given listener'),
+      noJa: !p.includes('จ้ะ'),
+      modern: smModern.includes('self: ผม') && smModern.includes('ฉัน/ผม by register') && !smModern.includes('ผม/ข้า'),
+      murim: smMurim.includes('ขอรับ, self: ข้า') && !smMurim.includes('self: ผม') && pMurim.includes('Do not use modern ผม + ครับ here'),
+      genreYields: p.includes('the glossary and the style sheet always win') };
+  });
+  ok('prompt priority block sits right after the glossary', cf.pri);
+  ok('saved old preset: conflicting lines rewritten at runtime', cf.oldFixed);
+  ok('consistency lock: narration word locked, dialogue pronouns not forced', cf.lockScoped && cf.registerByListener && cf.noJa);
+  ok('speaker map self-word follows setting (modern ผม · murim ข้า)', cf.modern && cf.murim && cf.genreYields);
 
   ok('no page errors', errors.length === 0); if (errors.length) console.log(errors);
   await browser.close(); process.exit(fail ? 1 : 0);

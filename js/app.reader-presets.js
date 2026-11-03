@@ -4,7 +4,7 @@ function prevChapterTail(ch, ws = S.currentWs) {
   const i = sorted.findIndex(c => c.id === ch.id);
   for (let j = i - 1; j >= Math.max(0, i - 3); j--) {
     const t = sorted[j]?.translation?.trim();
-    if (t) return `### ท้ายคำแปลตอนก่อน (#${sorted[j].chapterNum || '?'}) — ตัวอย่างสำนวนที่ใช้มาแล้ว: ใช้ชื่อ คำเรียก และสำนวนให้ต่อเนื่องกับข้อความนี้ ห้ามแปลหรือคัดลอกซ้ำ\n${t.slice(-getPrevCtxChars())}`;
+    if (t) return `### ท้ายคำแปลตอนก่อน (#${sorted[j].chapterNum || '?'}) — ตัวอย่างสำนวนที่ใช้มาแล้ว: ใช้ชื่อ คำเรียก และสำนวนให้ต่อเนื่องกับข้อความนี้ ห้ามแปลหรือคัดลอกซ้ำ · ถ้าชื่อ/คำ/เพศในนี้ขัดกับ GLOSSARY ให้ยึด GLOSSARY\n${t.slice(-getPrevCtxChars())}`;
   }
   return '';
 }

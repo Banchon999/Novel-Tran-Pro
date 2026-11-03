@@ -59,7 +59,7 @@ function splitText(text) {
 function buildGlossaryStr(wsGlossary) {
   const GENDER_MAP   = { male: 'male/ชาย', female: 'female/หญิง', neutral: 'neutral/กลาง' };
   const PRONOUN_3RD  = { male: '3rd→เขา/ของเขา', female: '3rd→เธอ/นาง/ของเธอ' };
-  const PRONOUN_1ST  = { male: '1st in speech→ผม/กู/ข้า', female: '1st→ฉัน/หนู/อิฉัน' };   // บรรยาย/คิดในใจ → NARRATOR VOICE
+  const PRONOUN_1ST  = { male: '1st in speech→ผม/กู/ข้า', female: '1st in speech→ฉัน/ดิฉัน/หนู/ข้า' };   // บรรยาย/คิดในใจ → NARRATOR VOICE
   const PARTICLE     = { male: 'particle→ครับ/ขอรับ', female: 'particle→ค่ะ/คะ' };
   const entries = Object.entries(wsGlossary || {});
   if (!entries.length) return '(ไม่มี)';
@@ -337,8 +337,10 @@ function speakerMapPromptBlock(map, ws = S.currentWs) {
   // ระดับภาษาเกาหลี: สุภาพ (요/니다) → ใส่ ครับ/ค่ะ · ภาษาปกติ (반말/하다체) → ไม่ใส่หางเสียง (ขุนนางคุยกับคนรับใช้, อาจารย์สั่งศิษย์)
   const end = (g, lv) => {
     if (g !== 'male' && g !== 'female') return 'no gendered particle';
-    const self = g === 'male' ? 'ผม/ข้า' : 'ฉัน/ข้า';
+    const old = archaicSpeech(ws);
+    const self = old ? 'ข้า' : g === 'male' ? 'ฉัน/ผม by register (never ดิฉัน)' : 'ฉัน (never ผม)';
     if (lv === 'plain') return `plain speech → no ครับ/ค่ะ, self: ${self}`;
+    if (old) return g === 'male' ? 'polite → ขอรับ, self: ข้า/ข้าน้อย' : 'polite → เจ้าค่ะ, self: ข้า/ข้าน้อย';
     return g === 'male' ? 'polite → ครับ/ขอรับ, self: ผม' : 'polite → ค่ะ/คะ, self: ฉัน/ดิฉัน';
   };
   const lines = map.filter(m => m.speaker && m.speaker !== '-' && m.speaker !== '?').map((m, i) => {
@@ -1872,7 +1874,7 @@ let _frHistory = (() => { try { return JSON.parse(sessionStorage.getItem('fr_his
 
 // ─── Translation Context Memory ───
 const CTX_SUMMARY_PROMPT = `วิเคราะห์และสรุปบทนี้สำหรับใช้เป็น context ในการแปลตอนถัดไป โดยระบุ:
-1. ตัวละครที่ปรากฏ: ชื่อ, เพศ, สรรพนามที่ใช้แทนตัว (ผม/ฉัน/เรา/กู ฯลฯ)
+1. ตัวละครที่ปรากฏ: ชื่อ, เพศ (เฉพาะที่ข้อความบอกชัด — ถ้าไม่ชัดเขียน "ไม่ทราบเพศ" ห้ามเดา), สรรพนามที่ใช้แทนตัว (ผม/ฉัน/เรา/กู ฯลฯ)
 2. เหตุการณ์สำคัญ (2-3 ประโยค)
 3. อารมณ์/บรรยากาศท้ายตอน
 
@@ -1904,7 +1906,7 @@ function ctxGetPromptText(ws) {
     const label = s.compressed ? `📚 ${s.title}` : `ตอน ${s.chapterNum}${s.title ? ': ' + s.title : ''}`;
     return `[${label}]\n${s.text}`;
   });
-  return `### บริบทเรื่องที่ผ่านมา (ใช้เพื่อความสอดคล้องในการแปล — ห้ามแปลส่วนนี้)\n${parts.join('\n\n')}`;
+  return `### บริบทเรื่องที่ผ่านมา (ใช้เพื่อความสอดคล้องในการแปล — ห้ามแปลส่วนนี้ · ถ้าขัดกับ GLOSSARY ให้ยึด GLOSSARY)\n${parts.join('\n\n')}`;
 }
 
 async function ctxAddSummary(ws, chId, chapterNum, title, translatedText) {

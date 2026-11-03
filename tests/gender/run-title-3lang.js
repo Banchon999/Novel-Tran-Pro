@@ -11,22 +11,24 @@ const curl = body => new Promise(r => { const f = `${OUT}/q-${process.pid}-${Mat
   const args = ['-sS', '--max-time', '240', '-X', 'POST', 'https://openrouter.ai/api/v1/chat/completions', '-H', 'Content-Type: application/json', '--data-binary', '@' + f];
   if (process.env.OPENROUTER_API_KEY) args.push('-H', 'Authorization: Bearer ' + process.env.OPENROUTER_API_KEY);
   execFile('curl', args, { maxBuffer: 5e7 }, (e, o) => { fs.unlinkSync(f); r(o || ''); }); });
+// EXTRA_SETTINGS='{"consistencyLock":true}' → ทดสอบกับค่าตั้ง workspace เพิ่มเติม (เช่น ล็อกสรรพนาม)
+const EXTRA = JSON.parse(process.env.EXTRA_SETTINGS || '{}');
 const n = (s, re) => (s.match(re) || []).length;
 (async () => {
   const br = await chromium.launch(); const p = await (await br.newContext({ serviceWorkers: 'block' })).newPage();
   await p.goto(`http://localhost:${PORT}/index.html`); await p.waitForTimeout(800);
   const prompts = {};
   for (const [lang, c] of Object.entries(C)) for (const mode of ['A', 'B', 'X'])
-    prompts[`${lang}|${mode}`] = await p.evaluate(async ([lang, c, mode]) => {
+    prompts[`${lang}|${mode}`] = await p.evaluate(async ([lang, c, mode, extra]) => {
       const title = { korean: c.title, thai: 'ผู้อำนวยการ', type: 'title', note: 'head of the academy', ...(mode === 'A' ? { gender: 'female' } : {}) };
       const glossary = [title, { korean: c.narr[0], thai: c.narr[1], type: 'character', gender: 'male' }, { korean: c.other[0], thai: c.other[1], type: 'character', gender: 'female' },
         mode === 'X' ? { korean: c.inst[0], thai: c.inst[1], type: 'title' } : { korean: c.place[0], thai: c.place[1], type: 'place' }];
-      const w = { id: lang + mode + Date.now(), name: 'Academy', glossary, customStyles: [], presets: [], chapters: [], settings: { sourceLang: lang, speakerMap: false }, createdAt: Date.now() };
+      const w = { id: lang + mode + Date.now(), name: 'Academy', glossary, customStyles: [], presets: [], chapters: [], settings: { sourceLang: lang, speakerMap: false, ...extra }, createdAt: Date.now() };
       await lsSaveWorkspace(w); await selectWorkspace(w.id);
       if (mode === 'X') return fillGlossaryPrompt(agGetPrompt(lang), { ws: S.currentWs, text: c.extractText, lang });
       const g = {}; for (const e of S.currentWs.glossary) g[e.korean] = e;
       return buildTranslatePrompt({ sourceText: c.text, glossaryStr: buildGlossaryStr(g), ws: S.currentWs });
-    }, [lang, c, mode]);
+    }, [lang, c, mode, EXTRA]);
   await br.close();
   let cost = 0, bad = 0;
   const jobs = [];
