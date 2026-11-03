@@ -13,7 +13,7 @@ const { chromium } = require(process.env.PLAYWRIGHT_PATH || 'playwright');
     const realFetch = window.fetch;
     window.fetch = async (url, opts = {}) => {
       if (!String(url).includes('openrouter.ai')) return realFetch(url, opts);
-      window.__calls++;
+      window.__calls++; (window.__models ||= []).push(JSON.parse(opts.body || '{}').model);
       const step = window.__plan.length ? window.__plan.shift() : 'ok:คำแปล';
       if (step === 'err') return new Response('{"error":{"message":"boom"}}', { status: 500 });
       if (step === 'hang') return new Promise((_, rej) => opts.signal?.addEventListener('abort', () => rej(new DOMException('aborted', 'AbortError'))));
@@ -490,6 +490,23 @@ const { chromium } = require(process.env.PLAYWRIGHT_PATH || 'playwright');
   });
   ok('full names that contain a glossary name reach the translator · half-translated names repaired without eating nearby Thai', nm.names && nm.repair);
   ok('source dialogue with mismatched quote marks ("…“) still counted', nm.quotes);
+
+  // 20) โมเดลช่วยติด rate limit / ล่ม → รอบสองใช้โมเดลแปลแทน · ล้มทั้งสองรอบ → เตือนผู้ใช้ (เดิมเงียบ)
+  const fb = await ev(async () => {
+    const r = {};
+    const w = { id: 'fb' + Date.now(), name: 'fb', glossary: [], customStyles: [], chapters: [], settings: { sourceLang: 'ko', speakerMap: true, proofreadModel: 'helper/model' }, createdAt: Date.now() };
+    await lsSaveWorkspace(w); await selectWorkspace(w.id);
+    window.__models = []; window.__plan = ['err', 'ok:{"lines":[{"q":1,"speaker":"레온","gender":"male"}],"names":[]}'];
+    const m = await buildSpeakerMap('레온이 말했다. “가자.”', 'translate/model', S.currentWs);
+    r.fallback = !!m && m[0].gender === 'male' && window.__models.join() === 'helper/model,translate/model';
+    _speakerMapFailed.at = 0; document.getElementById('toast').textContent = '';
+    window.__plan = ['err', 'err'];
+    const m2 = await buildSpeakerMap('레온이 말했다. “가자.”', 'translate/model', S.currentWs);
+    r.warn = m2 === null && /ระบุผู้พูดไม่สำเร็จ/.test(document.getElementById('toast').textContent);
+    return r;
+  });
+  ok('speaker map: helper model error → retries with the translate model', fb.fallback);
+  ok('speaker map: failure is shown to the user (was silent)', fb.warn);
 
   ok('no page errors', errors.length === 0); if (errors.length) console.log(errors);
   await browser.close(); process.exit(fail ? 1 : 0);
