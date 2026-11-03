@@ -992,8 +992,7 @@ async function startBatchChapters() {
     const ctxStr = usePrevContext ? getCtxFromCache(ch) : '';
     addLog(log, `⚡ #${ch.chapterNum||'?'} ${ch.title}${ctxStr ? ' [+summary]' : ''}...`, '');
     try {
-      const styleId = document.getElementById('activeStyleSelect')?.value || S.activeStyleId;
-      const csp = getStyleById(styleId)?.prompt || null;
+      const csp = null;   // ระบบสไตล์รวมเข้า Bible แล้ว
       const batchPreset = getActivePreset(S.currentWs);
       const src = prepareSourceForTranslation(ch.sourceText);
       // ลงคลังศัพท์ใหม่ของตอนนี้ก่อนแปล (เดิม batch ดึงคลังครั้งเดียวตอนจบ จากต้นฉบับแค่ 8,000 ตัวอักษรแรก)

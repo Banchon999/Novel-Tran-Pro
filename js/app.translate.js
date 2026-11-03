@@ -7,8 +7,7 @@ function getPrevCtxChars() {
 }
 
 function getOptions() {
-  const styleId = document.getElementById('activeStyleSelect')?.value || S.activeStyleId;
-  const customStylePrompt = getStyleById(styleId)?.prompt || null;
+  const customStylePrompt = null;   // ระบบสไตล์รวมเข้า Bible แล้ว (ช่อง "คำสั่งเพิ่มเติม" ส่งผ่าน style sheet)
   const wsGlossary = {};
   (S.currentWs?.glossary || []).forEach(g => { wsGlossary[g.korean] = { thai: g.thai, type: g.type, note: g.note, gender: g.gender }; });
 
@@ -987,7 +986,8 @@ SETTINGS — choose exactly one value each:
 - "genre": the best-fitting id from GENRES, or "" if none fits.
 - "preset": the best-fitting translation-style id from PRESETS.
 - "narratorSelf": the Thai word the narrator uses for "I" in first-person narration and inner thoughts — exactly one of: "ฉัน" (the norm for modern and fantasy settings, also for a male narrator) · "ข้า" (the norm for ancient China, palace/court, murim and xianxia stories) · "ผม" · "gender" (ผม for a male narrator, ฉัน for a female one). Third-person narration → "ฉัน". Thai always needs one of these words, so never answer "omit". Your reason must name the word you chose.
-- "reasons": one short Thai line each for genre, preset and narratorSelf, citing what in the text decided it.
+- "rating": the reader rating the source's language fits — "all" (no crude profanity) · "13" (mild insults) · "15" (rough speech such as กู/มึง, strong swearing) · "18" (explicit sexual content or extreme gore/profanity). Judge from the samples only.
+- "reasons": one short Thai line each for genre, preset, narratorSelf and rating, citing what in the text decided it.
 
 BIBLE TEXT — Thai, bullet lines starting with "• ", concrete, at most 8 bullets per field (terms: up to 25), "{LANG} = ไทย" pairs where useful:
 - "synopsis": 2–3 plain sentences (no bullets): premise, protagonist, setting.
@@ -1004,7 +1004,7 @@ PEOPLE — only those who appear in the samples:
 - "titles": titles or ranks that always mean ONE specific person in this story (the academy's director who is a woman): [{"source","thai","gender","role"}]. Skip titles that several people hold.
 
 Return ONLY JSON (no markdown):
-{"genre":"","preset":"","narratorSelf":"ฉัน","reasons":{"genre":"","preset":"","narratorSelf":""},"synopsis":"","world":"","translit":"","terms":"","narration":"","format":"","voices":"","glossRules":"","characters":[],"titles":[]}
+{"genre":"","preset":"","narratorSelf":"ฉัน","rating":"15","reasons":{"genre":"","preset":"","narratorSelf":"","rating":""},"synopsis":"","world":"","translit":"","terms":"","narration":"","format":"","voices":"","glossRules":"","characters":[],"titles":[]}
 
 GENRES (id — name — description):
 {genres}
@@ -1074,7 +1074,8 @@ function parseBibleProposal(raw, ws, lang) {
     lang,
     genre: genreOk ? o.genre : '', preset: presetOk ? o.preset : '',
     narratorSelf: ['ฉัน', 'ผม', 'ข้า', 'gender'].includes(o.narratorSelf) ? o.narratorSelf : null,
-    reasons: { genre: str(r.genre), preset: str(r.preset), narratorSelf: str(r.narratorSelf) },
+    rating: ['all', '13', '15', '18'].includes(String(o.rating)) ? String(o.rating) : null,
+    reasons: { genre: str(r.genre), preset: str(r.preset), narratorSelf: str(r.narratorSelf), rating: str(r.rating) },
     synopsis: str(o.synopsis).replace(/^•\s*/gm, ''), fields, people,
   };
 }
@@ -1121,6 +1122,8 @@ function openBibleReview() {
   if (p.genre !== (st.genrePreset || '') && p.genre) rows.push(row('genre', 'แนวนิยาย', gName(st.genrePreset), gName(p.genre), p.reasons.genre, true));
   if (p.preset && p.preset !== ws.presetId) rows.push(row('preset', 'สไตล์การแปล', pName(ws.presetId), pName(p.preset), p.reasons.preset, true));
   if (p.narratorSelf !== null && p.narratorSelf !== (st.narratorSelf || '')) rows.push(row('narr', 'คำแทนตัวผู้เล่า', nName(st.narratorSelf || ''), nName(p.narratorSelf), p.reasons.narratorSelf, true));
+  const rName = v => v ? (AGE_RATINGS[v] || v) : 'ไม่กำหนด';
+  if (p.rating && p.rating !== (st.ageRating || '')) rows.push(row('rating', 'เรตผู้อ่าน', rName(st.ageRating || ''), rName(p.rating), p.reasons.rating, !st.ageRating));
   if (p.synopsis && p.synopsis !== (ws.description || '')) rows.push(row('desc', 'เรื่องย่อ', ws.description ? 'มีแล้ว' : '(ว่าง)', p.synopsis.slice(0, 160) + (p.synopsis.length > 160 ? '…' : ''), '', !ws.description));
   document.getElementById('bbSettings').innerHTML = rows.join('') || '<div class="bible-empty">ตั้งค่าตรงกับที่ AI เสนออยู่แล้ว</div>';
   const ss = ws.styleSheet || {};
@@ -1147,6 +1150,7 @@ async function applyBible() {
   if (on('bb-set-genre')) { ws.settings.genrePreset = p.genre; done.push('แนวนิยาย'); }
   if (on('bb-set-preset')) { ws.presetId = p.preset; done.push('สไตล์การแปล'); }
   if (on('bb-set-narr')) { ws.settings.narratorSelf = p.narratorSelf; done.push('คำแทนตัวผู้เล่า'); }
+  if (on('bb-set-rating')) { ws.settings.ageRating = p.rating; done.push('เรตผู้อ่าน'); }
   if (on('bb-set-desc')) { ws.description = p.synopsis; done.push('เรื่องย่อ'); }
   ws.styleSheet = { ...(ws.styleSheet || {}) };
   let nf = 0;

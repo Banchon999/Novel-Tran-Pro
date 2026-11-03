@@ -125,14 +125,9 @@ async function selectWorkspace(id) {
   renderProviderUI();
   checkHealth();
 
-  // Restore active style (ของผู้ใช้เท่านั้น) — ถ้าไม่พบ ใช้ style แรกที่มี
-  const savedStyle = ws.settings?.activeStyleId;
-  const styleList = ws.customStyles || [];
-  if (savedStyle && styleList.some(s => s.id === savedStyle)) {
-    S.activeStyleId = savedStyle;
-  } else {
-    S.activeStyleId = styleList[0]?.id || '';
-  }
+  // ระบบ "สไตล์" รวมเข้า Bible แล้ว — ย้ายสไตล์ที่ผู้ใช้เลือกใช้อยู่ไปเป็นช่อง "คำสั่งเพิ่มเติม" ครั้งเดียว
+  if (migrateStyleToBible(ws)) await lsSaveWorkspace(ws).catch(() => {});
+  S.activeStyleId = '';
 
   await loadWorkspaceList();
   // reset bulk mode เมื่อเปลี่ยน workspace
@@ -250,6 +245,8 @@ function renderWsSettings() {
   if (clRef) clRef.value = w.settings?.consistencySelfRef || 'auto';
   const nsEl = document.getElementById('wsNarratorSelf');
   if (nsEl) nsEl.value = w.settings?.narratorSelf || '';
+  const arEl = document.getElementById('wsAgeRating');
+  if (arEl) arEl.value = w.settings?.ageRating || '';
   const smEl = document.getElementById('wsSpeakerMode');
   if (smEl) smEl.value = speakerModeOf(w);
   const stEl = document.getElementById('wsStableTemp');
@@ -314,6 +311,7 @@ async function saveWsSettings() {
     consistencySelfRef: document.getElementById('wsConsistencySelfRef')?.value || 'auto',
     narratorSelf: document.getElementById('wsNarratorSelf')?.value || '',
     ...speakerModeSettings(document.getElementById('wsSpeakerMode')?.value || speakerModeOf(S.currentWs)),
+    ageRating: document.getElementById('wsAgeRating') ? document.getElementById('wsAgeRating').value : (S.currentWs.settings?.ageRating || ''),
     stableTemp: document.getElementById('wsStableTemp') ? document.getElementById('wsStableTemp').checked : true,
     proofreadModel: helperModelValue(document.getElementById('wsProofreadModel')) || S.currentWs.settings?.proofreadModel,
     batchChunkMode: document.getElementById('wsBatchChunkMode')?.value || 'off',

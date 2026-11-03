@@ -144,6 +144,23 @@ function ensureWsStylesPresets(ws) {
   return ws;
 }
 
+// ระบบ "สไตล์" เดิม → ช่อง "คำสั่งเพิ่มเติม" ใน Bible (ทำครั้งเดียวต่อ workspace) — คืน true ถ้าเปลี่ยนข้อมูล
+// ย้ายเฉพาะสไตล์ที่เลือกใช้อยู่ และข้ามสไตล์ตัวอย่างที่แอปสร้างให้ (ไม่ได้เขียนเอง)
+function migrateStyleToBible(ws) {
+  if (!ws || ws.settings?.styleMerged) return false;
+  ws.settings = { ...(ws.settings || {}), styleMerged: true };
+  const list = Array.isArray(ws.customStyles) ? ws.customStyles : [];
+  const st = list.find(s => s.id === ws.settings.activeStyleId);
+  const seed = new Set(SEED_STYLES.map(s => s.prompt.trim()));
+  const p = String(st?.prompt || '').trim();
+  if (p && !seed.has(p)) {
+    ws.styleSheet = { ...(ws.styleSheet || {}) };
+    const cur = String(ws.styleSheet.extra || '').trim();
+    if (!cur.includes(p)) ws.styleSheet.extra = (cur ? cur + '\n' : '') + p;
+  }
+  return true;
+}
+
 // ตรวจว่า preset เป็นโหมดแก้ MTL หรือไม่ (มี placeholder {mtl_draft})
 function presetIsMtlFix(p) {
   return !!(p && typeof p.systemPrompt === 'string' && p.systemPrompt.includes('{mtl_draft}'));
@@ -185,10 +202,26 @@ const STYLE_SHEET_FIELDS = [
     'เช่น เลออน: สุภาพแต่ห้วน ใช้ "ผม" กับผู้ใหญ่ · อาเรีย: อ่อนหวาน ลงท้าย ค่ะ/คะ'],
   ['glossRules', 'กฎลงคลังศัพท์ของเรื่องนี้ (ใช้ตอนสกัดคำ)', null,
     'เช่น ล็อกชื่อกิลด์/สกิล/ยศฮันเตอร์ทุกตัว · 원장 = ผู้อำนวยการ (หญิงคนเดียว) · ไม่ต้องเก็บชื่อแบรนด์/อุปกรณ์ทั่วไป'],
+  // เดิมคือระบบ "สไตล์" แยกต่างหาก (ซ้ำกับ preset + Bible และอยู่ลำดับท้ายสุดของ prompt จนแทบไม่มีผล) → รวมมาไว้ที่นี่
+  ['extra',     'คำสั่งเพิ่มเติมของผู้แปล (เดิมคือ "สไตล์")', 'ADDITIONAL INSTRUCTIONS FROM THE TRANSLATOR',
+    'เช่น ประโยคบรรยายสั้น กระชับ · เรียกผู้อาวุโสว่า "ท่าน" เสมอ · ไม่ใช้คำว่า "มัน" กับคน'],
 ];
+// เรตผู้อ่าน (ws.settings.ageRating) — คุมแค่การเลือกคำ เนื้อหาแปลครบเสมอ
+const AGE_RATINGS = { all: 'ทั่วไป', 13: '13+', 15: '15+', 18: '18+' };
+function buildAgeRatingRule(ws) {
+  const r = String(ws?.settings?.ageRating || '');
+  const head = 'AUDIENCE RATING — word choice only: translate every event, line and scene in full; never cut, summarize or skip content because of the rating.';
+  if (r === 'all') return `${head}\n• All ages: no crude profanity (no กู/มึง, ไอ้สัตว์, เหี้ย, sexual slang) — use mild forms (แก · เจ้า · นาย · ไอ้บ้า · บ้าเอ๊ย · ให้ตายสิ). Describe violence and intimacy in plain, non-graphic words. This overrides any กู/มึง suggested elsewhere in this prompt.`;
+  if (r === '13') return `${head}\n• 13+: mild insults are fine (แก · ไอ้บ้า · ยัยบ้า · บ้าเอ๊ย · ให้ตายสิ); no กู/มึง and no crude sexual slang — this overrides any กู/มึง suggested elsewhere in this prompt. Violence may be described plainly.`;
+  if (r === '15') return `${head}\n• 15+: กู/มึง only for rough characters as the source shows; tone the strongest swear words down one step (เหี้ย → บัดซบ/ให้ตายเถอะ); no explicit sexual slang.`;
+  if (r === '18') return `${head}\n• 18+: render profanity, violence and sexual content as strongly as the source does — do not soften.`;
+  return '';
+}
 function buildStyleSheetBlock(ws) {
   const ss = ws?.styleSheet || {};
   const parts = STYLE_SHEET_FIELDS.filter(([k, , en]) => en && String(ss[k] || '').trim()).map(([k, , en]) => `${en}:\n${fixAddressGenderText(String(ss[k]).trim())}`);
+  const rating = buildAgeRatingRule(ws);
+  if (rating) parts.push(rating);
   if (!parts.length) return '';
   return `━━━━━━━━━━━━━━━━━━━━
 TRANSLATION STYLE SHEET for this novel — decisions already made by the translator; follow them exactly in every chapter

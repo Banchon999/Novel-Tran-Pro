@@ -414,6 +414,52 @@ const { chromium } = require(process.env.PLAYWRIGHT_PATH || 'playwright');
   ok('speaker map: unknown-gender line forbids ครับ/ผม · narrator not listed as เขา · ~님 = polite', ug.mapLine && ug.level);
   ok('auto-fix strips ครับ/ผม only for an identified speaker of unknown gender (known & unidentified untouched)', ug.fix && ug.clause);
 
+  // 17) สไตล์ → Bible · เรตผู้อ่าน · ธีมหน้าอ่านตามเครื่อง · แตะคำที่ไฮไลต์แล้วแก้ย้อนหลังได้ + ย้อนกลับ
+  const rd = await ev(async () => {
+    const r = {};
+    const mkCh = (n, t) => ({ id: 'r' + n, chapterNum: n, title: '' + n, sourceText: 'x', translation: t, status: 'done' });
+    const w = { id: 'rd' + Date.now(), name: 'rd', glossary: [{ korean: '화산', thai: 'ฮวาซาน', type: 'place' }, { korean: '화산파', thai: 'สำนักฮวาซาน', type: 'clan' }], presets: [],
+      customStyles: [{ id: 'st1', name: 'ของฉัน', emoji: '🖊', prompt: 'บรรยายสั้น กระชับ' }],
+      chapters: [mkCh(1, 'ฮวาซานสูงมาก สำนักฮวาซานอยู่บนนั้น'), mkCh(2, 'เขาไปฮวาซานอีกครั้ง'), mkCh(3, 'ฮวาซานยังเงียบ')],
+      settings: { sourceLang: 'ko', activeStyleId: 'st1' }, createdAt: Date.now() };
+    await lsSaveWorkspace(w); await selectWorkspace(w.id);
+    const ws = S.currentWs;
+    r.migrated = ws.styleSheet?.extra === 'บรรยายสั้น กระชับ' && ws.settings.styleMerged === true && !migrateStyleToBible(ws);
+    let p = buildTranslatePrompt({ sourceText: '나는 웃었다.', ws });
+    r.extra = p.includes('ADDITIONAL INSTRUCTIONS FROM THE TRANSLATOR:\nบรรยายสั้น กระชับ') && !p.includes('AUDIENCE RATING');
+    ws.settings.ageRating = 'all'; p = buildTranslatePrompt({ sourceText: '나는 웃었다.', ws });
+    r.rating = p.includes('AUDIENCE RATING — word choice only') && p.includes('no กู/มึง') && p.includes('never cut, summarize or skip content');
+    ws.settings.ageRating = '18'; r.r18 = buildTranslatePrompt({ sourceText: '나는 웃었다.', ws }).includes('do not soften');
+    r.noStyleUi = !document.getElementById('activeStyleSelect') && !document.querySelector('[data-tab="styles"]');
+    // ธีม: ไม่เคยเลือก (บันทึก sepia ไว้แบบเก่า) → อัตโนมัติ · เลือกเองแล้วจำ
+    ws.readerSettings = { theme: 'sepia', fontSize: 19 };
+    r.autoTheme = readerGetSettings().theme === 'auto' && ['dark', 'sepia'].includes(readerResolvedTheme());
+    readerSetTheme('dark'); reApplyTheme();
+    r.chosen = readerGetSettings().theme === 'dark' && document.getElementById('reContent').classList.contains('reader-theme-dark');
+    readerSetTheme('auto'); r.backAuto = readerGetSettings().theme === 'auto';
+    // แก้คำ: ตอนนี้และก่อนหน้า (ตอน 2) → ตอน 1–2 เปลี่ยน · ตอน 3 ไม่แตะ · สำนักฮวาซาน ไม่แตะ
+    r.replace = replaceGlossTerm('ฮวาซานสูง สำนักฮวาซาน ฮวาซาน', 'ฮวาซาน', 'หัวซาน', ws.glossary).n === 2;
+    ws.readerSettings.glossaryHl = true; reState.chapterId = 'r2'; reState.mode = 'read'; switchTab('read'); reLoadChapter('r2');
+    const mark = document.querySelector('#reContent mark.re-gloss');
+    mark.click();
+    const pop = document.getElementById('glossPop');
+    r.pop = pop && pop.style.display === 'block' && pop.textContent.includes('화산') && pop.textContent.includes('พบในตอนนี้ 1 จุด') && pop.textContent.includes('สำนักฮวาซาน');
+    document.getElementById('gpThai').value = 'หัวซาน';
+    document.querySelector('input[name="gpScope"][value="prev"]').checked = true;
+    const cf = window.confirm; window.confirm = () => true;
+    await applyGlossPop();
+    window.confirm = cf;
+    const t = n => ws.chapters.find(c => c.chapterNum === n).translation;
+    r.applied = ws.glossary[0].thai === 'หัวซาน' && t(1) === 'หัวซานสูงมาก สำนักฮวาซานอยู่บนนั้น' && t(2) === 'เขาไปหัวซานอีกครั้ง' && t(3) === 'ฮวาซานยังเงียบ';
+    await undoGlossPop();
+    r.undo = ws.glossary[0].thai === 'ฮวาซาน' && t(1) === 'ฮวาซานสูงมาก สำนักฮวาซานอยู่บนนั้น' && t(2) === 'เขาไปฮวาซานอีกครั้ง';
+    return r;
+  });
+  ok('style system merged into Bible ("extra" field, migrated once) · style tab gone', rd.migrated && rd.extra && rd.noStyleUi);
+  ok('age rating: word choice only, never cuts content', rd.rating && rd.r18);
+  ok('reader theme follows the device by default, manual choice remembered, also in the reading tab', rd.autoTheme && rd.chosen && rd.backAuto);
+  ok('tap highlighted term → source + edit, apply to this & earlier chapters, compounds untouched, undo', rd.replace && rd.pop && rd.applied && rd.undo);
+
   ok('no page errors', errors.length === 0); if (errors.length) console.log(errors);
   await browser.close(); process.exit(fail ? 1 : 0);
 })();
