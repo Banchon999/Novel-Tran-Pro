@@ -310,6 +310,32 @@ const { chromium } = require(process.env.PLAYWRIGHT_PATH || 'playwright');
   ok('consistency lock: narration word locked, dialogue pronouns not forced', cf.lockScoped && cf.registerByListener && cf.noJa);
   ok('speaker map self-word follows setting (modern ผม · murim ข้า)', cf.modern && cf.murim && cf.genreYields);
 
+  // 13) แผนที่ผู้พูดในเรื่องยุคโบราณ: รู้จากหลายแหล่ง (ไม่ตั้งแนวก็รู้) · ตัวแก้เปลี่ยน ผม/ครับ → ข้า/ขอรับ เฉพาะเมื่อแน่ใจ · ชื่อในคลังไม่ถูกสะกดใหม่
+  const ar = await ev(async () => {
+    const now = Date.now();
+    const mk = async (extra = {}, chapters = []) => { const w = { id: 'ar' + Math.random(), name: 'โบราณ', glossary: [{ korean: '화산파', thai: 'สำนักฮวาซาน', type: 'clan' }], customStyles: [], chapters, settings: { sourceLang: 'ko', ...extra }, createdAt: now }; await lsSaveWorkspace(w); await selectWorkspace(w.id); return S.currentWs; };
+    const murimSrc = '청운은 포권을 취했다. “사부님께서 부르셨습니다.”', modernSrc = '민준은 고개를 숙였다. “부장님, 부르셨습니까?”';
+    const r = {};
+    let ws = await mk(); r.textOn = archaicSpeechInfo(ws, murimSrc).on && !archaicSpeechInfo(ws, murimSrc).sure; r.modernOff = !archaicSpeech(ws, modernSrc);
+    ws = await mk({ genrePreset: 'ko-hunter' }); r.modernGenreBlocksText = !archaicSpeech(ws, murimSrc);
+    ws = await mk(); ws.presetId = (ws.presets.find(p => p.id === 'seed-wuxia') || {}).id; r.preset = archaicSpeechInfo(ws).sure;
+    ws = await mk({}, [{ id: 'c1', chapterNum: 1, title: '1', sourceText: 'x', translation: '“ข้าน้อยเข้าใจแล้วขอรับ” เขากล่าว “เจ้าอย่าประมาท” “ข้ารอท่านอยู่เจ้าค่ะ”\n'.repeat(5) }]); r.prev = archaicSpeechInfo(ws).sure;
+    ws = await mk({}, [{ id: 'c1', chapterNum: 1, title: '1', sourceText: 'x', translation: '“ผมเข้าใจแล้วครับ” เขากล่าว “ฉันรอคุณอยู่ค่ะ” ข้างๆ มีข้าวของ\n'.repeat(5) }]); r.prevModern = !archaicSpeechInfo(ws).sure;
+    ws = await mk({ narratorSelf: 'ข้า' });
+    window.__plan = ['ok:{"lines":[{"q":1,"speaker":"청운","gender":"male"}],"names":[{"korean":"화산파","thai":"ฮวาซานพา","gender":"unknown"},{"korean":"청운","thai":"ชองอุน","gender":"male"}]}'];
+    const map = await buildSpeakerMap('청운이 말했다. “화산파의 제자입니다.”', 'm', ws);
+    const blk = speakerMapPromptBlock(map, ws);
+    r.mapOld = !!map && map[0].archaic === 'sure' && blk.includes('ขอรับ, self: ข้า/ข้าน้อย') && !blk.includes('self: ผม');
+    r.names = !!map && !map.names.some(n => n.korean === '화산파') && map.names.some(n => n.korean === '청운');
+    r.fix = applySpeakerFixes('“ผมเป็นศิษย์ของสำนักฮวาซานครับ”', map).text === '“ข้าเป็นศิษย์ของสำนักฮวาซานขอรับ”';
+    r.fixF = fixQuoteGender('ฉันรอนานแล้วนะคะ ผมยาวของท่าน', 'female', true) === 'ข้ารอนานแล้วนะเจ้าคะ ผมยาวของท่าน';
+    r.noFixModern = fixQuoteGender('ผมเข้าใจแล้วครับ', 'male') === 'ผมเข้าใจแล้วครับ';
+    return r;
+  });
+  ok('archaic register detected without a genre (source text · wuxia preset · earlier chapters), modern stays modern', ar.textOn && ar.modernOff && ar.modernGenreBlocksText && ar.preset && ar.prev && ar.prevModern);
+  ok('speaker map in archaic story: ข้า + ขอรับ, auto-fix ผม/ครับ → ข้า/ขอรับ', ar.mapOld && ar.fix && ar.fixF && ar.noFixModern);
+  ok('speaker map names never re-spell a glossary term', ar.names);
+
   ok('no page errors', errors.length === 0); if (errors.length) console.log(errors);
   await browser.close(); process.exit(fail ? 1 : 0);
 })();

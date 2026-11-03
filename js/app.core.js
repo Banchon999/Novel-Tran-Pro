@@ -226,7 +226,7 @@ function buildTranslatePrompt({ sourceText, glossaryStr = '', contextStr = '', s
   const preset = getActivePreset(ws);
   const lws = wsForText(ws, sourceText);   // กฎภาษาตามต้นฉบับที่แปลจริง
   // langify ทำท้ายสุด: บล็อกกฎที่แทรกภายหลัง (ครับ/ค่ะ, เพศ) มีตัวอย่างภาษาเกาหลี — ตัดออกเมื่อต้นฉบับไม่ใช่เกาหลี
-  return langify(applyRulePriority(applyContext(applySpeakerMap(applyNarratorVoice(applyParticleRules(applyStyleSheet(applyConsistencyLock(applyGenreNotes(applyLangNotes(preset.systemPrompt, lws), lws, sourceText), ws), ws)), ws), speakerMap), contextStr)), lws)
+  return langify(applyRulePriority(applyContext(applySpeakerMap(applyNarratorVoice(applyParticleRules(applyStyleSheet(applyConsistencyLock(applyGenreNotes(applyLangNotes(preset.systemPrompt, lws), lws, sourceText), ws), ws)), ws, sourceText), speakerMap), contextStr)), lws)
     .replace('{style_note}', styleNote ? `STYLE GUIDE:\n${styleNote}\n` : '')
     .replace('{glossary}',   glossaryStr || '(ไม่มี)')
     .replace('{context}',   contextStr)
@@ -319,18 +319,45 @@ function narratorSelfFor(ws, gender) {
   return n !== 'gender' ? n : gender === 'male' ? 'ผม' : 'ฉัน';
 }
 // ฉากยุคโบราณ/ยุทธภพ/วังจีน: บทพูดสุภาพใช้ ข้า/ข้าน้อย + ขอรับ/เจ้าค่ะ ไม่ใช่ ผม + ครับ (เดิมกฎ "ชายสุภาพ → ผม" ขัดกับแนวทางแนวนิยาย)
+// ตรวจจากหลายแหล่ง เพราะผู้ใช้หลายคนไม่ได้ตั้งแนวนิยาย (เคสจริง: แผนที่ผู้พูดสั่ง "self: ผม + ครับ" → นิยายยุทธภพกลายเป็นภาษาปัจจุบัน)
+//   sure  = ผู้ใช้ตั้งไว้เอง (คำแทนตัวผู้เล่า ข้า · แนวนิยาย · preset กำลังภายใน · Bible) หรือตอนที่แปลแล้วใช้ ข้า/ขอรับ/เจ้าค่ะ เป็นหลัก
+//   on    = sure หรือต้นฉบับมีศัพท์ยุทธภพ/วังจีนอย่างน้อย 2 คำ (ใช้กับ prompt เท่านั้น — ตัวแก้อัตโนมัติใช้แค่ sure)
 const ARCHAIC_SPEECH_GENRES = ['ko-murim', 'zh-xianxia', 'zh-wuxia', 'zh-palace', 'en-cultivation'];
-function archaicSpeech(ws) {
-  return getNarratorSelf(ws) === 'ข้า' || ARCHAIC_SPEECH_GENRES.includes(ws?.settings?.genrePreset);
+const MODERN_SPEECH_GENRES = ['ko-hunter', 'ko-academy', 'ko-game', 'ko-apocalypse', 'ko-modern', 'zh-modern', 'zh-apocalypse', 'en-werewolf', 'en-scifi'];
+const ARCHAIC_PRESET_RE = /WUXIA|MURIM|XIANXIA|กำลังภายใน|ยุทธภพ|บำเพ็ญเซียน/i;
+const ARCHAIC_SHEET_RE = /ข้า\s*\/\s*เจ้า|ข้าน้อย|ขอรับ|เจ้าค่ะ|ยุทธภพ|กำลังภายใน|วังหลัง|บำเพ็ญเซียน/;
+const ZH_ARCHAIC_TEXT_RE = /陛下|皇上|本宫|臣妾|奴婢|娘娘|王爷|在下|晚辈|前辈|师兄|师姐|师弟|师妹|师父|师尊|贫道|老夫|本座/g;
+const KO_ARCHAIC_TEXT_RE = /포권|사부님?|사숙|사조|사저|사제|장로|대협|소협|낭자|노부|본좌|소생|객잔|화산파|무당파|소림사|아미파|곤륜파|점창파|남궁세가|제갈세가|당가|전하|폐하|마마|대감|나리|소인|오너라|거라|하오|하시오|구려/g;
+function _reCount(s, re) { return (String(s || '').match(new RegExp(re.source, re.flags.includes('g') ? re.flags : re.flags + 'g')) || []).length; }
+// ตอนที่แปลแล้ว (ล่าสุด 3 ตอน) ใช้ภาษาโบราณเป็นหลักไหม
+function _prevTranslationsArchaic(ws) {
+  const done = (ws?.chapters || []).filter(c => c.translation && c.translation.length > 200)
+    .sort((a, b) => (b.chapterNum || 0) - (a.chapterNum || 0)).slice(0, 3);
+  if (!done.length) return false;
+  const t = done.map(c => c.translation.slice(-6000)).join('\n');
+  const old = _reCount(t, /ข้า(?![งวมรศ])|ขอรับ|เจ้าค่ะ|เจ้าคะ/g);
+  const mod = _reCount(t, /ครับ|(?<!เจ้า)ค่ะ|(?<!เจ้า)คะ(?!แนน)/g) + _reCount(t.replace(/เส้นผม|ทรงผม|ผมยาว|ผมสั้น|ผมสี|ผมขาว|ผมดำ/g, ''), /ผม/g);
+  return old >= 8 && old > mod * 1.5;
 }
-function buildNarratorBlock(ws) {
+function archaicSpeechInfo(ws, text = '') {
+  const st = ws?.settings || {}, genre = st.genrePreset || '';
+  const sure = getNarratorSelf(ws) === 'ข้า' || ARCHAIC_SPEECH_GENRES.includes(genre)
+    || (typeof getActivePreset === 'function' && ARCHAIC_PRESET_RE.test(getActivePreset(ws)?.systemPrompt || ''))
+    || ARCHAIC_SHEET_RE.test(Object.values(ws?.styleSheet || {}).join(' '))
+    || _prevTranslationsArchaic(ws);
+  const fromText = !sure && !MODERN_SPEECH_GENRES.includes(genre) && !!text
+    && (_reCount(text, MURIM_SETTING_RE) + _reCount(text, ZH_ARCHAIC_TEXT_RE) + _reCount(text, KO_ARCHAIC_TEXT_RE)) >= 2;
+  return { on: sure || fromText, sure };
+}
+function archaicSpeech(ws, text = '') { return archaicSpeechInfo(ws, text).on; }
+function buildNarratorBlock(ws, text = '') {
   const n = getNarratorSelf(ws);
   const rule = n === 'gender'
     ? `• First-person narration and the narrator's inner thoughts take the narrator's gender from the glossary: male → ผม · female → ฉัน · unknown → ฉัน.`
     : `• First-person narration and inner thoughts / self-talk (‘…’ thoughts, monologue, anything not said aloud) → "${n}" for the narrator, male or female alike${n === 'ฉัน' ? ' — the standard of published Thai web-novel translations; a male narrator using ฉัน here is NOT a gender error' : ''}.`;
   return `NARRATOR VOICE (คำแทนตัวผู้เล่า) — CRITICAL:
 ${rule}
-${archaicSpeech(ws)
+${archaicSpeech(ws, text)
   ? '• Spoken dialogue (“…”) follows the speaker, whom they address and this historical setting: ข้า (humble ข้าน้อย, or the rank words in the GENRE GUIDE) — a male speaking politely ends with ขอรับ · a female with เจ้าค่ะ · rough speech as the source shows. Do not use modern ผม + ครับ here unless the style sheet says so.'
   : '• Spoken dialogue (“…”) follows the speaker and whom they address: a male speaking politely → ผม + ครับ · a female → ฉัน/ดิฉัน + ค่ะ · rough or archaic speech → กู / ข้า as the source shows.'}
 • Keep the narration word identical for the whole chapter — never switch the narration between ฉัน and ผม.`;
@@ -350,11 +377,11 @@ const _CONFLICT_LINES = [
   ['do not "fix" it into เขา for flow. 1st person → ฉัน.', 'do not "fix" it into เขา for flow. 1st person in spoken dialogue → ฉัน (narration → NARRATOR VOICE).'],   // ขัดกับผู้เล่าใช้ ข้า/ผม
   ['• Replace flat or repeated word choices with precise, idiomatic Thai; fix awkward word order.', '• Replace flat word choices with precise, idiomatic Thai and fix awkward word order — but never vary glossary terms, names, titles or pronouns, and keep a name or title that is repeated on purpose instead of เขา/เธอ.'],   // "เปลี่ยนคำซ้ำ" ขัดกับคลังศัพท์ + การเรียกชื่อซ้ำแทน เขา/เธอ
 ];
-function applyNarratorVoice(systemPrompt, ws) {
+function applyNarratorVoice(systemPrompt, ws, text = '') {
   if (typeof systemPrompt !== 'string') return systemPrompt;
   let t = systemPrompt;
   for (const [a, b] of [..._OLD_PRONOUN_LINES, ..._CONFLICT_LINES]) t = t.split(a).join(b);   // แก้เสมอ แม้ prompt จะมีบล็อกผู้เล่าอยู่แล้ว
-  return t.includes('NARRATOR VOICE (คำแทนตัวผู้เล่า)') ? t : injectPromptBlock(t, buildNarratorBlock(ws));
+  return t.includes('NARRATOR VOICE (คำแทนตัวผู้เล่า)') ? t : injectPromptBlock(t, buildNarratorBlock(ws, text));
 }
 
 function applyParticleRules(systemPrompt) {

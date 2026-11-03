@@ -297,9 +297,10 @@ async function buildSpeakerMap(text, model, ws = S.currentWs) {
     } else arr = JSON.parse(raw.slice(ab, raw.lastIndexOf(']') + 1));   // โมเดลบางตัวยังตอบเป็น array เดิม
     if (!Array.isArray(arr)) return null;
     // ชื่อที่ยังไม่อยู่ในคลังศัพท์ → ให้ตัวแปลมีตัวสะกดไทย (ตอนแรกของเรื่องคลังว่าง → โมเดลมักทิ้งชื่อเกาหลีไว้ เช่น "อา리아")
-    const known = new Set(glossChars.map(g => g.korean));
+    const known = new Set((ws?.glossary || []).map(g => g.korean).filter(Boolean));
+    const reg = archaicSpeechInfo(ws, text);
     names = names.map(normalizeTermKeys).filter(n => n && typeof n.korean === 'string' && typeof n.thai === 'string' && n.korean.trim() && n.thai.trim()
-      && !known.has(n.korean.trim()) && text.includes(n.korean.trim()) && !/[\uac00-\ud7a3\u3131-\u318e\u4e00-\u9fff]/.test(n.thai))
+      && !known.has(n.korean.trim()) && ![...known].some(k => k.length > 1 && n.korean.includes(k)) && text.includes(n.korean.trim()) && !/[\uac00-\ud7a3\u3131-\u318e\u4e00-\u9fff]/.test(n.thai))
       .slice(0, 20).map(n => ({ korean: n.korean.trim(), thai: n.thai.trim(), gender: n.gender === 'male' || n.gender === 'female' ? n.gender : 'unknown' }));
     const out = lines.map(({ q, kind, pos }, i) => {
       const e = arr.find(x => +x.q === i + 1) || {};
@@ -309,7 +310,7 @@ async function buildSpeakerMap(text, model, ws = S.currentWs) {
         ? sp === c.korean || sp === c.thai || sp === c.korean + '님'   // ตำแหน่ง: ต้องตรงตัว ("보육원 원장" เป็นคนละคนกับ "원장")
         : sp.includes(c.korean) || c.korean.includes(sp) || (c.thai && sp.includes(c.thai))));
       const gender = g ? g.gender : (e.gender === 'male' || e.gender === 'female' ? e.gender : 'unknown');
-      return { q, kind, pos, speaker: sp || '?', gender };
+      return { q, kind, pos, speaker: sp || '?', gender, ...(reg.on ? { archaic: reg.sure ? 'sure' : 'text' } : {}) };
     });
     out.names = names;
     return out;
@@ -337,10 +338,10 @@ function speakerMapPromptBlock(map, ws = S.currentWs) {
   // ระดับภาษาเกาหลี: สุภาพ (요/니다) → ใส่ ครับ/ค่ะ · ภาษาปกติ (반말/하다체) → ไม่ใส่หางเสียง (ขุนนางคุยกับคนรับใช้, อาจารย์สั่งศิษย์)
   const end = (g, lv) => {
     if (g !== 'male' && g !== 'female') return 'no gendered particle';
-    const old = archaicSpeech(ws);
+    const old = map.some(m => m.archaic) || archaicSpeech(ws);
     const self = old ? 'ข้า' : g === 'male' ? 'ฉัน/ผม by register (never ดิฉัน)' : 'ฉัน (never ผม)';
     if (lv === 'plain') return `plain speech → no ครับ/ค่ะ, self: ${self}`;
-    if (old) return g === 'male' ? 'polite → ขอรับ, self: ข้า/ข้าน้อย' : 'polite → เจ้าค่ะ, self: ข้า/ข้าน้อย';
+    if (old) return g === 'male' ? 'polite → ขอรับ, self: ข้า/ข้าน้อย' : 'polite → เจ้าค่ะ/เจ้าคะ, self: ข้า/ข้าน้อย';
     return g === 'male' ? 'polite → ครับ/ขอรับ, self: ผม' : 'polite → ค่ะ/คะ, self: ฉัน/ดิฉัน';
   };
   const lines = map.filter(m => m.speaker && m.speaker !== '-' && m.speaker !== '?').map((m, i) => {
@@ -379,8 +380,9 @@ function koSpeechLevel(q) {
 // แปลงคำลงท้าย/คำแทนตัวในบทพูด 1 บรรทัดให้ตรงเพศผู้พูด — คืนข้อความใหม่ (ไม่เปลี่ยนถ้าตรงอยู่แล้ว)
 const _PEND = '(?=$|[\\s!?.…,~ๆ\\-—)”"」’])';
 const _HAIR_MASK_RE = /(เส้นผม|ทรงผม|สระผม|หวีผม|ผมเผ้า|ผมยาว|ผมสั้น|ผมสี|ปอยผม|มัดผม|ผมหงอก|ผมดำ|ผมทอง|ผมขาว|ผมแดง|ผมเงิน|ไรผม|โคนผม|ปลายผม|เกล้าผม|ถักผม)/g;
-function fixQuoteGender(q, gender) {
+function fixQuoteGender(q, gender, archaic = false) {
   if (gender !== 'male' && gender !== 'female') return q;
+  if (archaic) return _fixArchaicQuote(q, gender);
   const ROYAL_M = '\u0001RM\u0001';
   let t = q.replace(/พ่ะย่ะค่ะ|พะยะค่ะ/g, ROYAL_M);
   if (gender === 'female') {
@@ -406,6 +408,24 @@ function fixQuoteGender(q, gender) {
          .replace(/ดิฉัน|อิฉัน/g, 'ผม');
   }
   return t;
+}
+
+// บทพูดในเรื่องยุคโบราณ (ยืนยันจากค่าตั้ง/ตอนก่อน): ผม/ครับ/ค่ะ ปัจจุบัน → ข้า + ขอรับ/เจ้าค่ะ ตามเพศผู้พูด
+function _fixArchaicQuote(q, gender) {
+  const ROYAL_M = '\u0001RM\u0001', ROYAL_F = '\u0001RF\u0001';
+  let t = q.replace(/พ่ะย่ะค่ะ|พะยะค่ะ/g, ROYAL_M).replace(/เพคะ/g, ROYAL_F);
+  const hair = [];
+  t = t.replace(_HAIR_MASK_RE, m => { hair.push(m); return `\u0002${hair.length - 1}\u0002`; });
+  if (gender === 'male') {
+    t = t.replace(/ครับผม/g, 'ขอรับ').replace(/เจ้าค่ะ|เจ้าคะ/g, 'ขอรับ').replace(/ครับ/g, 'ขอรับ').replace(/ค่ะ/g, 'ขอรับ').replace(new RegExp('คะ' + _PEND, 'g'), 'ขอรับ')
+         .replace(/กระผม/g, 'ข้าน้อย').replace(/(^|[\s“"「…,])(?:ผม|ดิฉัน|อิฉัน|ฉัน(?!ท))/g, '$1ข้า').split(ROYAL_F).join(ROYAL_M);
+  } else {
+    t = t.replace(/ครับผม/g, 'เจ้าค่ะ').replace(new RegExp('ขอรับ' + _PEND, 'g'), 'เจ้าค่ะ').replace(/ครับ(?=\s*[?？])/g, 'เจ้าคะ').replace(/ครับ/g, 'เจ้าค่ะ')
+         .replace(/(?<!เจ้า)ค่ะ/g, 'เจ้าค่ะ').replace(new RegExp('(?<!เจ้า)คะ' + _PEND, 'g'), 'เจ้าคะ')
+         .replace(/กระผม/g, 'ข้าน้อย').replace(/(^|[\s“"「…,])(?:ผม|ดิฉัน|อิฉัน|ฉัน(?!ท))/g, '$1ข้า').split(ROYAL_M).join(ROYAL_F);
+  }
+  t = t.replace(/\u0002(\d+)\u0002/g, (_, i) => hair[+i]);
+  return t.split(ROYAL_M).join('พ่ะย่ะค่ะ').split(ROYAL_F).join('เพคะ');
 }
 
 // ชื่อเกาหลีหลุดมาในคำแปล ("레온มองลงไป") → แทนด้วยชื่อไทยจากคลังศัพท์/แผนที่ผู้พูด (เฉพาะชื่อเต็มที่ไม่ติดอักษรเกาหลีอื่น)
@@ -450,7 +470,7 @@ function _fixByRegex(text, re, map, fixes) {
   let i = 0;
   return text.replace(re, (all, open, body, close) => {
     const m = map[i++];
-    const fixed = fixQuoteGender(body, m.gender);
+    const fixed = fixQuoteGender(body, m.gender, m.archaic === 'sure' && m.kind !== 'sq');
     if (fixed !== body) fixes.push({ speaker: m.speaker, gender: m.gender, from: body, to: fixed });
     return open + fixed + close;
   });
@@ -505,7 +525,7 @@ function _fixMatched(text, re, pairOf, map, fixes) {
     const si = pairOf(j++);
     if (si === undefined) return all;
     const m = map[si];
-    const fixed = fixQuoteGender(body, m.gender);
+    const fixed = fixQuoteGender(body, m.gender, m.archaic === 'sure' && m.kind !== 'sq');
     if (fixed !== body) fixes.push({ speaker: m.speaker, gender: m.gender, from: body, to: fixed });
     return open + fixed + close;
   });
