@@ -226,7 +226,7 @@ function buildTranslatePrompt({ sourceText, glossaryStr = '', contextStr = '', s
   const preset = getActivePreset(ws);
   const lws = wsForText(ws, sourceText);   // กฎภาษาตามต้นฉบับที่แปลจริง
   // langify ทำท้ายสุด: บล็อกกฎที่แทรกภายหลัง (ครับ/ค่ะ, เพศ) มีตัวอย่างภาษาเกาหลี — ตัดออกเมื่อต้นฉบับไม่ใช่เกาหลี
-  return langify(applyRulePriority(applyContext(applySpeakerMap(applyNarratorVoice(applyParticleRules(applyStyleSheet(applyConsistencyLock(applyGenreNotes(applyLangNotes(preset.systemPrompt, lws), lws, sourceText), ws), ws)), ws, sourceText), speakerMap), contextStr)), lws)
+  return langify(applyRulePriority(applyContext(applySpeakerMap(applyNarratorVoice(applyParticleRules(applyStyleSheet(applyConsistencyLock(applyGenreNotes(applyLangNotes(preset.systemPrompt, lws), lws, sourceText), ws), ws), ws, sourceText), ws, sourceText), speakerMap), contextStr)), lws)
     .replace('{style_note}', styleNote ? `STYLE GUIDE:\n${styleNote}\n` : '')
     .replace('{glossary}',   glossaryStr || '(ไม่มี)')
     .replace('{context}',   contextStr)
@@ -306,12 +306,13 @@ function injectPromptBlock(systemPrompt, block) {
 // ─── คำแทนตัวผู้เล่า (บรรยายบุรุษที่ 1 + คิดในใจ) ───
 // นิยายแปลไทยส่วนใหญ่ ผู้เล่าใช้ "ฉัน" ทั้งชายและหญิง ส่วน "ผม" ใช้ตอนพูดสุภาพกับคนอื่น
 // (เดิมกฎ "ผู้ชายห้ามใช้ ฉัน" ทำให้บรรยาย/คิดในใจของพระเอกเป็น "ผม" ทั้งเรื่อง)
-// ws.settings.narratorSelf: '' = ฉัน (ค่าเริ่มต้น) | 'ผม' | 'ข้า' | 'gender' (ตามเพศ: ชาย=ผม หญิง=ฉัน)
+// ws.settings.narratorSelf: '' = อัตโนมัติ (ฉัน · เรื่องยุทธภพ/โบราณ = ข้า) | 'ฉัน' | 'ผม' | 'ข้า' | 'gender' (ตามเพศ: ชาย=ผม หญิง=ฉัน)
+// (เคสจริง: นิยายมู่หลินที่ไม่ได้เลือกคำแทนตัว → ความคิดในใจถูกสั่งเป็น ฉัน ทั้งที่ตอนที่แปลแล้วใช้ ข้า ทั้งเรื่อง)
 // ถ้าเปิด Consistency Lock และเลือกสรรพนามเอง → ใช้คำนั้น
 function getNarratorSelf(ws) {
   const st = ws?.settings || {};
   const lock = st.consistencyLock && st.consistencySelfRef && st.consistencySelfRef !== 'auto' ? st.consistencySelfRef : '';
-  return lock || st.narratorSelf || 'ฉัน';
+  return lock || st.narratorSelf || (_archaicSure(ws) ? 'ข้า' : 'ฉัน');
 }
 // คำแทนตัวในความคิดของตัวละครเพศนี้ (ใช้ในแผนที่ผู้พูด)
 function narratorSelfFor(ws, gender) {
@@ -339,12 +340,18 @@ function _prevTranslationsArchaic(ws) {
   const mod = _reCount(t, /ครับ|(?<!เจ้า)ค่ะ|(?<!เจ้า)คะ(?!แนน)/g) + _reCount(t.replace(/เส้นผม|ทรงผม|ผมยาว|ผมสั้น|ผมสี|ผมขาว|ผมดำ/g, ''), /ผม/g);
   return old >= 8 && old > mod * 1.5;
 }
-function archaicSpeechInfo(ws, text = '') {
-  const st = ws?.settings || {}, genre = st.genrePreset || '';
-  const sure = getNarratorSelf(ws) === 'ข้า' || ARCHAIC_SPEECH_GENRES.includes(genre)
+// สัญญาณ "แน่ใจ" ที่ไม่ขึ้นกับคำแทนตัวผู้เล่า (ใช้ตัดสินค่าอัตโนมัติของคำแทนตัว — กันวนซ้ำ)
+function _archaicSure(ws) {
+  const genre = ws?.settings?.genrePreset || '';
+  return ARCHAIC_SPEECH_GENRES.includes(genre)
     || (typeof getActivePreset === 'function' && ARCHAIC_PRESET_RE.test(getActivePreset(ws)?.systemPrompt || ''))
     || ARCHAIC_SHEET_RE.test(Object.values(ws?.styleSheet || {}).join(' '))
     || _prevTranslationsArchaic(ws);
+}
+function archaicSpeechInfo(ws, text = '') {
+  const st = ws?.settings || {}, genre = st.genrePreset || '';
+  const explicitNarr = (st.consistencyLock && st.consistencySelfRef && st.consistencySelfRef !== 'auto' ? st.consistencySelfRef : '') || st.narratorSelf || '';
+  const sure = explicitNarr === 'ข้า' || _archaicSure(ws);
   const fromText = !sure && !MODERN_SPEECH_GENRES.includes(genre) && !!text
     && (_reCount(text, MURIM_SETTING_RE) + _reCount(text, ZH_ARCHAIC_TEXT_RE) + _reCount(text, KO_ARCHAIC_TEXT_RE)) >= 2;
   return { on: sure || fromText, sure };
@@ -384,9 +391,13 @@ function applyNarratorVoice(systemPrompt, ws, text = '') {
   return t.includes('NARRATOR VOICE (คำแทนตัวผู้เล่า)') ? t : injectPromptBlock(t, buildNarratorBlock(ws, text));
 }
 
-function applyParticleRules(systemPrompt) {
+// เรื่องยุทธภพ/โบราณ: บรรทัดคำลงท้ายแบบปัจจุบัน (ครับ/ค่ะ มาก่อน) ทำให้โมเดลเล็กเขียน ครับ ทั้งเรื่อง → ให้ ขอรับ/เจ้าค่ะ เป็นหลัก
+const _PARTICLE_MODERN_LINE = '• Male speaker: ครับ / นะครับ / ครับผม / ขอรับ · Female speaker: ค่ะ / คะ / นะคะ / เจ้าค่ะ.';
+const _PARTICLE_ARCHAIC_LINE = '• This story is set in a historical / murim world: a polite male speaker ends with ขอรับ · a polite female speaker with เจ้าค่ะ (question เจ้าคะ) — never the modern ครับ / ค่ะ / คะ, and self-reference is ข้า / ข้าน้อย, never ผม / ฉัน / ดิฉัน.';
+function applyParticleRules(systemPrompt, ws = null, text = '') {
   if (typeof systemPrompt !== 'string' || systemPrompt.includes('SPEECH PARTICLE RULES')) return systemPrompt;
-  return injectPromptBlock(systemPrompt, SPEECH_PARTICLE_RULES);
+  const rules = ws && archaicSpeech(ws, text) ? SPEECH_PARTICLE_RULES.replace(_PARTICLE_MODERN_LINE, _PARTICLE_ARCHAIC_LINE) : SPEECH_PARTICLE_RULES;
+  return injectPromptBlock(systemPrompt, rules);
 }
 
 // คำแปลสั้นผิดปกติ = ถูกตัดกลางคันหรือตกหล่น (เทียบจำนวนอักษรไทยกับอักษรเกาหลี/จีน/ญี่ปุ่นในต้นฉบับ)

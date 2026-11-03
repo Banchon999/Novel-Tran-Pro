@@ -336,6 +336,28 @@ const { chromium } = require(process.env.PLAYWRIGHT_PATH || 'playwright');
   ok('speaker map in archaic story: ข้า + ขอรับ, auto-fix ผม/ครับ → ข้า/ขอรับ', ar.mapOld && ar.fix && ar.fixF && ar.noFixModern);
   ok('speaker map names never re-spell a glossary term', ar.names);
 
+  // 14) แผนที่ผู้พูดอ่าน JSON เสียของโมเดลเล็กได้ · เรื่องโบราณแก้ ครับ/ค่ะ ในบทพูดแม้ไม่มีแผนที่ (เรื่องปัจจุบันไม่แตะ)
+  const rg = await ev(async () => {
+    const r = {};
+    const bad = '```json\n{"lines":[{"q":1,"speaker":"무량천","gender":"male"},{"q":2,"speaker":"괴인","gender":"male"}],"\n "names":[{"korean":"창식","thai":"ชางชิก","gender":"male"}]}\n```';
+    const p1 = _parseSpeakerMapJson(bad); r.repair = p1.arr?.length === 2 && p1.names.length === 1;
+    const p2 = _parseSpeakerMapJson('{"lines":[{"q":1,"speaker":"a","gender":"male"} {"q":2,"speaker":"b","gender":"female"}], "names": [}');
+    r.salvage = p2.arr?.length === 2 && p2.arr[1].gender === 'female';
+    const mk = async (st) => { const w = { id: 'rg' + Math.random(), name: 'rg', glossary: [], customStyles: [], chapters: [], settings: { sourceLang: 'ko', ...st }, createdAt: Date.now() }; await lsSaveWorkspace(w); await selectWorkspace(w.id); return S.currentWs; };
+    const th = 'เขาก้มหัว “ขออภัยครับพี่ใหญ่ ผมผิดไปแล้ว” นางยิ้ม “ท่านมาแล้วหรือคะ ฉันรออยู่ค่ะ” ‘ผมต้องหนี’';
+    let ws = await mk({ genrePreset: 'ko-murim' });
+    const a = applySpeakerFixes(th, null, ws).text;
+    r.old = a.includes('“ขออภัยขอรับพี่ใหญ่ ข้าผิดไปแล้ว”') && a.includes('“ท่านมาแล้วหรือเจ้าคะ ข้ารออยู่เจ้าค่ะ”') && a.includes('‘ผมต้องหนี’');
+    r.narrAuto = getNarratorSelf(ws) === 'ข้า' && buildTranslatePrompt({ sourceText: '나는 웃었다.', ws }).includes('→ "ข้า" for the narrator');
+    ws = await mk({ genrePreset: 'ko-murim', narratorSelf: 'ฉัน' }); r.narrExplicit = getNarratorSelf(ws) === 'ฉัน';
+    ws = await mk({ genrePreset: 'ko-modern' });
+    r.modern = applySpeakerFixes(th, null, ws).text === th && getNarratorSelf(ws) === 'ฉัน';
+    return r;
+  });
+  ok('speaker map survives broken JSON from small models', rg.repair && rg.salvage);
+  ok('archaic story: dialogue register fixed even without a speaker map · modern untouched', rg.old && rg.modern);
+  ok('narrator word "auto": ข้า in an archaic story, ฉัน otherwise · explicit ฉัน kept', rg.narrAuto && rg.narrExplicit);
+
   ok('no page errors', errors.length === 0); if (errors.length) console.log(errors);
   await browser.close(); process.exit(fail ? 1 : 0);
 })();

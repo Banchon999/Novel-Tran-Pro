@@ -289,12 +289,7 @@ async function buildSpeakerMap(text, model, ws = S.currentWs) {
       messages: [{ role: 'user', content: prompt }],
     });
     const raw = (res.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
-    let arr, names = [];
-    const ob = raw.indexOf('{'), ab = raw.indexOf('[');
-    if (ob >= 0 && (ab < 0 || ob < ab)) {   // รูปแบบใหม่ {lines, names}
-      const o = JSON.parse(raw.slice(ob, raw.lastIndexOf('}') + 1));
-      arr = o.lines; names = Array.isArray(o.names) ? o.names : [];
-    } else arr = JSON.parse(raw.slice(ab, raw.lastIndexOf(']') + 1));   // โมเดลบางตัวยังตอบเป็น array เดิม
+    let { arr, names } = _parseSpeakerMapJson(raw);
     if (!Array.isArray(arr)) return null;
     // ชื่อที่ยังไม่อยู่ในคลังศัพท์ → ให้ตัวแปลมีตัวสะกดไทย (ตอนแรกของเรื่องคลังว่าง → โมเดลมักทิ้งชื่อเกาหลีไว้ เช่น "อา리아")
     const known = new Set((ws?.glossary || []).map(g => g.korean).filter(Boolean));
@@ -318,6 +313,30 @@ async function buildSpeakerMap(text, model, ws = S.currentWs) {
     console.warn('[speakerMap]', e);
     return null;
   }
+}
+
+// อ่าน JSON ของแผนที่ผู้พูดแบบทนทาน — โมเดลเล็ก (เคสจริง: gemma-4-26b) ตอบ JSON เสียนิดเดียว (`],"⏎ "names"`) แล้วทั้งแผนที่ถูกทิ้ง
+function _parseSpeakerMapJson(raw) {
+  const tryParse = t => { try { return JSON.parse(t); } catch { return undefined; } };
+  const fixups = t => t.replace(/"\s*[\r\n]+\s*"/g, '"').replace(/[\u0000-\u001f]+/g, ' ').replace(/,\s*([\]}])/g, '$1');
+  const ob = raw.indexOf('{'), ab = raw.indexOf('[');
+  if (ob >= 0 && (ab < 0 || ob < ab)) {   // รูปแบบใหม่ {lines, names}
+    const body = raw.slice(ob, raw.lastIndexOf('}') + 1);
+    const o = tryParse(body) ?? tryParse(fixups(body));
+    if (o && Array.isArray(o.lines)) return { arr: o.lines, names: Array.isArray(o.names) ? o.names : [] };
+  } else if (ab >= 0) {                    // โมเดลบางตัวยังตอบเป็น array เดิม
+    const body = raw.slice(ab, raw.lastIndexOf(']') + 1);
+    const a = tryParse(body) ?? tryParse(fixups(body));
+    if (Array.isArray(a)) return { arr: a, names: [] };
+  }
+  // ซ่อมไม่ได้ → เก็บทีละ object ที่อ่านได้ ({"q":…} = บทพูด · {"korean":…} = ชื่อ)
+  const arr = [], names = [];
+  for (const m of raw.matchAll(/\{[^{}]*\}/g)) {
+    const o = tryParse(m[0]) ?? tryParse(fixups(m[0]));
+    if (!o) continue;
+    if (o.q !== undefined) arr.push(o); else if (o.korean || o.source) names.push(o);
+  }
+  return { arr: arr.length ? arr : null, names };
 }
 
 function speakerMapPromptBlock(map, ws = S.currentWs) {
@@ -416,7 +435,10 @@ function _fixArchaicQuote(q, gender) {
   let t = q.replace(/พ่ะย่ะค่ะ|พะยะค่ะ/g, ROYAL_M).replace(/เพคะ/g, ROYAL_F);
   const hair = [];
   t = t.replace(_HAIR_MASK_RE, m => { hair.push(m); return `\u0002${hair.length - 1}\u0002`; });
-  if (gender === 'male') {
+  if (gender !== 'male' && gender !== 'female') {   // ไม่รู้ผู้พูด: เปลี่ยนแค่ระดับภาษา คงเพศตามคำลงท้ายเดิม
+    t = t.replace(/ครับผม/g, 'ขอรับ').replace(/ครับ/g, 'ขอรับ').replace(/(?<!เจ้า)ค่ะ/g, 'เจ้าค่ะ').replace(new RegExp('(?<!เจ้า)คะ' + _PEND, 'g'), 'เจ้าคะ')
+         .replace(/กระผม/g, 'ข้าน้อย').replace(/(^|[\s“"「…,])(?:ผม|ดิฉัน|อิฉัน|ฉัน(?!ท))/g, '$1ข้า');
+  } else if (gender === 'male') {
     t = t.replace(/ครับผม/g, 'ขอรับ').replace(/เจ้าค่ะ|เจ้าคะ/g, 'ขอรับ').replace(/ครับ/g, 'ขอรับ').replace(/ค่ะ/g, 'ขอรับ').replace(new RegExp('คะ' + _PEND, 'g'), 'ขอรับ')
          .replace(/กระผม/g, 'ข้าน้อย').replace(/(^|[\s“"「…,])(?:ผม|ดิฉัน|อิฉัน|ฉัน(?!ท))/g, '$1ข้า').split(ROYAL_F).join(ROYAL_M);
   } else {
@@ -531,7 +553,20 @@ function _fixMatched(text, re, pairOf, map, fixes) {
   });
 }
 const _META_NOTE_RE = /[ \t]*\*?[\[(](?:หมายเหตุ|โน้ต|Note|TN|T\/N)[^\])\n]*(?:ต้นฉบับ|source|Korean|เกาหลี|อภิธาน|glossary|คลังศัพท์|กฎ)[^\])\n]*[\])]\*?/gi;
-function applySpeakerFixes(thaiText, map) {
+function applySpeakerFixes(thaiText, map, ws = S.currentWs) {
+  const out = _applySpeakerFixesCore(thaiText, map);
+  // เรื่องโบราณ (แน่ใจจากค่าตั้ง/ตอนก่อน): บทพูดที่ยังเป็น ผม/ครับ/ค่ะ → ข้า/ขอรับ/เจ้าค่ะ — ไม่ต้องรู้ผู้พูด เพราะคำลงท้ายบอกเพศอยู่แล้ว
+  // ทำแม้แผนที่ผู้พูดล้มเหลวหรือปิดอยู่ (เคสจริง: แผนที่ตอนที่ 1 อ่าน JSON ไม่ได้ → คำแปลมี ครับ 18 คำ)
+  if (out.text && archaicSpeechInfo(ws).sure) {
+    out.text = out.text.replace(_TH_DQ_RE, (all, open, body, close) => {
+      const f = _fixArchaicQuote(body, null);
+      if (f !== body) out.fixes.push({ from: body, to: f, register: true });
+      return open + f + close;
+    });
+  }
+  return out;
+}
+function _applySpeakerFixesCore(thaiText, map) {
   const rn = repairHangulNames(thaiText, map);   // ชื่อเกาหลีที่หลุดมา → ชื่อไทย (ทำก่อนจับคู่บทพูด)
   const out = { text: rn.text, fixes: rn.fixes, aligned: false };
   // หมายเหตุผู้แปลที่โมเดลแทรกเอง เรื่องต้นฉบับ/คลังศัพท์/กฎ (เช่น "*[หมายเหตุ: ต้นฉบับใช้คำว่า 그 …]*") → ตัดทิ้ง
@@ -902,7 +937,7 @@ function parseBibleProposal(raw, ws, lang) {
   return {
     lang,
     genre: genreOk ? o.genre : '', preset: presetOk ? o.preset : '',
-    narratorSelf: ['', 'ผม', 'ข้า', 'gender'].includes(o.narratorSelf) ? o.narratorSelf : (o.narratorSelf === 'ฉัน' ? '' : null),
+    narratorSelf: ['ฉัน', 'ผม', 'ข้า', 'gender'].includes(o.narratorSelf) ? o.narratorSelf : null,
     reasons: { genre: str(r.genre), preset: str(r.preset), narratorSelf: str(r.narratorSelf) },
     synopsis: str(o.synopsis).replace(/^•\s*/gm, ''), fields, people,
   };
@@ -942,7 +977,7 @@ function openBibleReview() {
   const presets = ws.presets?.length ? ws.presets : SEED_PRESETS;
   const gName = id => id ? (GENRE_PRESETS.find(g => g.id === id)?.name || id) : '— ไม่ใช้ —';
   const pName = id => presets.find(x => x.id === id)?.name || id || '—';
-  const nName = v => ({ '': 'ฉัน', 'ผม': 'ผม', 'ข้า': 'ข้า', 'gender': 'ตามเพศ' })[v ?? ''] || v;
+  const nName = v => ({ '': 'อัตโนมัติ', 'ฉัน': 'ฉัน', 'ผม': 'ผม', 'ข้า': 'ข้า', 'gender': 'ตามเพศ' })[v ?? ''] || v;
   const row = (key, label, cur, next, reason, on) => `<label class="bible-row"><input type="checkbox" id="bb-set-${key}" ${on ? 'checked' : ''}/>
     <span class="bible-k">${esc(label)}</span><span class="bible-v">${esc(cur)} → <b>${esc(next)}</b>${reason ? `<small>${esc(reason)}</small>` : ''}</span></label>`;
   const rows = [];
