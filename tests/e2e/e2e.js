@@ -475,6 +475,22 @@ const { chromium } = require(process.env.PLAYWRIGHT_PATH || 'playwright');
   });
   ok('modern story never flagged archaic ("เข้า" ≠ "ข้า", modern genre wins, a mis-fixed chapter does not spread)', md.enter && md.modernWins && md.poisoned);
 
+  // 19) ชื่อเต็มที่มีคำในคลังอยู่ (엘리아 스레이드) ส่งถึงตัวแปลได้ · ชื่อที่แปลครึ่งคำ (ส레이ด) ซ่อมได้โดยไม่ลบคำไทยรอบข้าง · ต้นฉบับใช้เครื่องหมายคำพูดกลับด้านก็ยังนับ
+  const nm = await ev(async () => {
+    const r = {};
+    const w = { id: 'nm' + Date.now(), name: 'nm', glossary: [{ korean: '엘리아', thai: 'เอเลีย', type: 'character', gender: 'female' }], customStyles: [], chapters: [], settings: { sourceLang: 'ko' }, createdAt: Date.now() };
+    await lsSaveWorkspace(w); await selectWorkspace(w.id);
+    window.__plan = ['ok:{"lines":[{"q":1,"speaker":"엘리아","gender":"female"}],"names":[{"korean":"엘리아 스레이드","thai":"เอเลีย สเลด","gender":"female"},{"korean":"엘리아 블랙","thai":"เอลิอา แบล็ก","gender":"female"}]}'];
+    const map = await buildSpeakerMap('“아, 전 엘리아 스레이드라고 해요. 엘리아 블랙은 아니고요.”', 'm', S.currentWs);
+    r.names = !!map && map.names.some(n => n.korean === '엘리아 스레이드') && !map.names.some(n => n.korean === '엘리아 블랙');
+    const fx = s => repairHangulNames(s, map, S.currentWs).text;
+    r.repair = fx('อ้อ ฉันชื่อเอเลีย ส레이ด ที่เพิ่งเข้าเรียน') === 'อ้อ ฉันชื่อเอเลีย สเลด ที่เพิ่งเข้าเรียน' && fx('ฉันชื่อเอเลียส레이ดค่ะ') === 'ฉันชื่อเอเลียสเลดค่ะ' && fx('…คุณ스레이드 กรุณา') === '…คุณสเลด กรุณา';
+    r.quotes = extractSourceLines('"아뇨아뇨. 생도인데요.“\n“…신원확인 부탁드리겠습니다.”\n‘음’').map(l => l.kind + ':' + l.q).join('|') === 'dq:아뇨아뇨. 생도인데요.|dq:…신원확인 부탁드리겠습니다.|sq:음';
+    return r;
+  });
+  ok('full names that contain a glossary name reach the translator · half-translated names repaired without eating nearby Thai', nm.names && nm.repair);
+  ok('source dialogue with mismatched quote marks ("…“) still counted', nm.quotes);
+
   ok('no page errors', errors.length === 0); if (errors.length) console.log(errors);
   await browser.close(); process.exit(fail ? 1 : 0);
 })();
