@@ -36,10 +36,13 @@ const SHARED_CORE_RULES = `CONSISTENCY & READING FLOW (keep the reader's immersi
 • Preserve paragraph breaks and pacing; keep the sentence count unless the style above says to split long sentences. Never add, omit, summarize, or reorder content.
 • Proper names not in the glossary: follow the style sheet's TRANSLITERATE vs TRANSLATE POLICY when there is one; otherwise transliterate them.`;
 
+// คนที่ไม่รู้เพศ: เลี่ยงให้เป็นธรรมชาติ ไม่เดา ไม่บิดบท (เดิม "เรียกชื่อซ้ำเป็นความตั้งใจ" → ชื่อ/ตำแหน่งซ้ำถี่จนอ่านแข็ง
+// และในบทพูดของคนนั้นยังใส่ ครับ/ผม — วัดจริง: ผู้ว่าจ้างที่ไม่รู้เพศได้ ครับ/ผม 10–23 คำต่อฉาก)
+const UNKNOWN_GENDER_RULE = `• Unknown or unclear gender (no glossary gender, no 그/그녀 or he/she, no gendered address) → never guess. Prefer, in this order: (1) drop the subject — natural in Thai; (2) a neutral word that fits (ท่าน for a superior or elder · อีกฝ่าย · คนผู้นั้น · the role word); (3) the name or title, only where needed to stay clear. Never เขา/เธอ/นาง for them, and never add, cut or reshape content just to avoid a pronoun. In their own speech: no ครับ/ค่ะ/คะ and no ผม/ดิฉัน — drop the pronoun (ฉัน only in casual speech) and carry politeness with polite wording (ขอโทษ · รบกวน · กรุณา · คุณ/ท่าน) instead of a gendered particle. Narration → NARRATOR VOICE.`;
 const SHARED_PRONOUN_RULES = `THAI PRONOUN RULES — CRITICAL, NO EXCEPTIONS:
 • Male (gender:male) → 3rd: เขา/ของเขา | 1st in spoken dialogue: ผม/กู/ข้า (match register). NEVER use เธอ/นาง for males (ฉัน is fine in first-person narration and inner thoughts — see NARRATOR VOICE).
 • Female (gender:female) → 3rd: เธอ/นาง/ของเธอ | 1st in spoken dialogue: ฉัน/ดิฉัน/หนู/ข้า (match register; กู only for a rough speaker as the source shows). NEVER use ผม or เขา for females.
-• Unknown or unclear gender (no glossary gender, no 그/그녀 or he/she, no gendered address) → NEVER guess เขา or เธอ: repeat the name or title, or use a neutral form that fits the sentence (ท่าน for a superior or elder · อีกฝ่าย · คนผู้นั้น). This repetition is intended — do not "fix" it into เขา for flow. 1st person in spoken dialogue → ฉัน (narration → NARRATOR VOICE).
+${UNKNOWN_GENDER_RULE}
 • First-person narration and inner thoughts (나/저/我 etc.) → follow NARRATOR VOICE.`;
 
 const SHARED_PROOFREAD_RULES = `PROFESSIONAL PROOFREADING (พิสูจน์อักษรระดับมืออาชีพ) — the output must be publish-ready Thai:
@@ -288,7 +291,7 @@ SPEECH PARTICLE RULES (คำลงท้าย ครับ/ค่ะ) — CRIT
 • Royal register: male speaker → พ่ะย่ะค่ะ · female speaker → เพคะ.
 • NEVER mix male and female particles inside one line of dialogue.
 • The particle must agree with the speaker's self-pronoun in the same line (ผม/กระผม → ครับ · ดิฉัน/อิฉัน → ค่ะ/คะ).
-• If the speaker or their gender is unclear, do NOT guess: use a gender-neutral ending (นะ, or no particle) instead.
+• If the speaker or their gender is unclear, do NOT guess: no gendered particle and no gendered pronoun (ครับ/ค่ะ/คะ/ผม/ดิฉัน) — end with นะ or no particle, drop the pronoun, and keep the politeness in the wording (ขอโทษ · รบกวน · กรุณา · คุณ/ท่าน). A job title or role (client, manager, guard, opponent) is not a gender.
 • Forms of address follow the gender of the person ADDRESSED (공자님/도련님 → คุณชาย · 아가씨/영애 → คุณหนู · 부인 → ท่านหญิง/คุณนาย); never call a male character คุณหนู or a female one คุณชาย.
 • Narration pronouns follow each character's gender: male → เขา · female → เธอ/นาง · unknown → no เขา/เธอ/นาง (repeat the name/title, as the glossary line says) — check the glossary before every เขา/เธอ/นาง.
 • If the Korean source itself uses a wrong-gender pronoun for a character whose gender is in the glossary (a typo such as 그녀 for a male), follow the glossary gender — silently: never add notes, brackets or explanations to the translation.`;
@@ -388,6 +391,7 @@ function applyNarratorVoice(systemPrompt, ws, text = '') {
   if (typeof systemPrompt !== 'string') return systemPrompt;
   let t = systemPrompt;
   for (const [a, b] of [..._OLD_PRONOUN_LINES, ..._CONFLICT_LINES]) t = t.split(a).join(b);   // แก้เสมอ แม้ prompt จะมีบล็อกผู้เล่าอยู่แล้ว
+  t = t.replace(/^• Unknown (?:or unclear )?gender[^\n]*$/m, () => UNKNOWN_GENDER_RULE);       // กฎไม่รู้เพศทุกรุ่นใน preset เดิม → รุ่นล่าสุด
   return t.includes('NARRATOR VOICE (คำแทนตัวผู้เล่า)') ? t : injectPromptBlock(t, buildNarratorBlock(ws, text));
 }
 

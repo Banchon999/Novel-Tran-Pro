@@ -77,7 +77,7 @@ function buildGlossaryStr(wsGlossary) {
     } else if (isGenderableType(v.type)) {
       // ไม่รู้เพศ → ห้ามเดา เขา/เธอ (โมเดลถือว่า "เขา" เป็นกลาง แต่คนอ่านไทยอ่านเป็นผู้ชาย) — บอกไว้ข้างคำเลย กฎรวมด้านบนอย่างเดียวไม่พอ
       const t = fixAddressGender(k, v.thai);
-      parts.push(`${v.gender === 'neutral' ? 'gender:neutral/กลาง' : 'gender unknown'} → never เขา/เธอ/นาง for ${v.type === 'title' ? 'whoever holds this title' : 'this person'}: repeat "${t}" or use a neutral word (ท่าน · อีกฝ่าย · คนผู้นั้น) — unless the source text itself gives a he/she pronoun for them`);
+      parts.push(`${v.gender === 'neutral' ? 'gender:neutral/กลาง' : 'gender unknown'} → never เขา/เธอ/นาง for ${v.type === 'title' ? 'whoever holds this title' : 'this person'}: drop the subject where Thai allows, otherwise ท่าน · อีกฝ่าย · คนผู้นั้น or "${t}" · in their own lines no ครับ/ค่ะ/ผม/ดิฉัน — unless the source text itself gives a he/she pronoun for them`);
     }
     if (v.note) parts.push(v.note);
     return `${k} = ${parts.join(' | ')}`;
@@ -252,7 +252,7 @@ For EACH numbered line decide the speaker from context:
 • dialogue tags BEFORE or AFTER the line (e.g. "…" 엘레나가 물었다 → 엘레나), turn-taking, who is being addressed, speech level and honorifics.
 • Unnamed speakers: describe them (노파, 시녀, 기사, 수행원…) and infer gender from the description
   (노파/할멈/할머니/여인/여자/소녀/하녀/시녀/부인/어머니 = female · 노인/사내/남자/소년/청년/아버지 = male).
-• gender: "male" | "female" | "unknown" — use "unknown" only when it is truly impossible to tell.
+• gender: "male" | "female" | "unknown" — only from evidence: KNOWN CHARACTERS, a he/she pronoun (그/그녀), or a word that is itself gendered (the list above, kinship words). A job title or role alone (의뢰인 · 부장 · 팀장 · 경비병 · 상대 · 목소리) is NOT evidence → "unknown". Never guess.
 
 Also list every PERSON named in the passage who is NOT in KNOWN CHARACTERS, with a Thai transliteration of the name
 (so the translator never leaves a Korean name untranslated).
@@ -347,7 +347,9 @@ function speakerMapPromptBlock(map, ws = S.currentWs) {
   // ตารางสรรพนามบุรุษที่ 3 ของตัวละครที่พูดในตอนนี้ (จาก glossary + แผนที่ผู้พูด) — กันบรรยาย "เขา" กับตัวละครหญิง
   const sheet = new Map();
   for (const g of (ws?.glossary || [])) if (isGenderableType(g.type) && (g.gender === 'male' || g.gender === 'female') && map.some(m => m.speaker && (g.type === 'title' ? m.speaker === g.korean || m.speaker === g.korean + '님' : m.speaker.includes(g.korean) || g.korean.includes(m.speaker)))) sheet.set(g.thai || g.korean, g.gender);
-  for (const m of map) if ((m.gender === 'male' || m.gender === 'female') && m.speaker && m.speaker !== '-' && m.speaker !== '?' && ![...sheet.keys()].some(k => k.includes(m.speaker))) {
+  // ผู้เล่าบุรุษที่ 1 (나/저 · "나 (탐정)") ไม่ใช่ "เขา" — เดิมหลุดเข้าตาราง → บรรยายตัวเองเป็น เขา
+  const isNarrator = sp => /^(나|저|내|본인|narrator|me|I|我|ผู้เล่า)(\s|\(|$)/i.test(String(sp).trim());
+  for (const m of map) if ((m.gender === 'male' || m.gender === 'female') && m.speaker && m.speaker !== '-' && m.speaker !== '?' && !isNarrator(m.speaker) && ![...sheet.keys()].some(k => k.includes(m.speaker))) {
     const g = (ws?.glossary || []).find(c => c.korean && (m.speaker.includes(c.korean) || c.korean.includes(m.speaker)));
     sheet.set(g?.thai || m.speaker, m.gender);
   }
@@ -359,8 +361,11 @@ function speakerMapPromptBlock(map, ws = S.currentWs) {
   const sheetTxt = [...sheet].map(([n, g]) => `${n} = ${g === 'male' ? 'ชาย → เขา' : 'หญิง → เธอ/นาง'}`).join(' · ');
   // ระดับภาษาเกาหลี: สุภาพ (요/니다) → ใส่ ครับ/ค่ะ · ภาษาปกติ (반말/하다체) → ไม่ใส่หางเสียง (ขุนนางคุยกับคนรับใช้, อาจารย์สั่งศิษย์)
   const end = (g, lv) => {
-    if (g !== 'male' && g !== 'female') return 'no gendered particle';
     const old = map.some(m => m.archaic) || archaicSpeech(ws);
+    // ไม่รู้เพศ: บอกให้ชัดว่าห้ามอะไร + ทำอะไรแทน ("no gendered particle" เฉย ๆ โมเดลยังใส่ ครับ/ผม)
+    if (g !== 'male' && g !== 'female') return old
+      ? `gender unknown → self: ข้า (neutral) · no ขอรับ/เจ้าค่ะ${lv === 'plain' ? '' : ' — show respect with ท่าน and polite wording'}`
+      : `gender unknown → NO ครับ/ค่ะ/คะ, NO ผม/ดิฉัน · drop the pronoun${lv === 'plain' ? ' (or ฉัน)' : ' · keep it polite with wording (ขอโทษ · รบกวน · คุณ/ท่าน), not a particle'}`;
     const self = old ? 'ข้า' : g === 'male' ? 'ฉัน/ผม by register (never ดิฉัน)' : 'ฉัน (never ผม)';
     if (lv === 'plain') return `plain speech → no ครับ/ค่ะ, self: ${self}`;
     if (old) return g === 'male' ? 'polite → ขอรับ, self: ข้า/ข้าน้อย' : 'polite → เจ้าค่ะ/เจ้าคะ, self: ข้า/ข้าน้อย';
@@ -396,7 +401,8 @@ function koSpeechLevel(q) {
   const sents = String(q || '').replace(/[“”"‘’'「」『』]/g, '').split(/[.!?…~,]+\s*/)
     .map(x => x.replace(/[\s.!?…~,\-—)]+$/, '')).filter(Boolean);
   if (!sents.length) return 'polite';
-  return sents.some(x => /(요|니다|니까|시오|소서|옵니다|나이다)$/.test(x)) ? 'polite' : 'plain';
+  // เรียกอีกฝ่ายด้วย ~님 = พูดสุภาพ แม้ประโยคจะค้าง ("네, 부장님. 계약이 취소되면서…")
+  return sents.some(x => /(요|니다|니까|시오|소서|옵니다|나이다)$/.test(x)) || /님/.test(q) ? 'polite' : 'plain';
 }
 
 // แปลงคำลงท้าย/คำแทนตัวในบทพูด 1 บรรทัดให้ตรงเพศผู้พูด — คืนข้อความใหม่ (ไม่เปลี่ยนถ้าตรงอยู่แล้ว)
@@ -430,6 +436,31 @@ function fixQuoteGender(q, gender, archaic = false) {
          .replace(/ดิฉัน|อิฉัน/g, 'ผม');
   }
   return t;
+}
+
+// ตัวแก้บทพูด 1 บรรทัดตามแผนที่: รู้เพศ → แก้คำลงท้าย/คำแทนตัวให้ตรงเพศ · รู้ว่าใครพูดแต่ไม่รู้เพศ → ตัดคำบอกเพศออก
+// (ผู้พูด '?' = ไม่รู้ว่าใครพูด → ไม่แตะ เพราะอาจเป็นตัวละครที่รู้เพศ · ผู้เล่า 나/저 → ไม่แตะ)
+const _NARRATOR_SPK_RE = /^(나|저|내|본인|narrator|me|I|我|ผู้เล่า)(\s|\(|$)/i;
+function _quoteFix(body, m) {
+  if (m.gender === 'male' || m.gender === 'female') return fixQuoteGender(body, m.gender, m.archaic === 'sure' && m.kind !== 'sq');
+  if (m.kind === 'sq' || !m.speaker || m.speaker === '?' || m.speaker === '-' || _NARRATOR_SPK_RE.test(String(m.speaker).trim())) return body;
+  return _neutralizeQuote(body);
+}
+// บทพูดของคนที่ไม่รู้เพศ: ตัด ครับ/ค่ะ/คะ/ขอรับ/เจ้าค่ะ · ผม/ดิฉัน ต้นวลี → ละไว้ (ไทยละประธานได้) · ของผม → ของฉัน · ผมว่า → ฉันว่า
+// วัดจริง: Gemma 4 26B ใส่ ครับ/ผม ให้ผู้ว่าจ้างที่ไม่รู้เพศ 11–12 คำต่อฉาก แม้ prompt + แผนที่สั่งห้าม · ราชาศัพท์ (พ่ะย่ะค่ะ/เพคะ) ไม่แตะ
+function _neutralizeQuote(q) {
+  const keep = [];
+  const mask = s => { keep.push(s); return `\u0003${keep.length - 1}\u0003`; };
+  let t = q.replace(/พ่ะย่ะค่ะ|พะยะค่ะ|เพคะ|หม่อมฉัน|กระหม่อม/g, mask).replace(_HAIR_MASK_RE, mask);
+  t = t.replace(/นะครับ|นะคะ|นะขอรับ|นะเจ้าคะ/g, 'นะ').replace(/ครับผม|ครับ|ขอรับ|เจ้าค่ะ|เจ้าคะ|ค่ะ/g, '').replace(new RegExp('คะ' + _PEND, 'g'), '');
+  t = t.replace(/ของ(?:กระผม|ผม|ดิฉัน|อิฉัน)/g, 'ของฉัน')
+       .replace(/(^|[\s“"「…,!?])(?:กระผม|ผม|ดิฉัน|อิฉัน)(?=ว่า|คิดว่า|เอง)/g, '$1ฉัน')
+       // อนุประโยค (ที่ผมรับผิดชอบ · ว่าผมจะ) ต้องมีประธาน → ตัวเอง (ตัดทิ้งแล้วความหมายหาย: "เคสที่รับผิดชอบ")
+       .replace(/(ที่|ว่า)(?:กระผม|ผม|ดิฉัน|อิฉัน)(?!ของ|ร่วง|เปีย|ม้า)(?=[ก-ฮเ-ไ])/g, '$1ตัวเอง')
+       .replace(/(^|[\s“"「…,!?]|พอดี|แต่|ถ้า|หาก|เพราะ|แล้ว|และ|เมื่อ)(?:กระผม|ผม|ดิฉัน|อิฉัน)(?!ของ|ร่วง|เปีย|ม้า)(?=[ก-ฮเ-ไ])/g, '$1')
+       .replace(/กระผม|ดิฉัน|อิฉัน/g, 'ฉัน');   // "ผม" กลางประโยคอาจเป็นเส้นผม (ตัดผม) → ไม่แตะ
+  t = t.replace(/\u0003(\d+)\u0003/g, (_, i) => keep[+i]).replace(/[ \t]{2,}/g, ' ').replace(/\s+([!?…,.])/g, '$1').trim();
+  return /[ก-ฮ]/.test(t) ? t : q;   // เหลือแต่เครื่องหมาย ("ครับ!") → คงเดิม ดีกว่าบรรทัดว่าง
 }
 
 // บทพูดในเรื่องยุคโบราณ (ยืนยันจากค่าตั้ง/ตอนก่อน): ผม/ครับ/ค่ะ ปัจจุบัน → ข้า + ขอรับ/เจ้าค่ะ ตามเพศผู้พูด
@@ -495,7 +526,7 @@ function _fixByRegex(text, re, map, fixes) {
   let i = 0;
   return text.replace(re, (all, open, body, close) => {
     const m = map[i++];
-    const fixed = fixQuoteGender(body, m.gender, m.archaic === 'sure' && m.kind !== 'sq');
+    const fixed = _quoteFix(body, m);
     if (fixed !== body) fixes.push({ speaker: m.speaker, gender: m.gender, from: body, to: fixed });
     return open + fixed + close;
   });
@@ -550,7 +581,7 @@ function _fixMatched(text, re, pairOf, map, fixes) {
     const si = pairOf(j++);
     if (si === undefined) return all;
     const m = map[si];
-    const fixed = fixQuoteGender(body, m.gender, m.archaic === 'sure' && m.kind !== 'sq');
+    const fixed = _quoteFix(body, m);
     if (fixed !== body) fixes.push({ speaker: m.speaker, gender: m.gender, from: body, to: fixed });
     return open + fixed + close;
   });

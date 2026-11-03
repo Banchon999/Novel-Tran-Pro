@@ -221,10 +221,11 @@ const { chromium } = require(process.env.PLAYWRIGHT_PATH || 'playwright');
     const gs = buildGlossaryStr({ 원장: { korean: '원장', thai: 'ผู้อำนวยการ', type: 'title' }, 하린: { korean: '하린', thai: 'ฮาริน', type: 'character', gender: 'neutral' },
       도윤: { korean: '도윤', thai: 'โดยุน', type: 'character', gender: 'male' }, 마석: { korean: '마석', thai: 'หินเวท', type: 'item' } });
     const p = buildTranslatePrompt({ sourceText: '원장이 말했다.', ws: S.currentWs });
-    return { title: gs.includes('원장 = ผู้อำนวยการ | gender unknown → never เขา/เธอ/นาง for whoever holds this title: repeat "ผู้อำนวยการ"'),
+    return { title: gs.includes('원장 = ผู้อำนวยการ | gender unknown → never เขา/เธอ/นาง for whoever holds this title: drop the subject where Thai allows, otherwise ท่าน · อีกฝ่าย · คนผู้นั้น or "ผู้อำนวยการ" · in their own lines no ครับ/ค่ะ/ผม/ดิฉัน'),
       neutral: gs.includes('하린 = ฮาริน | gender:neutral/กลาง → never เขา/เธอ/นาง for this person'),
       male: /도윤 = [^\n]*3rd→เขา/.test(gs) && !/도윤 =[^\n]*never/.test(gs), item: !/마석 =[^\n]*never/.test(gs),
-      old: !p.includes(oldLine) && p.includes('NEVER guess เขา or เธอ'), polish: POLISH_PROMPT.includes('it was left neutral on purpose') };
+      old: !p.includes(oldLine) && p.includes('never guess. Prefer, in this order: (1) drop the subject') && (p.match(/• Unknown or unclear gender/g) || []).length === 1,
+      polish: POLISH_PROMPT.includes('it was left neutral on purpose') };
   });
   ok('unknown/neutral gender → glossary line forbids เขา/เธอ and names the neutral options', ng.title && ng.neutral && ng.male && ng.item);
   ok('old saved preset "Unknown gender → เขา" replaced · Polish keeps neutral wording', ng.old && ng.polish);
@@ -390,6 +391,28 @@ const { chromium } = require(process.env.PLAYWRIGHT_PATH || 'playwright');
   ok('cost estimate per chapter follows mode and model price', sc.cost);
   ok('"map only" mode skips the gender-check AI call', sc.noCheck);
   ok('speaker map retries once when the model answers empty', sc.retry);
+
+  // 16) คนที่ไม่รู้เพศ: เลี่ยงแบบธรรมชาติ ไม่เดา · แผนที่สั่งชัด · ตัวแก้ตัด ครับ/ผม เฉพาะบรรทัดที่รู้ว่าใครพูดแต่ไม่รู้เพศ
+  const ug = await ev(async () => {
+    const r = {};
+    const w = { id: 'ug' + Date.now(), name: 'ug', glossary: [{ korean: '강도윤', thai: 'คังโดยุน', type: 'character', gender: 'male' }], customStyles: [], chapters: [], settings: { sourceLang: 'ko' }, createdAt: Date.now() };
+    await lsSaveWorkspace(w); await selectWorkspace(w.id);
+    const ws = S.currentWs;
+    const p = buildTranslatePrompt({ sourceText: '의뢰인이 말했다. “제 동업자입니다.”', ws });
+    r.rule = p.includes('(1) drop the subject') && p.includes('never add, cut or reshape content') && p.includes('A job title or role (client, manager, guard, opponent) is not a gender');
+    r.mapPrompt = SPEAKER_MAP_PROMPT.includes('A job title or role alone') && SPEAKER_MAP_PROMPT.includes('Never guess');
+    const map = [{ speaker: '의뢰인', gender: 'unknown', kind: 'dq', q: '제 동업자입니다.' }, { speaker: '나 (탐정)', gender: 'male', kind: 'dq', q: '누구입니까?' }, { speaker: '?', gender: 'unknown', kind: 'dq', q: '네.' }];
+    const blk = speakerMapPromptBlock(map, ws);
+    r.mapLine = blk.includes('gender unknown → NO ครับ/ค่ะ/คะ, NO ผม/ดิฉัน') && !/3RD-PERSON[^\n]*나/.test(blk);
+    r.level = koSpeechLevel('네, 부장님. 계약이 취소되면서…') === 'polite';
+    const out = applySpeakerFixes('“หุ้นส่วนของผมครับ ผมตามหามาสามวันแล้วครับ” “ใครครับ” “ครับ”', map, ws).text;
+    r.fix = out === '“หุ้นส่วนของฉัน ตามหามาสามวันแล้ว” “ใครครับ” “ครับ”';
+    r.clause = _neutralizeQuote('เป็นเคสที่ผมรับผิดชอบครับ') === 'เป็นเคสที่ตัวเองรับผิดชอบ' && _neutralizeQuote('ตัดผมมาใหม่เหรอคะ') === 'ตัดผมมาใหม่เหรอ' && _neutralizeQuote('ครับ!') === 'ครับ!';
+    return r;
+  });
+  ok('unknown gender: prompt says drop subject / neutral word / no guessing / no reshaping', ug.rule && ug.mapPrompt);
+  ok('speaker map: unknown-gender line forbids ครับ/ผม · narrator not listed as เขา · ~님 = polite', ug.mapLine && ug.level);
+  ok('auto-fix strips ครับ/ผม only for an identified speaker of unknown gender (known & unidentified untouched)', ug.fix && ug.clause);
 
   ok('no page errors', errors.length === 0); if (errors.length) console.log(errors);
   await browser.close(); process.exit(fail ? 1 : 0);
