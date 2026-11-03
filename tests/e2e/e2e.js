@@ -358,6 +358,34 @@ const { chromium } = require(process.env.PLAYWRIGHT_PATH || 'playwright');
   ok('archaic story: dialogue register fixed even without a speaker map · modern untouched', rg.old && rg.modern);
   ok('narrator word "auto": ข้า in an archaic story, ฉัน otherwise · explicit ฉัน kept', rg.narrAuto && rg.narrExplicit);
 
+  // 15) แผนที่ผู้พูดคุมค่าใช้จ่าย: 3 โหมด · เลือกโมเดลได้ทุกตัว + ใส่เองได้ · ประมาณราคาต่อตอน · โหมด "ระบุผู้พูดอย่างเดียว" ไม่เรียกตรวจเพศ
+  const sc = await ev(async () => {
+    const r = {};
+    const src = '레온이 말했다. “가자.” 아리아가 웃었다. “네.”\n'.repeat(40);
+    const w = { id: 'sc' + Date.now(), name: 'cost', glossary: [{ korean: '레온', thai: 'เลออน', type: 'character', gender: 'male' }], customStyles: [],
+      chapters: [1, 2, 3].map(n => ({ id: 'c' + n, chapterNum: n, title: '' + n, sourceText: src, translation: n === 1 ? 'แปลแล้ว' : '', status: 'pending' })),
+      settings: { sourceLang: 'ko', translateModel: 'google/gemini-3.1-flash-lite', proofreadModel: 'my/custom-model' }, createdAt: Date.now() };
+    await lsSaveWorkspace(w); await selectWorkspace(w.id);
+    const ws = S.currentWs;
+    r.modes = ['full', 'map', 'off'].every(m => speakerModeOf({ settings: speakerModeSettings(m) }) === m) && speakerModeOf(ws) === 'full';
+    const sel = document.createElement('select'); renderHelperModelSelect(sel, ws);
+    const vals = [...sel.options].map(o => o.value);
+    r.select = sel.value === 'my/custom-model' && vals.includes('same') && vals.includes('__custom__') && vals.includes('google/gemini-3.1-flash-lite') && vals.length > 10;
+    const full = estimateSpeakerCost(ws, 'google/gemini-3-flash-preview');
+    const mapOnly = estimateSpeakerCost({ ...ws, settings: { ...ws.settings, ...speakerModeSettings('map') } }, 'google/gemini-3-flash-preview');
+    const cheap = estimateSpeakerCost(ws, 'openai/gpt-oss-120b');
+    r.cost = full.perCh > mapOnly.perCh && mapOnly.perCh > cheap.perCh && full.left === 2 && Math.abs(full.total - full.perCh * 2) < 1e-12 && estimateSpeakerCost(ws, 'my/custom-model').rate === null;
+    ws.settings.speakerCheck = false;
+    const before = window.__calls;
+    const gp = await genderProofread(src, 'เขายิ้ม '.repeat(50), 'm', ws);
+    r.noCheck = window.__calls === before && gp.fixes.length === 0;
+    return r;
+  });
+  ok('speaker map modes (full / map only / off) round-trip', sc.modes);
+  ok('helper model: every provider model + custom id, current kept selected', sc.select);
+  ok('cost estimate per chapter follows mode and model price', sc.cost);
+  ok('"map only" mode skips the gender-check AI call', sc.noCheck);
+
   ok('no page errors', errors.length === 0); if (errors.length) console.log(errors);
   await browser.close(); process.exit(fail ? 1 : 0);
 })();

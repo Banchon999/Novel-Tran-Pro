@@ -250,14 +250,14 @@ function renderWsSettings() {
   if (clRef) clRef.value = w.settings?.consistencySelfRef || 'auto';
   const nsEl = document.getElementById('wsNarratorSelf');
   if (nsEl) nsEl.value = w.settings?.narratorSelf || '';
-  const smEl = document.getElementById('wsSpeakerMap');
-  if (smEl) smEl.checked = w.settings?.speakerMap !== false;
+  const smEl = document.getElementById('wsSpeakerMode');
+  if (smEl) smEl.value = speakerModeOf(w);
   const stEl = document.getElementById('wsStableTemp');
   if (stEl) stEl.checked = w.settings?.stableTemp !== false;
   wsTempHint();
   renderStyleSheetFields(w);
-  const pmEl = document.getElementById('wsProofreadModel');
-  if (pmEl) pmEl.value = w.settings?.proofreadModel || ((w.settings?.aiProvider || 'openrouter') === 'openrouter' ? 'google/gemini-3-flash-preview' : 'same');
+  renderHelperModelSelect(document.getElementById('wsProofreadModel'), w);
+  updateSpeakerCostHint();
   renderPresetSelect();
   // Context Memory settings
   const ctx = wsGetContext(w);
@@ -313,9 +313,9 @@ async function saveWsSettings() {
     consistencyLock: !!document.getElementById('wsConsistencyLock')?.checked,
     consistencySelfRef: document.getElementById('wsConsistencySelfRef')?.value || 'auto',
     narratorSelf: document.getElementById('wsNarratorSelf')?.value || '',
-    speakerMap: document.getElementById('wsSpeakerMap') ? document.getElementById('wsSpeakerMap').checked : true,
+    ...speakerModeSettings(document.getElementById('wsSpeakerMode')?.value || speakerModeOf(S.currentWs)),
     stableTemp: document.getElementById('wsStableTemp') ? document.getElementById('wsStableTemp').checked : true,
-    proofreadModel: document.getElementById('wsProofreadModel')?.value || S.currentWs.settings?.proofreadModel,
+    proofreadModel: helperModelValue(document.getElementById('wsProofreadModel')) || S.currentWs.settings?.proofreadModel,
     batchChunkMode: document.getElementById('wsBatchChunkMode')?.value || 'off',
     batchChunkSize: Math.max(1000, Math.min(20000, parseInt(document.getElementById('wsBatchChunkSize')?.value) || 3000)),
     sourceLang: document.getElementById('wsSourceLang')?.value || '',

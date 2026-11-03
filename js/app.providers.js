@@ -16,7 +16,7 @@ const PROVIDERS = {
       ['── OpenAI ──', [['openai/gpt-5-nano','GPT-5 Nano ✨'],['openai/gpt-5','GPT-5'],['openai/gpt-4.1-nano','GPT-4.1 Nano'],['openai/gpt-4o-mini','GPT-4o Mini'],['openai/gpt-4o','GPT-4o'],['openai/gpt-oss-120b','GPT-OSS 120B']]],
       ['── DeepSeek ──', [['deepseek/deepseek-v3.2','DeepSeek V3.2 🆕'],['deepseek/deepseek-chat-v3-0324','DeepSeek V3 (Mar)'],['deepseek/deepseek-chat','DeepSeek V3'],['deepseek/deepseek-r1','DeepSeek R1']]],
       ['── xAI ──', [['x-ai/grok-4.3','Grok 4.3'],['x-ai/grok-4.7','Grok 4.7']]],
-      ['── อื่นๆ ──', [['anthropic/claude-haiku-4.5','Claude Haiku 4.5'],['google/gemma-4-31b-it:free','Gemma 4 31B (ฟรี)'],['qwen/qwen3.8-27b:free','Qwen3.8 27B (ฟรี)']]],
+      ['── อื่นๆ ──', [['google/gemma-4-26b-a4b-it','Gemma 4 26B 💰'],['qwen/qwen3.8-flash','Qwen3.8 Flash'],['anthropic/claude-haiku-4.5','Claude Haiku 4.5'],['google/gemma-4-31b-it:free','Gemma 4 31B (ฟรี)'],['qwen/qwen3.8-27b:free','Qwen3.8 27B (ฟรี)']]],
     ],
     buildRequest({ model, messages, temperature, max_tokens, stream, key }) {
       return {
@@ -429,6 +429,9 @@ async function onFetchModels(btn) {
   try {
     const list = await fetchModels(provName);
     renderProviderUI();
+    // ช่องโมเดลช่วย (ระบุผู้พูด) ในหน้าตั้งค่า → ได้รายการ + ราคาล่าสุดด้วย
+    const hs = document.getElementById('wsProofreadModel');
+    if (hs && typeof renderHelperModelSelect === 'function') { const keep = helperModelValue(hs); renderHelperModelSelect(hs, S.currentWs); if (keep && [...hs.options].some(o => o.value === keep)) { hs.value = keep; hs.dataset.prev = keep; } updateSpeakerCostHint(); }
     showToast(`ดึง ${list.length} โมเดลจาก ${PROVIDERS[provName].label} แล้ว ✓`, 'success');
   } catch (e) {
     showToast(e.message || 'ดึงรายการโมเดลไม่สำเร็จ', 'error');
@@ -490,8 +493,9 @@ const MODEL_COSTS = {
   'openai/gpt-4.1-nano':                 { in: 0.1, out: 0.4 },
   'openai/gpt-4o-mini':                  { in: 0.15, out: 0.6 },
   'openai/gpt-4o':                       { in: 2.5, out: 10 },
-  'openai/gpt-oss-120b':                 { in: 0.037, out: 0.17 },
-  'deepseek/deepseek-v3.2':              { in: 0.28, out: 0.42 },
+  'openai/gpt-oss-120b':                 { in: 0.15, out: 0.6 },     // 2026-11-03
+  'deepseek/deepseek-v3.2':              { in: 0.26, out: 0.38 },    // 2026-11-03
+  'google/gemma-4-26b-a4b-it':           { in: 0.077, out: 0.231 },  // 2026-11-03
   'deepseek/deepseek-chat-v3-0324':      { in: 0.29, out: 1.14 },
   'deepseek/deepseek-chat':              { in: 0.2574, out: 1.0287 },
   'deepseek/deepseek-r1':                { in: 0.7, out: 2.5 },

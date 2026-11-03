@@ -647,9 +647,97 @@ function getProofreadModel(ws, translateModel) {
   return (ws?.settings?.aiProvider || 'openrouter') === 'openrouter' ? DEFAULT_PROOFREAD_MODEL : translateModel;
 }
 
+// ─── โมเดลช่วย (ระบุผู้พูด + ตรวจเพศคำบรรยาย + สแกน Bible) — เลือกได้หลายระดับราคาเพื่อคุมค่าใช้จ่าย ───
+// โหมด: 'full' = ระบุผู้พูด + ตรวจเพศ (ค่าเริ่มต้น) · 'map' = ระบุผู้พูดอย่างเดียว · 'off' = ปิด
+function speakerModeOf(ws = S.currentWs) {
+  const st = ws?.settings || {};
+  return st.speakerMap === false ? 'off' : st.speakerCheck === false ? 'map' : 'full';
+}
+function speakerModeSettings(mode) {
+  return mode === 'off' ? { speakerMap: false } : { speakerMap: true, speakerCheck: mode !== 'map' };
+}
+// [id, ชื่อ, หมายเหตุ] — แนะนำจากการวัดจริง (tests/gender/run-speakermap-models.js)
+const HELPER_MODEL_PICKS = [];
+function helperModelRate(id) {
+  const prov = typeof getProvider === 'function' ? getProvider() : 'openrouter';
+  return (typeof MODEL_COSTS !== 'undefined' && (MODEL_COSTS[prov + ':' + id] || MODEL_COSTS[id]))
+    || (prov === 'openrouter' && typeof _modelPriceMap !== 'undefined' && _modelPriceMap[id]) || null;
+}
+// ประมาณค่าใช้จ่ายต่อตอน จากความยาวต้นฉบับเฉลี่ย + จำนวนบทพูด (ค่าคงที่เทียบกับค่าจริงจาก OpenRouter)
+const SPK_TOK_PER_CHAR = 0.9;
+function estimateSpeakerCost(ws = S.currentWs, model) {
+  const id = model === 'same' || !model ? ws?.settings?.translateModel : model;
+  const r = helperModelRate(id);
+  const chs = (ws?.chapters || []).filter(c => c.sourceText);
+  if (!r || !chs.length) return { rate: r, perCh: null };
+  const sample = chs.slice(0, 8);
+  const chars = sample.reduce((a, c) => a + c.sourceText.length, 0) / sample.length;
+  const quotes = sample.reduce((a, c) => a + extractSourceQuotes(c.sourceText).length, 0) / sample.length;
+  const mapIn = chars * SPK_TOK_PER_CHAR + quotes * 12 + 1300, mapOut = quotes * 22 + 250;
+  const chkIn = chars * SPK_TOK_PER_CHAR * 0.35 + 1500, chkOut = 500;   // ตรวจเฉพาะย่อหน้าที่น่าสงสัย (บางตอนไม่เรียกเลย)
+  const map = (mapIn * r.in + mapOut * r.out) / 1e6, check = (chkIn * r.in + chkOut * r.out) / 1e6;
+  const mode = speakerModeOf(ws), perCh = mode === 'off' ? 0 : map + (mode === 'full' ? check : 0);
+  const left = chs.filter(c => !c.translation).length;
+  return { rate: r, map, check, perCh, left, total: perCh * left };
+}
+const _fmtUsd = v => v < 0.001 ? '<$0.001' : '$' + (v < 0.1 ? v.toFixed(4) : v.toFixed(2));
+const _fmtRate = r => !r ? '' : (r.in === 0 && r.out === 0) ? 'ฟรี' : `$${+r.in.toFixed(3)} / $${+r.out.toFixed(2)} ต่อ 1M`;
+
+// ช่องเลือกโมเดลช่วย: แนะนำ (วัดจริง) · ใช้โมเดลแปล · ทุกโมเดลของ provider (รายการที่ดึงจาก API ถ้ามี) · ใส่รหัสเอง
+function renderHelperModelSelect(sel, ws = S.currentWs) {
+  if (!sel) return;
+  const prov = typeof getProvider === 'function' ? getProvider() : 'openrouter';
+  const cur = ws?.settings?.proofreadModel || (prov === 'openrouter' ? DEFAULT_PROOFREAD_MODEL : 'same');
+  const opt = (id, label) => `<option value="${esc(id)}">${esc(label)}</option>`;
+  const withRate = (id, label) => { const r = helperModelRate(id); return r ? `${label} · ${_fmtRate(r)}` : label; };
+  const seen = new Set(['same']);
+  let html = opt('same', `ใช้โมเดลเดียวกับที่แปล (${ws?.settings?.translateModel || '—'})`);
+  if (prov === 'openrouter' && HELPER_MODEL_PICKS.length) {
+    html += `<optgroup label="แนะนำสำหรับระบุผู้พูด (วัดจริง)">${HELPER_MODEL_PICKS.map(([id, name, note]) => { seen.add(id); return opt(id, withRate(id, `${name} — ${note}`)); }).join('')}</optgroup>`;
+  }
+  const fetched = (typeof _fetchedModels !== 'undefined' && _fetchedModels[prov]) || null;
+  const all = fetched && fetched.length ? fetched.map(m => [m.id, m.label || m.id]) : (PROVIDERS[prov]?.models || []).flatMap(([, items]) => items);
+  const rest = all.filter(([id]) => !seen.has(id));
+  rest.sort((a, b) => ((helperModelRate(a[0])?.in ?? 99) - (helperModelRate(b[0])?.in ?? 99)) || String(a[1]).localeCompare(String(b[1])));
+  if (rest.length) html += `<optgroup label="${fetched?.length ? `ทุกโมเดลจาก API (${rest.length}) · ถูก → แพง` : 'โมเดลอื่น · กด 🔄 ที่แถบโมเดลแปลเพื่อดึงทั้งหมด'}">${rest.map(([id, label]) => { seen.add(id); return opt(id, withRate(id, label)); }).join('')}</optgroup>`;
+  if (cur && !seen.has(cur)) html += opt(cur, `⭐ ${cur}`);
+  html += opt('__custom__', '✏️ ใส่รหัสโมเดลเอง…');
+  sel.innerHTML = html;
+  sel.value = cur;
+  sel.dataset.prev = cur;
+}
+function helperModelValue(sel) {
+  const v = sel?.value;
+  return v && v !== '__custom__' ? v : (sel?.dataset.prev || '');
+}
+function onHelperModelChange(sel) {
+  if (sel.value === '__custom__') {
+    const id = (prompt('รหัสโมเดล (เช่น google/gemini-3.1-flash-lite หรือดูที่ openrouter.ai/models)', '') || '').trim();
+    if (!id) { sel.value = sel.dataset.prev || 'same'; updateSpeakerCostHint(); return; }
+    if (![...sel.options].some(o => o.value === id)) sel.insertBefore(new Option(`⭐ ${id}`, id), sel.querySelector('option[value="__custom__"]'));
+    sel.value = id;
+  }
+  sel.dataset.prev = sel.value;
+  updateSpeakerCostHint();
+}
+// แสดงค่าใช้จ่ายโดยประมาณตามโหมด + โมเดลที่เลือกอยู่ในหน้าตั้งค่า (ยังไม่บันทึกก็เห็น)
+function updateSpeakerCostHint() {
+  const el = document.getElementById('wsSpeakerCost');
+  if (!el || !S.currentWs) return;
+  const mode = document.getElementById('wsSpeakerMode')?.value || speakerModeOf(S.currentWs);
+  const model = helperModelValue(document.getElementById('wsProofreadModel')) || 'same';
+  if (mode === 'off') { el.textContent = 'ปิดอยู่ — ไม่เรียก AI เพิ่ม (คำลงท้าย/คำแทนตัวไม่ถูกตรวจตามผู้พูด)'; return; }
+  const ws = { ...S.currentWs, settings: { ...S.currentWs.settings, ...speakerModeSettings(mode) } };
+  const e = estimateSpeakerCost(ws, model);
+  if (!e.rate) { el.textContent = 'ยังไม่รู้ราคาของโมเดลนี้ — กด 🔄 ข้างช่องเลือกโมเดลแปลเพื่อดึงราคาจาก OpenRouter'; return; }
+  if (e.perCh === null) { el.textContent = `ราคา ${_fmtRate(e.rate)} · เพิ่มตอนแล้วจะประมาณค่าใช้จ่ายต่อตอนให้`; return; }
+  el.textContent = `≈ ${_fmtUsd(e.perCh)} ต่อตอน · AI +${mode === 'full' ? '1–2' : '1'} ครั้ง (ระบุผู้พูด ${_fmtUsd(e.map)}${mode === 'full' ? ` + ตรวจเพศ ≤${_fmtUsd(e.check)}` : ''})`
+    + (e.left ? ` · ${e.left} ตอนที่ยังไม่แปล ≈ ${_fmtUsd(e.total)}` : '') + ' — ประมาณจากความยาวตอนในเรื่องนี้';
+}
+
 async function genderProofread(srcText, thaiText, model, ws = S.currentWs) {
   const res = { text: thaiText, fixes: [] };
-  if (!speakerMapEnabled(ws) || !thaiText || !srcText) return res;
+  if (!speakerMapEnabled(ws) || ws?.settings?.speakerCheck === false || !thaiText || !srcText) return res;
   const cand = _genderCandidates(thaiText, ws);
   if (!cand.length) return res;
   const paras = thaiText.split('\n');
