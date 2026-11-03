@@ -375,6 +375,10 @@ const { chromium } = require(process.env.PLAYWRIGHT_PATH || 'playwright');
     const mapOnly = estimateSpeakerCost({ ...ws, settings: { ...ws.settings, ...speakerModeSettings('map') } }, 'google/gemini-3-flash-preview');
     const cheap = estimateSpeakerCost(ws, 'openai/gpt-oss-120b');
     r.cost = full.perCh > mapOnly.perCh && mapOnly.perCh > cheap.perCh && full.left === 2 && Math.abs(full.total - full.perCh * 2) < 1e-12 && estimateSpeakerCost(ws, 'my/custom-model').rate === null;
+    const c0 = window.__calls;
+    window.__plan = ['ok:', 'ok:{"lines":[{"q":1,"speaker":"레온","gender":"male"},{"q":2,"speaker":"아리아","gender":"female"}],"names":[]}'];
+    const rm = await buildSpeakerMap('레온이 말했다. “가자.” 아리아가 웃었다. “네.”', 'm', ws);
+    r.retry = !!rm && rm.length === 2 && rm[1].gender === 'female' && window.__calls - c0 === 2;
     ws.settings.speakerCheck = false;
     const before = window.__calls;
     const gp = await genderProofread(src, 'เขายิ้ม '.repeat(50), 'm', ws);
@@ -385,6 +389,7 @@ const { chromium } = require(process.env.PLAYWRIGHT_PATH || 'playwright');
   ok('helper model: every provider model + custom id, current kept selected', sc.select);
   ok('cost estimate per chapter follows mode and model price', sc.cost);
   ok('"map only" mode skips the gender-check AI call', sc.noCheck);
+  ok('speaker map retries once when the model answers empty', sc.retry);
 
   ok('no page errors', errors.length === 0); if (errors.length) console.log(errors);
   await browser.close(); process.exit(fail ? 1 : 0);

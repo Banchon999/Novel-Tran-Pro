@@ -282,14 +282,17 @@ async function buildSpeakerMap(text, model, ws = S.currentWs) {
     .replace('{text}', text)
     .replace('{lines}', lines.map((l, i) => l.kind === 'dq' ? `Q${i + 1}: “${l.q}”` : `Q${i + 1}: ‘${l.q}’ (single quotes: thought / recalled speech / a named term — for a term use speaker "-")`).join('\n'));
   try {
-    const res = await callOpenRouter({
-      // ใช้โมเดลตรวจ (แรงกว่าโมเดลแปลราคาถูก) — ระบุผู้พูด/ถอดชื่อไทยแม่นกว่า · Flash Lite บางรุ่นถอดชื่อเป็นอักษรเกาหลี ("카일")
-      model: getProofreadModel(ws, model), temperature: 0,
-      max_tokens: Math.max(6000, lines.length * 80 + 3000),   // เผื่อโมเดลที่คิดก่อนตอบ (reasoning)
-      messages: [{ role: 'user', content: prompt }],
-    });
-    const raw = (res.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
-    let { arr, names } = _parseSpeakerMapJson(raw);
+    // โมเดลราคาถูกบางครั้งตอบว่าง/JSON อ่านไม่ได้ (วัดจริง: Gemini 2.5 Flash Lite 2 ใน 12 ครั้ง) → ลองใหม่ 1 ครั้ง (เสียเงินเพิ่มเฉพาะตอนล้มเหลว)
+    let arr = null, names = [];
+    for (let attempt = 0; attempt < 2 && !Array.isArray(arr); attempt++) {
+      const res = await callOpenRouter({
+        // ใช้โมเดลตรวจ (แรงกว่าโมเดลแปลราคาถูก) — ระบุผู้พูด/ถอดชื่อไทยแม่นกว่า · Flash Lite บางรุ่นถอดชื่อเป็นอักษรเกาหลี ("카일")
+        model: getProofreadModel(ws, model), temperature: 0,
+        max_tokens: Math.max(6000, lines.length * 80 + 3000),   // เผื่อโมเดลที่คิดก่อนตอบ (reasoning)
+        messages: [{ role: 'user', content: prompt }],
+      });
+      ({ arr, names } = _parseSpeakerMapJson((res.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim()));
+    }
     if (!Array.isArray(arr)) return null;
     // ชื่อที่ยังไม่อยู่ในคลังศัพท์ → ให้ตัวแปลมีตัวสะกดไทย (ตอนแรกของเรื่องคลังว่าง → โมเดลมักทิ้งชื่อเกาหลีไว้ เช่น "อา리아")
     const known = new Set((ws?.glossary || []).map(g => g.korean).filter(Boolean));
@@ -656,15 +659,29 @@ function speakerModeOf(ws = S.currentWs) {
 function speakerModeSettings(mode) {
   return mode === 'off' ? { speakerMap: false } : { speakerMap: true, speakerCheck: mode !== 'map' };
 }
-// [id, ชื่อ, หมายเหตุ] — แนะนำจากการวัดจริง (tests/gender/run-speakermap-models.js)
-const HELPER_MODEL_PICKS = [];
+// [id, ชื่อ, หมายเหตุ] — แนะนำจากการวัดจริง (tests/gender/run-speakermap-models.js · 2026-11-03)
+// ตอนนิยายยุทธภพจริง 2 ตอน (146 บทพูด) เทียบกับ Gemini 3 Flash Preview: ตรงกัน · ระบุเพศสลับ (ชาย↔หญิง) = 0 ทุกตัวในกลุ่มนี้
+const HELPER_MODEL_PICKS = [
+  ['google/gemma-4-26b-a4b-it', 'Gemma 4 26B', 'ถูกสุด ~1/17 ของ Flash Preview · ตรง 145/146 · ช้ากว่า (~10 วิ/ตอน)'],
+  ['google/gemini-2.5-flash-lite', 'Gemini 2.5 Flash Lite', 'ถูก + เร็ว · ตรง 141/146 · บางครั้งตอบว่าง (แอปลองใหม่ให้)'],
+  ['google/gemini-3.1-flash-lite', 'Gemini 3.1 Flash Lite', 'เร็ว · ตรง 139/146'],
+  ['google/gemini-3-flash-preview', 'Gemini 3 Flash Preview', 'แม่นสุด (ค่าเริ่มต้นเดิม)'],
+];
+// ทดสอบแล้วไม่ผ่านกับตอนยาว (~7,000 อักษร) — ยังเลือกได้ แต่ขึ้นเตือน
+const HELPER_MODEL_AVOID = {
+  'openai/gpt-oss-120b': 'ระบุผู้พูดไม่ได้ ~1/4 ของบท + เพศสลับ 4 บรรทัด · ช้า',
+  'openai/gpt-5-nano': 'ตอนยาวล้มเหลว (หมดเวลา)',
+  'qwen/qwen3.8-flash': 'ตอนยาวล้มเหลว (หมดเวลา)',
+  'deepseek/deepseek-v3.2': 'ตอนยาวล้มเหลว',
+};
 function helperModelRate(id) {
   const prov = typeof getProvider === 'function' ? getProvider() : 'openrouter';
   return (typeof MODEL_COSTS !== 'undefined' && (MODEL_COSTS[prov + ':' + id] || MODEL_COSTS[id]))
     || (prov === 'openrouter' && typeof _modelPriceMap !== 'undefined' && _modelPriceMap[id]) || null;
 }
 // ประมาณค่าใช้จ่ายต่อตอน จากความยาวต้นฉบับเฉลี่ย + จำนวนบทพูด (ค่าคงที่เทียบกับค่าจริงจาก OpenRouter)
-const SPK_TOK_PER_CHAR = 0.9;
+// เทียบกับค่าจริงจาก OpenRouter (5 โมเดล): ประมาณได้ 0.9–1.3 เท่าของจริง (ประมาณเผื่อไว้นิดหน่อย)
+const SPK_TOK_PER_CHAR = 0.75;
 function estimateSpeakerCost(ws = S.currentWs, model) {
   const id = model === 'same' || !model ? ws?.settings?.translateModel : model;
   const r = helperModelRate(id);
@@ -673,7 +690,7 @@ function estimateSpeakerCost(ws = S.currentWs, model) {
   const sample = chs.slice(0, 8);
   const chars = sample.reduce((a, c) => a + c.sourceText.length, 0) / sample.length;
   const quotes = sample.reduce((a, c) => a + extractSourceQuotes(c.sourceText).length, 0) / sample.length;
-  const mapIn = chars * SPK_TOK_PER_CHAR + quotes * 12 + 1300, mapOut = quotes * 22 + 250;
+  const mapIn = chars * SPK_TOK_PER_CHAR + quotes * 12 + 1300, mapOut = quotes * 18 + 150;
   const chkIn = chars * SPK_TOK_PER_CHAR * 0.35 + 1500, chkOut = 500;   // ตรวจเฉพาะย่อหน้าที่น่าสงสัย (บางตอนไม่เรียกเลย)
   const map = (mapIn * r.in + mapOut * r.out) / 1e6, check = (chkIn * r.in + chkOut * r.out) / 1e6;
   const mode = speakerModeOf(ws), perCh = mode === 'off' ? 0 : map + (mode === 'full' ? check : 0);
@@ -689,11 +706,11 @@ function renderHelperModelSelect(sel, ws = S.currentWs) {
   const prov = typeof getProvider === 'function' ? getProvider() : 'openrouter';
   const cur = ws?.settings?.proofreadModel || (prov === 'openrouter' ? DEFAULT_PROOFREAD_MODEL : 'same');
   const opt = (id, label) => `<option value="${esc(id)}">${esc(label)}</option>`;
-  const withRate = (id, label) => { const r = helperModelRate(id); return r ? `${label} · ${_fmtRate(r)}` : label; };
+  const withRate = (id, label) => { const r = helperModelRate(id); return (HELPER_MODEL_AVOID[id] ? '⚠ ' : '') + (r ? `${label} · ${_fmtRate(r)}` : label) + (HELPER_MODEL_AVOID[id] ? ` — ไม่แนะนำ: ${HELPER_MODEL_AVOID[id]}` : ''); };
   const seen = new Set(['same']);
   let html = opt('same', `ใช้โมเดลเดียวกับที่แปล (${ws?.settings?.translateModel || '—'})`);
   if (prov === 'openrouter' && HELPER_MODEL_PICKS.length) {
-    html += `<optgroup label="แนะนำสำหรับระบุผู้พูด (วัดจริง)">${HELPER_MODEL_PICKS.map(([id, name, note]) => { seen.add(id); return opt(id, withRate(id, `${name} — ${note}`)); }).join('')}</optgroup>`;
+    html += `<optgroup label="แนะนำสำหรับระบุผู้พูด (วัดกับตอนนิยายจริง)">${HELPER_MODEL_PICKS.map(([id, name, note]) => { seen.add(id); return opt(id, withRate(id, `${name} — ${note}`)); }).join('')}</optgroup>`;
   }
   const fetched = (typeof _fetchedModels !== 'undefined' && _fetchedModels[prov]) || null;
   const all = fetched && fetched.length ? fetched.map(m => [m.id, m.label || m.id]) : (PROVIDERS[prov]?.models || []).flatMap(([, items]) => items);
