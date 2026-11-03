@@ -4,7 +4,7 @@ function prevChapterTail(ch, ws = S.currentWs) {
   const i = sorted.findIndex(c => c.id === ch.id);
   for (let j = i - 1; j >= Math.max(0, i - 3); j--) {
     const t = sorted[j]?.translation?.trim();
-    if (t) return `### ท้ายคำแปลตอนก่อน (#${sorted[j].chapterNum || '?'}) — ตัวอย่างสำนวนที่ใช้มาแล้ว: ใช้ชื่อ คำเรียก และสำนวนให้ต่อเนื่องกับข้อความนี้ ห้ามแปลหรือคัดลอกซ้ำ\n${t.slice(-getPrevCtxChars())}`;
+    if (t) return `### ท้ายคำแปลตอนก่อน (#${sorted[j].chapterNum || '?'}) — ตัวอย่างสำนวนที่ใช้มาแล้ว: ใช้ชื่อ คำเรียก และสำนวนให้ต่อเนื่องกับข้อความนี้ ห้ามแปลหรือคัดลอกซ้ำ · ถ้าชื่อ/คำ/เพศในนี้ขัดกับ GLOSSARY ให้ยึด GLOSSARY\n${t.slice(-getPrevCtxChars())}`;
   }
   return '';
 }
@@ -98,7 +98,7 @@ async function translateChapterCore(ch, {
   }
 
   // แก้คำลงท้าย/คำแทนตัวที่ผิดเพศผู้พูด (ตามแผนที่ผู้พูด)
-  const spFix = applySpeakerFixes(fullText, spMap);
+  const spFix = applySpeakerFixes(fullText, spMap, ws);
   if (spFix.fixes.length) fullText = spFix.text;
   const gp = spMap ? await genderProofread(srcPrepared, fullText, useModel, ws) : { text: fullText, fixes: [] };
   fullText = gp.text;
@@ -306,6 +306,7 @@ function reLoadChapter(id) {
   if (editBtn) editBtn.classList.toggle('active', reState.mode === 'edit');
   const glBtn = document.getElementById('reGlossHlBtn');
   if (glBtn) glBtn.classList.toggle('active', reGlossHlEnabled());
+  reApplyTheme();
 
   const content  = document.getElementById('reContent');
   const editArea = document.getElementById('reEditArea');
@@ -396,10 +397,124 @@ function reApplyGlossHighlight(escapedText, gloss) {
     const g = gloss.map.get(m);
     const cls = getTagClass(g?.type || 'term');
     const typeLabel = g?.type ? (PRESET_TYPES[g.type] || g.type) : '';
-    const title = esc(`${g?.korean || ''}${typeLabel ? ' · ' + typeLabel : ''}`).replace(/"/g, '&quot;');
-    return `<mark class="re-gloss ${cls}" title="${title}">${m}</mark>`;
+    const title = esc(`${g?.korean || ''}${typeLabel ? ' · ' + typeLabel : ''} — แตะเพื่อแก้`).replace(/"/g, '&quot;');
+    return `<mark class="re-gloss ${cls}" title="${title}" data-k="${encodeURIComponent(g?.korean || '')}" role="button" tabindex="0">${m}</mark>`;
   });
 }
+
+// ─── แตะคำที่ไฮไลต์ → ดูต้นฉบับ + แก้คำแปล (คลังศัพท์ · ตอนนี้ · หรือย้อนไปทุกตอนก่อนหน้า) ───
+// ใช้ทั้งแท็บอ่าน และหน้าอ่านเต็มจอ · แทนที่แบบ "คำยาวก่อน" เพื่อไม่ไปแก้คำนี้ที่อยู่ในคำอื่นของคลัง (ฮวาซาน ใน สำนักฮวาซาน)
+const _glossPop = { entry: null, chId: null, undo: null };
+function _glossCurrentChapterId() {
+  return (typeof rState !== 'undefined' && rState.active) ? rState.chapterId : reState.chapterId;
+}
+// แทนที่ oldT → newT ทุกจุดที่เป็นคำนั้นจริง (ไม่ใช่ส่วนหนึ่งของคำอื่นในคลัง) · คืน { text, n }
+function replaceGlossTerm(text, oldT, newT, glossary = S.currentWs?.glossary || []) {
+  if (!text || !oldT || oldT === newT) return { text, n: 0 };
+  const terms = [...new Set([oldT, ...glossary.map(g => String(g.thai || '').trim()).filter(t => t && t.length > oldT.length && t.includes(oldT))])]
+    .sort((a, b) => b.length - a.length).map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  let n = 0;
+  const out = String(text).replace(new RegExp(terms.join('|'), 'g'), m => m === oldT ? (n++, newT) : m);
+  return { text: out, n };
+}
+function _glossTargetChapters(scope, chId) {
+  if (scope === 'gloss') return [];
+  const chs = _getSortedChapters(), i = chs.findIndex(c => c.id === chId);
+  if (i < 0) return [];
+  return (scope === 'prev' ? chs.slice(0, i + 1) : [chs[i]]).filter(c => c.translation);
+}
+function openGlossPop(mark) {
+  const key = decodeURIComponent(mark.dataset.k || '');
+  const entry = (S.currentWs?.glossary || []).find(g => g.korean === key);
+  if (!entry) return;
+  _glossPop.entry = entry; _glossPop.chId = _glossCurrentChapterId(); _glossPop.undo = null;
+  let pop = document.getElementById('glossPop');
+  if (!pop) {
+    pop = document.createElement('div');
+    pop.id = 'glossPop'; pop.className = 'gloss-pop';
+    pop.addEventListener('click', e => e.stopPropagation());
+    document.body.appendChild(pop);
+  }
+  const ch = S.currentWs.chapters.find(c => c.id === _glossPop.chId);
+  const here = replaceGlossTerm(ch?.translation || '', entry.thai, '\u0000').n;
+  const typeLabel = PRESET_TYPES[entry.type] || entry.type || '';
+  const gLabel = { male: 'ชาย', female: 'หญิง', neutral: 'กลาง' }[entry.gender] || '';
+  const inside = (S.currentWs.glossary || []).filter(g => g !== entry && g.thai && g.thai !== entry.thai && g.thai.includes(entry.thai)).slice(0, 4).map(g => g.thai);
+  pop.innerHTML = `
+    <div class="gp-head"><span class="gp-thai">${esc(entry.thai)}</span><button class="icon-btn" onclick="closeGlossPop()" title="ปิด">✕</button></div>
+    <div class="gp-src">ต้นฉบับ: <b>${esc(entry.korean)}</b>${typeLabel ? ` · ${esc(typeLabel)}` : ''}${gLabel ? ` · ${gLabel}` : ''}</div>
+    ${entry.note ? `<div class="gp-note">${esc(entry.note)}</div>` : ''}
+    <div class="gp-note">พบในตอนนี้ ${here} จุด</div>
+    <input id="gpThai" class="text-input" value="${esc(entry.thai).replace(/"/g, '&quot;')}" placeholder="คำแปลใหม่"/>
+    <div class="gp-scope">
+      <label><input type="radio" name="gpScope" value="gloss"/> คลังศัพท์อย่างเดียว (มีผลกับตอนที่จะแปลต่อไป)</label>
+      <label><input type="radio" name="gpScope" value="cur" checked/> คลังศัพท์ + แก้ในตอนนี้</label>
+      <label><input type="radio" name="gpScope" value="prev"/> คลังศัพท์ + ตอนนี้และทุกตอนก่อนหน้า</label>
+    </div>
+    ${inside.length ? `<div class="gp-note">คำในคลังที่มีคำนี้อยู่ข้างใน (ต้องแก้แยก): ${inside.map(esc).join(' · ')}</div>` : ''}
+    <div class="gp-actions"><button class="btn btn-ghost btn-sm" onclick="closeGlossPop()">ยกเลิก</button><button class="btn btn-primary btn-sm" onclick="applyGlossPop()">💾 บันทึก</button></div>`;
+  pop.style.display = 'block';
+  // จอกว้าง: ลอยใต้คำ · มือถือ: แผ่นล่างจอ (CSS)
+  if (window.innerWidth >= 640) {
+    const r = mark.getBoundingClientRect(), w = Math.min(360, window.innerWidth - 24);
+    pop.style.left = Math.max(12, Math.min(r.left, window.innerWidth - w - 12)) + 'px';
+    const below = r.bottom + 8, h = pop.offsetHeight;
+    pop.style.top = (below + h > window.innerHeight - 8 ? Math.max(8, r.top - h - 8) : below) + 'px';
+  } else { pop.style.left = ''; pop.style.top = ''; }
+  setTimeout(() => document.getElementById('gpThai')?.focus(), 0);
+}
+function closeGlossPop() { const p = document.getElementById('glossPop'); if (p) p.style.display = 'none'; }
+function _glossRerender() {
+  if (typeof rState !== 'undefined' && rState.active) { const ch = S.currentWs.chapters.find(c => c.id === rState.chapterId); if (ch) readerRenderChapter(ch); }
+  else reLoadChapter(reState.chapterId);
+  if (typeof renderGlossaryTable === 'function' && document.getElementById('glossaryTableBody')) try { renderGlossaryTable(); } catch {}
+}
+async function applyGlossPop() {
+  const entry = _glossPop.entry, ws = S.currentWs;
+  if (!entry || !ws) return;
+  const oldT = entry.thai, newT = (document.getElementById('gpThai')?.value || '').trim();
+  const scope = document.querySelector('input[name="gpScope"]:checked')?.value || 'cur';
+  if (!newT || newT === oldT) { closeGlossPop(); return; }
+  if (/[가-힣一-鿿]/.test(newT)) { showToast('คำแปลมีอักษรต่างภาษาปน', 'error'); return; }
+  const targets = _glossTargetChapters(scope, _glossPop.chId);
+  const plan = targets.map(c => ({ c, r: replaceGlossTerm(c.translation, oldT, newT, ws.glossary) })).filter(x => x.r.n);
+  const total = plan.reduce((a, x) => a + x.r.n, 0);
+  if (plan.length > 1 && !confirm(`แก้ "${oldT}" → "${newT}"\nคลังศัพท์ + ${total} จุดใน ${plan.length} ตอน — ต้องการต่อ?`)) return;
+  _glossPop.undo = { entry, oldT, newT, chapters: plan.map(x => ({ id: x.c.id, text: x.c.translation })) };
+  entry.thai = newT;
+  for (const { c, r } of plan) { c.translation = r.text; c.updatedAt = Date.now(); }
+  await lsSaveWorkspace(ws);
+  S.glossaryData = ws.glossary;
+  _glossRerender();
+  const pop = document.getElementById('glossPop');
+  if (pop) {
+    pop.innerHTML = `<div class="gp-head"><span class="gp-thai">${esc(newT)}</span><button class="icon-btn" onclick="closeGlossPop()" title="ปิด">✕</button></div>
+      <div class="gp-src">แก้แล้ว: คลังศัพท์${total ? ` + ${total} จุดใน ${plan.length} ตอน` : ''}</div>
+      <div class="gp-actions"><button class="btn btn-ghost btn-sm" onclick="undoGlossPop()">↶ ย้อนกลับ</button><button class="btn btn-primary btn-sm" onclick="closeGlossPop()">เสร็จ</button></div>`;
+  }
+  showToast(`✓ แก้ "${oldT}" → "${newT}"${total ? ` (${total} จุด · ${plan.length} ตอน)` : ' ในคลังศัพท์'}`, 'success');
+}
+async function undoGlossPop() {
+  const u = _glossPop.undo, ws = S.currentWs;
+  if (!u || !ws) return;
+  u.entry.thai = u.oldT;
+  for (const x of u.chapters) { const c = ws.chapters.find(c => c.id === x.id); if (c) c.translation = x.text; }
+  _glossPop.undo = null;
+  await lsSaveWorkspace(ws);
+  _glossRerender();
+  closeGlossPop();
+  showToast(`↶ ย้อนกลับเป็น "${u.oldT}" แล้ว`, '');
+}
+document.addEventListener('click', e => {
+  const m = e.target.closest?.('mark.re-gloss');
+  if (m) { e.stopPropagation(); openGlossPop(m); return; }
+  if (!e.target.closest?.('#glossPop')) closeGlossPop();
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeGlossPop();
+  if (e.key === 'Enter' && e.target?.matches?.('mark.re-gloss')) openGlossPop(e.target);
+  if (e.key === 'Enter' && e.target?.id === 'gpThai') applyGlossPop();
+});
 
 function reNav(dir) {
   const chs = _getSortedChapters();
@@ -615,7 +730,8 @@ async function reTranslateChapter() {
 // ═══════════════════════════════════════════════
 // อ่านเต็มจอ + จำตำแหน่ง/ตั้งค่าต่อ workspace — ธีม reader แยกจากธีมแอพ
 
-const READER_DEFAULTS = { fontSize: 19, lineHeight: 1.9, theme: 'sepia', prefetchCount: 1 };
+// theme 'auto' = ตามเครื่อง/บราวเซอร์ (prefers-color-scheme: มืด → มืด · สว่าง → ซีเปีย)
+const READER_DEFAULTS = { fontSize: 19, lineHeight: 1.9, theme: 'auto', prefetchCount: 1 };
 
 const rState = {
   active: false,
@@ -628,8 +744,25 @@ const rState = {
 };
 
 function readerGetSettings() {
-  return { ...READER_DEFAULTS, ...(S.currentWs?.readerSettings || {}) };
+  const s = { ...READER_DEFAULTS, ...(S.currentWs?.readerSettings || {}) };
+  // ค่าเดิมบันทึก 'sepia' ไว้แม้ผู้ใช้ไม่เคยเลือกธีม (เพราะเป็นค่าเริ่มต้นเก่า) → ถือว่าอัตโนมัติ จนกว่าจะเลือกเอง
+  if (!s.themeChosen) s.theme = 'auto';
+  return s;
 }
+const _darkMq = typeof matchMedia === 'function' ? matchMedia('(prefers-color-scheme: dark)') : null;
+function readerResolvedTheme(s = readerGetSettings()) {
+  return s.theme === 'auto' ? (_darkMq?.matches ? 'dark' : 'sepia') : s.theme;
+}
+const _READER_THEMES = ['reader-theme-light', 'reader-theme-sepia', 'reader-theme-dark'];
+// ธีมของหน้าอ่านในแท็บ (ไม่ใช่เต็มจอ) — เดิมล็อกเป็นซีเปียเสมอ
+function reApplyTheme() {
+  const t = readerResolvedTheme();
+  const el = document.getElementById('reContent');
+  if (el) { el.classList.remove(..._READER_THEMES); el.classList.add('reader-theme-' + t); }
+  const sel = document.getElementById('reThemeSel');
+  if (sel) sel.value = readerGetSettings().theme;
+}
+_darkMq?.addEventListener?.('change', () => { reApplyTheme(); if (typeof rState !== 'undefined' && rState.active) readerApplySettings(); });
 
 // เปิดอ่าน/แก้ไขตอน → ไปที่แท็บ "อ่าน/แก้ไข" (เดิมเป็น overlay เต็มจอ)
 function openReader(chId) {
@@ -705,9 +838,10 @@ function readerRenderChapter(ch) {
   document.getElementById('readerChTitle').textContent = `#${ch.chapterNum || '?'} ${ch.title || ''}`;
   const el = document.getElementById('readerContent');
   if (ch.translation?.trim()) {
+    const gloss = reGlossHlEnabled() ? reBuildGlossRegex() : null;   // ไฮไลต์ + แตะแก้คำ ใช้ได้ในหน้าเต็มจอด้วย
     el.innerHTML = `<h2 class="reader-h2">${esc(ch.title || '')}</h2>` +
       ch.translation.split(/\n+/).map(p => p.trim()).filter(Boolean)
-        .map(p => `<p>${esc(p)}</p>`).join('');
+        .map(p => `<p>${gloss ? reApplyGlossHighlight(esc(p), gloss) : esc(p)}</p>`).join('');
   } else {
     el.innerHTML = `<div class="reader-empty">
       <div style="font-size:2rem">📖</div>
@@ -786,7 +920,10 @@ function readerSetFontSize(delta) {
   readerSaveSettings({ fontSize: Math.min(28, Math.max(16, cur + delta)) });
 }
 function readerSetLineHeight(v) { readerSaveSettings({ lineHeight: parseFloat(v) || READER_DEFAULTS.lineHeight }); }
-function readerSetTheme(t) { readerSaveSettings({ theme: ['light','sepia','dark'].includes(t) ? t : 'sepia' }); }
+function readerSetTheme(t) {
+  const theme = ['auto', 'light', 'sepia', 'dark'].includes(t) ? t : 'auto';
+  readerSaveSettings({ theme, themeChosen: theme !== 'auto' });
+}
 function readerSetPrefetchCount(v) {
   readerSaveSettings({ prefetchCount: Math.min(2, Math.max(0, parseInt(v) || 0)) });
   readerKickPrefetch();
@@ -795,8 +932,9 @@ function readerSetPrefetchCount(v) {
 function readerApplySettings() {
   const s = readerGetSettings();
   const ov = document.getElementById('readerOverlay');
-  ov.classList.remove('reader-theme-light', 'reader-theme-sepia', 'reader-theme-dark');
-  ov.classList.add('reader-theme-' + s.theme);
+  ov.classList.remove(..._READER_THEMES);
+  ov.classList.add('reader-theme-' + readerResolvedTheme(s));
+  reApplyTheme();
   const content = document.getElementById('readerContent');
   content.style.fontSize = s.fontSize + 'px';
   content.style.lineHeight = s.lineHeight;

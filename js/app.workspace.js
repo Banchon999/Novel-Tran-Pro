@@ -125,14 +125,9 @@ async function selectWorkspace(id) {
   renderProviderUI();
   checkHealth();
 
-  // Restore active style (ของผู้ใช้เท่านั้น) — ถ้าไม่พบ ใช้ style แรกที่มี
-  const savedStyle = ws.settings?.activeStyleId;
-  const styleList = ws.customStyles || [];
-  if (savedStyle && styleList.some(s => s.id === savedStyle)) {
-    S.activeStyleId = savedStyle;
-  } else {
-    S.activeStyleId = styleList[0]?.id || '';
-  }
+  // ระบบ "สไตล์" รวมเข้า Bible แล้ว — ย้ายสไตล์ที่ผู้ใช้เลือกใช้อยู่ไปเป็นช่อง "คำสั่งเพิ่มเติม" ครั้งเดียว
+  if (migrateStyleToBible(ws)) await lsSaveWorkspace(ws).catch(() => {});
+  S.activeStyleId = '';
 
   await loadWorkspaceList();
   // reset bulk mode เมื่อเปลี่ยน workspace
@@ -250,14 +245,16 @@ function renderWsSettings() {
   if (clRef) clRef.value = w.settings?.consistencySelfRef || 'auto';
   const nsEl = document.getElementById('wsNarratorSelf');
   if (nsEl) nsEl.value = w.settings?.narratorSelf || '';
-  const smEl = document.getElementById('wsSpeakerMap');
-  if (smEl) smEl.checked = w.settings?.speakerMap !== false;
+  const arEl = document.getElementById('wsAgeRating');
+  if (arEl) arEl.value = w.settings?.ageRating || '';
+  const smEl = document.getElementById('wsSpeakerMode');
+  if (smEl) smEl.value = speakerModeOf(w);
   const stEl = document.getElementById('wsStableTemp');
   if (stEl) stEl.checked = w.settings?.stableTemp !== false;
   wsTempHint();
   renderStyleSheetFields(w);
-  const pmEl = document.getElementById('wsProofreadModel');
-  if (pmEl) pmEl.value = w.settings?.proofreadModel || ((w.settings?.aiProvider || 'openrouter') === 'openrouter' ? 'google/gemini-3-flash-preview' : 'same');
+  renderHelperModelSelect(document.getElementById('wsProofreadModel'), w);
+  updateSpeakerCostHint();
   renderPresetSelect();
   // Context Memory settings
   const ctx = wsGetContext(w);
@@ -313,9 +310,10 @@ async function saveWsSettings() {
     consistencyLock: !!document.getElementById('wsConsistencyLock')?.checked,
     consistencySelfRef: document.getElementById('wsConsistencySelfRef')?.value || 'auto',
     narratorSelf: document.getElementById('wsNarratorSelf')?.value || '',
-    speakerMap: document.getElementById('wsSpeakerMap') ? document.getElementById('wsSpeakerMap').checked : true,
+    ...speakerModeSettings(document.getElementById('wsSpeakerMode')?.value || speakerModeOf(S.currentWs)),
+    ageRating: document.getElementById('wsAgeRating') ? document.getElementById('wsAgeRating').value : (S.currentWs.settings?.ageRating || ''),
     stableTemp: document.getElementById('wsStableTemp') ? document.getElementById('wsStableTemp').checked : true,
-    proofreadModel: document.getElementById('wsProofreadModel')?.value || S.currentWs.settings?.proofreadModel,
+    proofreadModel: helperModelValue(document.getElementById('wsProofreadModel')) || S.currentWs.settings?.proofreadModel,
     batchChunkMode: document.getElementById('wsBatchChunkMode')?.value || 'off',
     batchChunkSize: Math.max(1000, Math.min(20000, parseInt(document.getElementById('wsBatchChunkSize')?.value) || 3000)),
     sourceLang: document.getElementById('wsSourceLang')?.value || '',

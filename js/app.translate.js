@@ -7,8 +7,7 @@ function getPrevCtxChars() {
 }
 
 function getOptions() {
-  const styleId = document.getElementById('activeStyleSelect')?.value || S.activeStyleId;
-  const customStylePrompt = getStyleById(styleId)?.prompt || null;
+  const customStylePrompt = null;   // ระบบสไตล์รวมเข้า Bible แล้ว (ช่อง "คำสั่งเพิ่มเติม" ส่งผ่าน style sheet)
   const wsGlossary = {};
   (S.currentWs?.glossary || []).forEach(g => { wsGlossary[g.korean] = { thai: g.thai, type: g.type, note: g.note, gender: g.gender }; });
 
@@ -59,7 +58,7 @@ function splitText(text) {
 function buildGlossaryStr(wsGlossary) {
   const GENDER_MAP   = { male: 'male/ชาย', female: 'female/หญิง', neutral: 'neutral/กลาง' };
   const PRONOUN_3RD  = { male: '3rd→เขา/ของเขา', female: '3rd→เธอ/นาง/ของเธอ' };
-  const PRONOUN_1ST  = { male: '1st in speech→ผม/กู/ข้า', female: '1st→ฉัน/หนู/อิฉัน' };   // บรรยาย/คิดในใจ → NARRATOR VOICE
+  const PRONOUN_1ST  = { male: '1st in speech→ผม/กู/ข้า', female: '1st in speech→ฉัน/ดิฉัน/หนู/ข้า' };   // บรรยาย/คิดในใจ → NARRATOR VOICE
   const PARTICLE     = { male: 'particle→ครับ/ขอรับ', female: 'particle→ค่ะ/คะ' };
   const entries = Object.entries(wsGlossary || {});
   if (!entries.length) return '(ไม่มี)';
@@ -77,7 +76,7 @@ function buildGlossaryStr(wsGlossary) {
     } else if (isGenderableType(v.type)) {
       // ไม่รู้เพศ → ห้ามเดา เขา/เธอ (โมเดลถือว่า "เขา" เป็นกลาง แต่คนอ่านไทยอ่านเป็นผู้ชาย) — บอกไว้ข้างคำเลย กฎรวมด้านบนอย่างเดียวไม่พอ
       const t = fixAddressGender(k, v.thai);
-      parts.push(`${v.gender === 'neutral' ? 'gender:neutral/กลาง' : 'gender unknown'} → never เขา/เธอ/นาง for ${v.type === 'title' ? 'whoever holds this title' : 'this person'}: repeat "${t}" or use a neutral word (ท่าน · อีกฝ่าย · คนผู้นั้น) — unless the source text itself gives a he/she pronoun for them`);
+      parts.push(`${v.gender === 'neutral' ? 'gender:neutral/กลาง' : 'gender unknown'} → never เขา/เธอ/นาง for ${v.type === 'title' ? 'whoever holds this title' : 'this person'}: drop the subject where Thai allows, otherwise ท่าน · อีกฝ่าย · คนผู้นั้น or "${t}" · in their own lines no ครับ/ค่ะ/ผม/ดิฉัน — unless the source text itself gives a he/she pronoun for them`);
     }
     if (v.note) parts.push(v.note);
     return `${k} = ${parts.join(' | ')}`;
@@ -252,7 +251,7 @@ For EACH numbered line decide the speaker from context:
 • dialogue tags BEFORE or AFTER the line (e.g. "…" 엘레나가 물었다 → 엘레나), turn-taking, who is being addressed, speech level and honorifics.
 • Unnamed speakers: describe them (노파, 시녀, 기사, 수행원…) and infer gender from the description
   (노파/할멈/할머니/여인/여자/소녀/하녀/시녀/부인/어머니 = female · 노인/사내/남자/소년/청년/아버지 = male).
-• gender: "male" | "female" | "unknown" — use "unknown" only when it is truly impossible to tell.
+• gender: "male" | "female" | "unknown" — only from evidence: KNOWN CHARACTERS, a he/she pronoun (그/그녀), or a word that is itself gendered (the list above, kinship words). A job title or role alone (의뢰인 · 부장 · 팀장 · 경비병 · 상대 · 목소리) is NOT evidence → "unknown". Never guess.
 
 Also list every PERSON named in the passage who is NOT in KNOWN CHARACTERS, with a Thai transliteration of the name
 (so the translator never leaves a Korean name untranslated).
@@ -282,24 +281,23 @@ async function buildSpeakerMap(text, model, ws = S.currentWs) {
     .replace('{text}', text)
     .replace('{lines}', lines.map((l, i) => l.kind === 'dq' ? `Q${i + 1}: “${l.q}”` : `Q${i + 1}: ‘${l.q}’ (single quotes: thought / recalled speech / a named term — for a term use speaker "-")`).join('\n'));
   try {
-    const res = await callOpenRouter({
-      // ใช้โมเดลตรวจ (แรงกว่าโมเดลแปลราคาถูก) — ระบุผู้พูด/ถอดชื่อไทยแม่นกว่า · Flash Lite บางรุ่นถอดชื่อเป็นอักษรเกาหลี ("카일")
-      model: getProofreadModel(ws, model), temperature: 0,
-      max_tokens: Math.max(6000, lines.length * 80 + 3000),   // เผื่อโมเดลที่คิดก่อนตอบ (reasoning)
-      messages: [{ role: 'user', content: prompt }],
-    });
-    const raw = (res.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
-    let arr, names = [];
-    const ob = raw.indexOf('{'), ab = raw.indexOf('[');
-    if (ob >= 0 && (ab < 0 || ob < ab)) {   // รูปแบบใหม่ {lines, names}
-      const o = JSON.parse(raw.slice(ob, raw.lastIndexOf('}') + 1));
-      arr = o.lines; names = Array.isArray(o.names) ? o.names : [];
-    } else arr = JSON.parse(raw.slice(ab, raw.lastIndexOf(']') + 1));   // โมเดลบางตัวยังตอบเป็น array เดิม
+    // โมเดลราคาถูกบางครั้งตอบว่าง/JSON อ่านไม่ได้ (วัดจริง: Gemini 2.5 Flash Lite 2 ใน 12 ครั้ง) → ลองใหม่ 1 ครั้ง (เสียเงินเพิ่มเฉพาะตอนล้มเหลว)
+    let arr = null, names = [];
+    for (let attempt = 0; attempt < 2 && !Array.isArray(arr); attempt++) {
+      const res = await callOpenRouter({
+        // ใช้โมเดลตรวจ (แรงกว่าโมเดลแปลราคาถูก) — ระบุผู้พูด/ถอดชื่อไทยแม่นกว่า · Flash Lite บางรุ่นถอดชื่อเป็นอักษรเกาหลี ("카일")
+        model: getProofreadModel(ws, model), temperature: 0,
+        max_tokens: Math.max(6000, lines.length * 80 + 3000),   // เผื่อโมเดลที่คิดก่อนตอบ (reasoning)
+        messages: [{ role: 'user', content: prompt }],
+      });
+      ({ arr, names } = _parseSpeakerMapJson((res.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim()));
+    }
     if (!Array.isArray(arr)) return null;
     // ชื่อที่ยังไม่อยู่ในคลังศัพท์ → ให้ตัวแปลมีตัวสะกดไทย (ตอนแรกของเรื่องคลังว่าง → โมเดลมักทิ้งชื่อเกาหลีไว้ เช่น "อา리아")
-    const known = new Set(glossChars.map(g => g.korean));
+    const known = new Set((ws?.glossary || []).map(g => g.korean).filter(Boolean));
+    const reg = archaicSpeechInfo(ws, text);
     names = names.map(normalizeTermKeys).filter(n => n && typeof n.korean === 'string' && typeof n.thai === 'string' && n.korean.trim() && n.thai.trim()
-      && !known.has(n.korean.trim()) && text.includes(n.korean.trim()) && !/[\uac00-\ud7a3\u3131-\u318e\u4e00-\u9fff]/.test(n.thai))
+      && !known.has(n.korean.trim()) && ![...known].some(k => k.length > 1 && n.korean.includes(k)) && text.includes(n.korean.trim()) && !/[\uac00-\ud7a3\u3131-\u318e\u4e00-\u9fff]/.test(n.thai))
       .slice(0, 20).map(n => ({ korean: n.korean.trim(), thai: n.thai.trim(), gender: n.gender === 'male' || n.gender === 'female' ? n.gender : 'unknown' }));
     const out = lines.map(({ q, kind, pos }, i) => {
       const e = arr.find(x => +x.q === i + 1) || {};
@@ -309,7 +307,7 @@ async function buildSpeakerMap(text, model, ws = S.currentWs) {
         ? sp === c.korean || sp === c.thai || sp === c.korean + '님'   // ตำแหน่ง: ต้องตรงตัว ("보육원 원장" เป็นคนละคนกับ "원장")
         : sp.includes(c.korean) || c.korean.includes(sp) || (c.thai && sp.includes(c.thai))));
       const gender = g ? g.gender : (e.gender === 'male' || e.gender === 'female' ? e.gender : 'unknown');
-      return { q, kind, pos, speaker: sp || '?', gender };
+      return { q, kind, pos, speaker: sp || '?', gender, ...(reg.on ? { archaic: reg.sure ? 'sure' : 'text' } : {}) };
     });
     out.names = names;
     return out;
@@ -319,12 +317,38 @@ async function buildSpeakerMap(text, model, ws = S.currentWs) {
   }
 }
 
+// อ่าน JSON ของแผนที่ผู้พูดแบบทนทาน — โมเดลเล็ก (เคสจริง: gemma-4-26b) ตอบ JSON เสียนิดเดียว (`],"⏎ "names"`) แล้วทั้งแผนที่ถูกทิ้ง
+function _parseSpeakerMapJson(raw) {
+  const tryParse = t => { try { return JSON.parse(t); } catch { return undefined; } };
+  const fixups = t => t.replace(/"\s*[\r\n]+\s*"/g, '"').replace(/[\u0000-\u001f]+/g, ' ').replace(/,\s*([\]}])/g, '$1');
+  const ob = raw.indexOf('{'), ab = raw.indexOf('[');
+  if (ob >= 0 && (ab < 0 || ob < ab)) {   // รูปแบบใหม่ {lines, names}
+    const body = raw.slice(ob, raw.lastIndexOf('}') + 1);
+    const o = tryParse(body) ?? tryParse(fixups(body));
+    if (o && Array.isArray(o.lines)) return { arr: o.lines, names: Array.isArray(o.names) ? o.names : [] };
+  } else if (ab >= 0) {                    // โมเดลบางตัวยังตอบเป็น array เดิม
+    const body = raw.slice(ab, raw.lastIndexOf(']') + 1);
+    const a = tryParse(body) ?? tryParse(fixups(body));
+    if (Array.isArray(a)) return { arr: a, names: [] };
+  }
+  // ซ่อมไม่ได้ → เก็บทีละ object ที่อ่านได้ ({"q":…} = บทพูด · {"korean":…} = ชื่อ)
+  const arr = [], names = [];
+  for (const m of raw.matchAll(/\{[^{}]*\}/g)) {
+    const o = tryParse(m[0]) ?? tryParse(fixups(m[0]));
+    if (!o) continue;
+    if (o.q !== undefined) arr.push(o); else if (o.korean || o.source) names.push(o);
+  }
+  return { arr: arr.length ? arr : null, names };
+}
+
 function speakerMapPromptBlock(map, ws = S.currentWs) {
   if (!map?.length) return '';
   // ตารางสรรพนามบุรุษที่ 3 ของตัวละครที่พูดในตอนนี้ (จาก glossary + แผนที่ผู้พูด) — กันบรรยาย "เขา" กับตัวละครหญิง
   const sheet = new Map();
   for (const g of (ws?.glossary || [])) if (isGenderableType(g.type) && (g.gender === 'male' || g.gender === 'female') && map.some(m => m.speaker && (g.type === 'title' ? m.speaker === g.korean || m.speaker === g.korean + '님' : m.speaker.includes(g.korean) || g.korean.includes(m.speaker)))) sheet.set(g.thai || g.korean, g.gender);
-  for (const m of map) if ((m.gender === 'male' || m.gender === 'female') && m.speaker && m.speaker !== '-' && m.speaker !== '?' && ![...sheet.keys()].some(k => k.includes(m.speaker))) {
+  // ผู้เล่าบุรุษที่ 1 (나/저 · "나 (탐정)") ไม่ใช่ "เขา" — เดิมหลุดเข้าตาราง → บรรยายตัวเองเป็น เขา
+  const isNarrator = sp => /^(나|저|내|본인|narrator|me|I|我|ผู้เล่า)(\s|\(|$)/i.test(String(sp).trim());
+  for (const m of map) if ((m.gender === 'male' || m.gender === 'female') && m.speaker && m.speaker !== '-' && m.speaker !== '?' && !isNarrator(m.speaker) && ![...sheet.keys()].some(k => k.includes(m.speaker))) {
     const g = (ws?.glossary || []).find(c => c.korean && (m.speaker.includes(c.korean) || c.korean.includes(m.speaker)));
     sheet.set(g?.thai || m.speaker, m.gender);
   }
@@ -336,9 +360,14 @@ function speakerMapPromptBlock(map, ws = S.currentWs) {
   const sheetTxt = [...sheet].map(([n, g]) => `${n} = ${g === 'male' ? 'ชาย → เขา' : 'หญิง → เธอ/นาง'}`).join(' · ');
   // ระดับภาษาเกาหลี: สุภาพ (요/니다) → ใส่ ครับ/ค่ะ · ภาษาปกติ (반말/하다체) → ไม่ใส่หางเสียง (ขุนนางคุยกับคนรับใช้, อาจารย์สั่งศิษย์)
   const end = (g, lv) => {
-    if (g !== 'male' && g !== 'female') return 'no gendered particle';
-    const self = g === 'male' ? 'ผม/ข้า' : 'ฉัน/ข้า';
+    const old = map.some(m => m.archaic) || archaicSpeech(ws);
+    // ไม่รู้เพศ: บอกให้ชัดว่าห้ามอะไร + ทำอะไรแทน ("no gendered particle" เฉย ๆ โมเดลยังใส่ ครับ/ผม)
+    if (g !== 'male' && g !== 'female') return old
+      ? `gender unknown → self: ข้า (neutral) · no ขอรับ/เจ้าค่ะ${lv === 'plain' ? '' : ' — show respect with ท่าน and polite wording'}`
+      : `gender unknown → NO ครับ/ค่ะ/คะ, NO ผม/ดิฉัน · drop the pronoun${lv === 'plain' ? ' (or ฉัน)' : ' · keep it polite with wording (ขอโทษ · รบกวน · คุณ/ท่าน), not a particle'}`;
+    const self = old ? 'ข้า' : g === 'male' ? 'ฉัน/ผม by register (never ดิฉัน)' : 'ฉัน (never ผม)';
     if (lv === 'plain') return `plain speech → no ครับ/ค่ะ, self: ${self}`;
+    if (old) return g === 'male' ? 'polite → ขอรับ, self: ข้า/ข้าน้อย' : 'polite → เจ้าค่ะ/เจ้าคะ, self: ข้า/ข้าน้อย';
     return g === 'male' ? 'polite → ครับ/ขอรับ, self: ผม' : 'polite → ค่ะ/คะ, self: ฉัน/ดิฉัน';
   };
   const lines = map.filter(m => m.speaker && m.speaker !== '-' && m.speaker !== '?').map((m, i) => {
@@ -371,14 +400,16 @@ function koSpeechLevel(q) {
   const sents = String(q || '').replace(/[“”"‘’'「」『』]/g, '').split(/[.!?…~,]+\s*/)
     .map(x => x.replace(/[\s.!?…~,\-—)]+$/, '')).filter(Boolean);
   if (!sents.length) return 'polite';
-  return sents.some(x => /(요|니다|니까|시오|소서|옵니다|나이다)$/.test(x)) ? 'polite' : 'plain';
+  // เรียกอีกฝ่ายด้วย ~님 = พูดสุภาพ แม้ประโยคจะค้าง ("네, 부장님. 계약이 취소되면서…")
+  return sents.some(x => /(요|니다|니까|시오|소서|옵니다|나이다)$/.test(x)) || /님/.test(q) ? 'polite' : 'plain';
 }
 
 // แปลงคำลงท้าย/คำแทนตัวในบทพูด 1 บรรทัดให้ตรงเพศผู้พูด — คืนข้อความใหม่ (ไม่เปลี่ยนถ้าตรงอยู่แล้ว)
 const _PEND = '(?=$|[\\s!?.…,~ๆ\\-—)”"」’])';
 const _HAIR_MASK_RE = /(เส้นผม|ทรงผม|สระผม|หวีผม|ผมเผ้า|ผมยาว|ผมสั้น|ผมสี|ปอยผม|มัดผม|ผมหงอก|ผมดำ|ผมทอง|ผมขาว|ผมแดง|ผมเงิน|ไรผม|โคนผม|ปลายผม|เกล้าผม|ถักผม)/g;
-function fixQuoteGender(q, gender) {
+function fixQuoteGender(q, gender, archaic = false) {
   if (gender !== 'male' && gender !== 'female') return q;
+  if (archaic) return _fixArchaicQuote(q, gender);
   const ROYAL_M = '\u0001RM\u0001';
   let t = q.replace(/พ่ะย่ะค่ะ|พะยะค่ะ/g, ROYAL_M);
   if (gender === 'female') {
@@ -404,6 +435,52 @@ function fixQuoteGender(q, gender) {
          .replace(/ดิฉัน|อิฉัน/g, 'ผม');
   }
   return t;
+}
+
+// ตัวแก้บทพูด 1 บรรทัดตามแผนที่: รู้เพศ → แก้คำลงท้าย/คำแทนตัวให้ตรงเพศ · รู้ว่าใครพูดแต่ไม่รู้เพศ → ตัดคำบอกเพศออก
+// (ผู้พูด '?' = ไม่รู้ว่าใครพูด → ไม่แตะ เพราะอาจเป็นตัวละครที่รู้เพศ · ผู้เล่า 나/저 → ไม่แตะ)
+const _NARRATOR_SPK_RE = /^(나|저|내|본인|narrator|me|I|我|ผู้เล่า)(\s|\(|$)/i;
+function _quoteFix(body, m) {
+  if (m.gender === 'male' || m.gender === 'female') return fixQuoteGender(body, m.gender, m.archaic === 'sure' && m.kind !== 'sq');
+  if (m.kind === 'sq' || !m.speaker || m.speaker === '?' || m.speaker === '-' || _NARRATOR_SPK_RE.test(String(m.speaker).trim())) return body;
+  return _neutralizeQuote(body);
+}
+// บทพูดของคนที่ไม่รู้เพศ: ตัด ครับ/ค่ะ/คะ/ขอรับ/เจ้าค่ะ · ผม/ดิฉัน ต้นวลี → ละไว้ (ไทยละประธานได้) · ของผม → ของฉัน · ผมว่า → ฉันว่า
+// วัดจริง: Gemma 4 26B ใส่ ครับ/ผม ให้ผู้ว่าจ้างที่ไม่รู้เพศ 11–12 คำต่อฉาก แม้ prompt + แผนที่สั่งห้าม · ราชาศัพท์ (พ่ะย่ะค่ะ/เพคะ) ไม่แตะ
+function _neutralizeQuote(q) {
+  const keep = [];
+  const mask = s => { keep.push(s); return `\u0003${keep.length - 1}\u0003`; };
+  let t = q.replace(/พ่ะย่ะค่ะ|พะยะค่ะ|เพคะ|หม่อมฉัน|กระหม่อม/g, mask).replace(_HAIR_MASK_RE, mask);
+  t = t.replace(/นะครับ|นะคะ|นะขอรับ|นะเจ้าคะ/g, 'นะ').replace(/ครับผม|ครับ|ขอรับ|เจ้าค่ะ|เจ้าคะ|ค่ะ/g, '').replace(new RegExp('คะ' + _PEND, 'g'), '');
+  t = t.replace(/ของ(?:กระผม|ผม|ดิฉัน|อิฉัน)/g, 'ของฉัน')
+       .replace(/(^|[\s“"「…,!?])(?:กระผม|ผม|ดิฉัน|อิฉัน)(?=ว่า|คิดว่า|เอง)/g, '$1ฉัน')
+       // อนุประโยค (ที่ผมรับผิดชอบ · ว่าผมจะ) ต้องมีประธาน → ตัวเอง (ตัดทิ้งแล้วความหมายหาย: "เคสที่รับผิดชอบ")
+       .replace(/(ที่|ว่า)(?:กระผม|ผม|ดิฉัน|อิฉัน)(?!ของ|ร่วง|เปีย|ม้า)(?=[ก-ฮเ-ไ])/g, '$1ตัวเอง')
+       .replace(/(^|[\s“"「…,!?]|พอดี|แต่|ถ้า|หาก|เพราะ|แล้ว|และ|เมื่อ)(?:กระผม|ผม|ดิฉัน|อิฉัน)(?!ของ|ร่วง|เปีย|ม้า)(?=[ก-ฮเ-ไ])/g, '$1')
+       .replace(/กระผม|ดิฉัน|อิฉัน/g, 'ฉัน');   // "ผม" กลางประโยคอาจเป็นเส้นผม (ตัดผม) → ไม่แตะ
+  t = t.replace(/\u0003(\d+)\u0003/g, (_, i) => keep[+i]).replace(/[ \t]{2,}/g, ' ').replace(/\s+([!?…,.])/g, '$1').trim();
+  return /[ก-ฮ]/.test(t) ? t : q;   // เหลือแต่เครื่องหมาย ("ครับ!") → คงเดิม ดีกว่าบรรทัดว่าง
+}
+
+// บทพูดในเรื่องยุคโบราณ (ยืนยันจากค่าตั้ง/ตอนก่อน): ผม/ครับ/ค่ะ ปัจจุบัน → ข้า + ขอรับ/เจ้าค่ะ ตามเพศผู้พูด
+function _fixArchaicQuote(q, gender) {
+  const ROYAL_M = '\u0001RM\u0001', ROYAL_F = '\u0001RF\u0001';
+  let t = q.replace(/พ่ะย่ะค่ะ|พะยะค่ะ/g, ROYAL_M).replace(/เพคะ/g, ROYAL_F);
+  const hair = [];
+  t = t.replace(_HAIR_MASK_RE, m => { hair.push(m); return `\u0002${hair.length - 1}\u0002`; });
+  if (gender !== 'male' && gender !== 'female') {   // ไม่รู้ผู้พูด: เปลี่ยนแค่ระดับภาษา คงเพศตามคำลงท้ายเดิม
+    t = t.replace(/ครับผม/g, 'ขอรับ').replace(/ครับ/g, 'ขอรับ').replace(/(?<!เจ้า)ค่ะ/g, 'เจ้าค่ะ').replace(new RegExp('(?<!เจ้า)คะ' + _PEND, 'g'), 'เจ้าคะ')
+         .replace(/กระผม/g, 'ข้าน้อย').replace(/(^|[\s“"「…,])(?:ผม|ดิฉัน|อิฉัน|ฉัน(?!ท))/g, '$1ข้า');
+  } else if (gender === 'male') {
+    t = t.replace(/ครับผม/g, 'ขอรับ').replace(/เจ้าค่ะ|เจ้าคะ/g, 'ขอรับ').replace(/ครับ/g, 'ขอรับ').replace(/ค่ะ/g, 'ขอรับ').replace(new RegExp('คะ' + _PEND, 'g'), 'ขอรับ')
+         .replace(/กระผม/g, 'ข้าน้อย').replace(/(^|[\s“"「…,])(?:ผม|ดิฉัน|อิฉัน|ฉัน(?!ท))/g, '$1ข้า').split(ROYAL_F).join(ROYAL_M);
+  } else {
+    t = t.replace(/ครับผม/g, 'เจ้าค่ะ').replace(new RegExp('ขอรับ' + _PEND, 'g'), 'เจ้าค่ะ').replace(/ครับ(?=\s*[?？])/g, 'เจ้าคะ').replace(/ครับ/g, 'เจ้าค่ะ')
+         .replace(/(?<!เจ้า)ค่ะ/g, 'เจ้าค่ะ').replace(new RegExp('(?<!เจ้า)คะ' + _PEND, 'g'), 'เจ้าคะ')
+         .replace(/กระผม/g, 'ข้าน้อย').replace(/(^|[\s“"「…,])(?:ผม|ดิฉัน|อิฉัน|ฉัน(?!ท))/g, '$1ข้า').split(ROYAL_M).join(ROYAL_F);
+  }
+  t = t.replace(/\u0002(\d+)\u0002/g, (_, i) => hair[+i]);
+  return t.split(ROYAL_M).join('พ่ะย่ะค่ะ').split(ROYAL_F).join('เพคะ');
 }
 
 // ชื่อเกาหลีหลุดมาในคำแปล ("레온มองลงไป") → แทนด้วยชื่อไทยจากคลังศัพท์/แผนที่ผู้พูด (เฉพาะชื่อเต็มที่ไม่ติดอักษรเกาหลีอื่น)
@@ -448,7 +525,7 @@ function _fixByRegex(text, re, map, fixes) {
   let i = 0;
   return text.replace(re, (all, open, body, close) => {
     const m = map[i++];
-    const fixed = fixQuoteGender(body, m.gender);
+    const fixed = _quoteFix(body, m);
     if (fixed !== body) fixes.push({ speaker: m.speaker, gender: m.gender, from: body, to: fixed });
     return open + fixed + close;
   });
@@ -503,13 +580,26 @@ function _fixMatched(text, re, pairOf, map, fixes) {
     const si = pairOf(j++);
     if (si === undefined) return all;
     const m = map[si];
-    const fixed = fixQuoteGender(body, m.gender);
+    const fixed = _quoteFix(body, m);
     if (fixed !== body) fixes.push({ speaker: m.speaker, gender: m.gender, from: body, to: fixed });
     return open + fixed + close;
   });
 }
 const _META_NOTE_RE = /[ \t]*\*?[\[(](?:หมายเหตุ|โน้ต|Note|TN|T\/N)[^\])\n]*(?:ต้นฉบับ|source|Korean|เกาหลี|อภิธาน|glossary|คลังศัพท์|กฎ)[^\])\n]*[\])]\*?/gi;
-function applySpeakerFixes(thaiText, map) {
+function applySpeakerFixes(thaiText, map, ws = S.currentWs) {
+  const out = _applySpeakerFixesCore(thaiText, map);
+  // เรื่องโบราณ (แน่ใจจากค่าตั้ง/ตอนก่อน): บทพูดที่ยังเป็น ผม/ครับ/ค่ะ → ข้า/ขอรับ/เจ้าค่ะ — ไม่ต้องรู้ผู้พูด เพราะคำลงท้ายบอกเพศอยู่แล้ว
+  // ทำแม้แผนที่ผู้พูดล้มเหลวหรือปิดอยู่ (เคสจริง: แผนที่ตอนที่ 1 อ่าน JSON ไม่ได้ → คำแปลมี ครับ 18 คำ)
+  if (out.text && archaicSpeechInfo(ws).sure) {
+    out.text = out.text.replace(_TH_DQ_RE, (all, open, body, close) => {
+      const f = _fixArchaicQuote(body, null);
+      if (f !== body) out.fixes.push({ from: body, to: f, register: true });
+      return open + f + close;
+    });
+  }
+  return out;
+}
+function _applySpeakerFixesCore(thaiText, map) {
   const rn = repairHangulNames(thaiText, map);   // ชื่อเกาหลีที่หลุดมา → ชื่อไทย (ทำก่อนจับคู่บทพูด)
   const out = { text: rn.text, fixes: rn.fixes, aligned: false };
   // หมายเหตุผู้แปลที่โมเดลแทรกเอง เรื่องต้นฉบับ/คลังศัพท์/กฎ (เช่น "*[หมายเหตุ: ต้นฉบับใช้คำว่า 그 …]*") → ตัดทิ้ง
@@ -590,9 +680,111 @@ function getProofreadModel(ws, translateModel) {
   return (ws?.settings?.aiProvider || 'openrouter') === 'openrouter' ? DEFAULT_PROOFREAD_MODEL : translateModel;
 }
 
+// ─── โมเดลช่วย (ระบุผู้พูด + ตรวจเพศคำบรรยาย + สแกน Bible) — เลือกได้หลายระดับราคาเพื่อคุมค่าใช้จ่าย ───
+// โหมด: 'full' = ระบุผู้พูด + ตรวจเพศ (ค่าเริ่มต้น) · 'map' = ระบุผู้พูดอย่างเดียว · 'off' = ปิด
+function speakerModeOf(ws = S.currentWs) {
+  const st = ws?.settings || {};
+  return st.speakerMap === false ? 'off' : st.speakerCheck === false ? 'map' : 'full';
+}
+function speakerModeSettings(mode) {
+  return mode === 'off' ? { speakerMap: false } : { speakerMap: true, speakerCheck: mode !== 'map' };
+}
+// [id, ชื่อ, หมายเหตุ] — แนะนำจากการวัดจริง (tests/gender/run-speakermap-models.js · 2026-11-03)
+// ตอนนิยายยุทธภพจริง 2 ตอน (146 บทพูด) เทียบกับ Gemini 3 Flash Preview: ตรงกัน · ระบุเพศสลับ (ชาย↔หญิง) = 0 ทุกตัวในกลุ่มนี้
+const HELPER_MODEL_PICKS = [
+  ['google/gemma-4-26b-a4b-it', 'Gemma 4 26B', 'ถูกสุด ~1/17 ของ Flash Preview · ตรง 145/146 · ช้ากว่า (~10 วิ/ตอน)'],
+  ['google/gemini-2.5-flash-lite', 'Gemini 2.5 Flash Lite', 'ถูก + เร็ว · ตรง 141/146 · บางครั้งตอบว่าง (แอปลองใหม่ให้)'],
+  ['google/gemini-3.1-flash-lite', 'Gemini 3.1 Flash Lite', 'เร็ว · ตรง 139/146'],
+  ['google/gemini-3-flash-preview', 'Gemini 3 Flash Preview', 'แม่นสุด (ค่าเริ่มต้นเดิม)'],
+];
+// ทดสอบแล้วไม่ผ่านกับตอนยาว (~7,000 อักษร) — ยังเลือกได้ แต่ขึ้นเตือน
+const HELPER_MODEL_AVOID = {
+  'openai/gpt-oss-120b': 'ระบุผู้พูดไม่ได้ ~1/4 ของบท + เพศสลับ 4 บรรทัด · ช้า',
+  'openai/gpt-5-nano': 'ตอนยาวล้มเหลว (หมดเวลา)',
+  'qwen/qwen3.8-flash': 'ตอนยาวล้มเหลว (หมดเวลา)',
+  'deepseek/deepseek-v3.2': 'ตอนยาวล้มเหลว',
+};
+function helperModelRate(id) {
+  const prov = typeof getProvider === 'function' ? getProvider() : 'openrouter';
+  return (typeof MODEL_COSTS !== 'undefined' && (MODEL_COSTS[prov + ':' + id] || MODEL_COSTS[id]))
+    || (prov === 'openrouter' && typeof _modelPriceMap !== 'undefined' && _modelPriceMap[id]) || null;
+}
+// ประมาณค่าใช้จ่ายต่อตอน จากความยาวต้นฉบับเฉลี่ย + จำนวนบทพูด (ค่าคงที่เทียบกับค่าจริงจาก OpenRouter)
+// เทียบกับค่าจริงจาก OpenRouter (5 โมเดล): ประมาณได้ 0.9–1.3 เท่าของจริง (ประมาณเผื่อไว้นิดหน่อย)
+const SPK_TOK_PER_CHAR = 0.75;
+function estimateSpeakerCost(ws = S.currentWs, model) {
+  const id = model === 'same' || !model ? ws?.settings?.translateModel : model;
+  const r = helperModelRate(id);
+  const chs = (ws?.chapters || []).filter(c => c.sourceText);
+  if (!r || !chs.length) return { rate: r, perCh: null };
+  const sample = chs.slice(0, 8);
+  const chars = sample.reduce((a, c) => a + c.sourceText.length, 0) / sample.length;
+  const quotes = sample.reduce((a, c) => a + extractSourceQuotes(c.sourceText).length, 0) / sample.length;
+  const mapIn = chars * SPK_TOK_PER_CHAR + quotes * 12 + 1300, mapOut = quotes * 18 + 150;
+  const chkIn = chars * SPK_TOK_PER_CHAR * 0.35 + 1500, chkOut = 500;   // ตรวจเฉพาะย่อหน้าที่น่าสงสัย (บางตอนไม่เรียกเลย)
+  const map = (mapIn * r.in + mapOut * r.out) / 1e6, check = (chkIn * r.in + chkOut * r.out) / 1e6;
+  const mode = speakerModeOf(ws), perCh = mode === 'off' ? 0 : map + (mode === 'full' ? check : 0);
+  const left = chs.filter(c => !c.translation).length;
+  return { rate: r, map, check, perCh, left, total: perCh * left };
+}
+const _fmtUsd = v => v < 0.001 ? '<$0.001' : '$' + (v < 0.1 ? v.toFixed(4) : v.toFixed(2));
+const _fmtRate = r => !r ? '' : (r.in === 0 && r.out === 0) ? 'ฟรี' : `$${+r.in.toFixed(3)} / $${+r.out.toFixed(2)} ต่อ 1M`;
+
+// ช่องเลือกโมเดลช่วย: แนะนำ (วัดจริง) · ใช้โมเดลแปล · ทุกโมเดลของ provider (รายการที่ดึงจาก API ถ้ามี) · ใส่รหัสเอง
+function renderHelperModelSelect(sel, ws = S.currentWs) {
+  if (!sel) return;
+  const prov = typeof getProvider === 'function' ? getProvider() : 'openrouter';
+  const cur = ws?.settings?.proofreadModel || (prov === 'openrouter' ? DEFAULT_PROOFREAD_MODEL : 'same');
+  const opt = (id, label) => `<option value="${esc(id)}">${esc(label)}</option>`;
+  const withRate = (id, label) => { const r = helperModelRate(id); return (HELPER_MODEL_AVOID[id] ? '⚠ ' : '') + (r ? `${label} · ${_fmtRate(r)}` : label) + (HELPER_MODEL_AVOID[id] ? ` — ไม่แนะนำ: ${HELPER_MODEL_AVOID[id]}` : ''); };
+  const seen = new Set(['same']);
+  let html = opt('same', `ใช้โมเดลเดียวกับที่แปล (${ws?.settings?.translateModel || '—'})`);
+  if (prov === 'openrouter' && HELPER_MODEL_PICKS.length) {
+    html += `<optgroup label="แนะนำสำหรับระบุผู้พูด (วัดกับตอนนิยายจริง)">${HELPER_MODEL_PICKS.map(([id, name, note]) => { seen.add(id); return opt(id, withRate(id, `${name} — ${note}`)); }).join('')}</optgroup>`;
+  }
+  const fetched = (typeof _fetchedModels !== 'undefined' && _fetchedModels[prov]) || null;
+  const all = fetched && fetched.length ? fetched.map(m => [m.id, m.label || m.id]) : (PROVIDERS[prov]?.models || []).flatMap(([, items]) => items);
+  const rest = all.filter(([id]) => !seen.has(id));
+  rest.sort((a, b) => ((helperModelRate(a[0])?.in ?? 99) - (helperModelRate(b[0])?.in ?? 99)) || String(a[1]).localeCompare(String(b[1])));
+  if (rest.length) html += `<optgroup label="${fetched?.length ? `ทุกโมเดลจาก API (${rest.length}) · ถูก → แพง` : 'โมเดลอื่น · กด 🔄 ที่แถบโมเดลแปลเพื่อดึงทั้งหมด'}">${rest.map(([id, label]) => { seen.add(id); return opt(id, withRate(id, label)); }).join('')}</optgroup>`;
+  if (cur && !seen.has(cur)) html += opt(cur, `⭐ ${cur}`);
+  html += opt('__custom__', '✏️ ใส่รหัสโมเดลเอง…');
+  sel.innerHTML = html;
+  sel.value = cur;
+  sel.dataset.prev = cur;
+}
+function helperModelValue(sel) {
+  const v = sel?.value;
+  return v && v !== '__custom__' ? v : (sel?.dataset.prev || '');
+}
+function onHelperModelChange(sel) {
+  if (sel.value === '__custom__') {
+    const id = (prompt('รหัสโมเดล (เช่น google/gemini-3.1-flash-lite หรือดูที่ openrouter.ai/models)', '') || '').trim();
+    if (!id) { sel.value = sel.dataset.prev || 'same'; updateSpeakerCostHint(); return; }
+    if (![...sel.options].some(o => o.value === id)) sel.insertBefore(new Option(`⭐ ${id}`, id), sel.querySelector('option[value="__custom__"]'));
+    sel.value = id;
+  }
+  sel.dataset.prev = sel.value;
+  updateSpeakerCostHint();
+}
+// แสดงค่าใช้จ่ายโดยประมาณตามโหมด + โมเดลที่เลือกอยู่ในหน้าตั้งค่า (ยังไม่บันทึกก็เห็น)
+function updateSpeakerCostHint() {
+  const el = document.getElementById('wsSpeakerCost');
+  if (!el || !S.currentWs) return;
+  const mode = document.getElementById('wsSpeakerMode')?.value || speakerModeOf(S.currentWs);
+  const model = helperModelValue(document.getElementById('wsProofreadModel')) || 'same';
+  if (mode === 'off') { el.textContent = 'ปิดอยู่ — ไม่เรียก AI เพิ่ม (คำลงท้าย/คำแทนตัวไม่ถูกตรวจตามผู้พูด)'; return; }
+  const ws = { ...S.currentWs, settings: { ...S.currentWs.settings, ...speakerModeSettings(mode) } };
+  const e = estimateSpeakerCost(ws, model);
+  if (!e.rate) { el.textContent = 'ยังไม่รู้ราคาของโมเดลนี้ — กด 🔄 ข้างช่องเลือกโมเดลแปลเพื่อดึงราคาจาก OpenRouter'; return; }
+  if (e.perCh === null) { el.textContent = `ราคา ${_fmtRate(e.rate)} · เพิ่มตอนแล้วจะประมาณค่าใช้จ่ายต่อตอนให้`; return; }
+  el.textContent = `≈ ${_fmtUsd(e.perCh)} ต่อตอน · AI +${mode === 'full' ? '1–2' : '1'} ครั้ง (ระบุผู้พูด ${_fmtUsd(e.map)}${mode === 'full' ? ` + ตรวจเพศ ≤${_fmtUsd(e.check)}` : ''})`
+    + (e.left ? ` · ${e.left} ตอนที่ยังไม่แปล ≈ ${_fmtUsd(e.total)}` : '') + ' — ประมาณจากความยาวตอนในเรื่องนี้';
+}
+
 async function genderProofread(srcText, thaiText, model, ws = S.currentWs) {
   const res = { text: thaiText, fixes: [] };
-  if (!speakerMapEnabled(ws) || !thaiText || !srcText) return res;
+  if (!speakerMapEnabled(ws) || ws?.settings?.speakerCheck === false || !thaiText || !srcText) return res;
   const cand = _genderCandidates(thaiText, ws);
   if (!cand.length) return res;
   const paras = thaiText.split('\n');
@@ -696,30 +888,6 @@ function parseJsonArrayLoose(raw) {
 // คำนวณจากต้นฉบับ (local): คำเกาหลีที่วนซ้ำหลายตอน + รูปแบบเครื่องหมาย → ให้ AI ตัดสินนโยบายไว้ล่วงหน้า
 // ตอนที่แปลแล้ว (ถ้ามี) บอก "การตัดสินใจ" ที่ใช้อยู่จริง · ถ้าแต่ละตอนไม่ตรงกัน ให้เลือกแบบที่ตรงคลัง/ใช้บ่อยกว่า
 // เติมเฉพาะช่องที่ว่าง — ผู้ใช้ตรวจ/แก้แล้วกดบันทึกเอง (ไม่บันทึกทับให้)
-const STYLE_SHEET_DRAFT_PROMPT = `You are the lead translator of a Korean→Thai web-novel series. Write the series TRANSLATION STYLE SHEET in Thai so that every future chapter reads as if one translator did it.
-
-Base it on the Korean source and on what the existing translations and the glossary ACTUALLY do. When chapters disagree (e.g. one chapter transliterates a term and another translates it), pick the rendering used in the glossary, otherwise the more frequent one, and state it as the rule.
-SOURCE STATISTICS lists Korean words that recur across many chapters (computed from the whole source). For every one that is a real proper noun or genre/system term (not ordinary vocabulary), decide ONE Thai rendering now — the glossary's if it has one, else transliterate or translate following the per-category policy — and list it as "เกาหลี = ไทย" under terms, so chapters not yet translated stay consistent. Ignore ordinary words in that list.
-Use the source's format markers to define how thoughts, system messages and sound effects are written.
-Be concrete and short: bullet lines starting with "• ", max 8 bullets per section (terms may have up to 25), use "เกาหลี = ไทย" pairs where useful. Do not invent characters or terms that do not appear below.
-
-Return ONLY JSON (no markdown):
-{"translit":"…","terms":"…","narration":"…","format":"…","voices":"…"}
-- translit: transliterate-vs-translate policy per category (names, places, skills/techniques, ranks/titles, game/system terms, monsters)
-- terms: recurring terms and catchphrases that must be identical every time
-- narration: narration voice, register, narrator self-pronoun, sentence style
-- format: how thoughts, sound effects, system messages, emphasis are written
-- voices: speech style of each main character (self-pronoun, politeness, verbal tics)
-
-GLOSSARY:
-{glossary}
-
-SOURCE STATISTICS:
-{stats}
-
-CHAPTER SAMPLES ([KO] Korean source, [TH] existing Thai translation if any):
-{samples}`;
-
 // คำเกาหลีที่วนซ้ำในต้นฉบับ (ตัดคำชี้ เช่น 은/는/이/가/을/를/의/에게 ออก, ตัดกริยา/คำทั่วไป) → [{ko, count, chapters}]
 const _KO_PARTICLE_RE = /(에게서|께서는|께서|에서는|에서|에게는|에게|한테|으로는|으로|로서|부터|까지|처럼|보다|이라는|라는|이라고|라고|이란|란|과는|와는|과|와|은|는|이|가|을|를|의|에는|에|도|만|로)$/;
 const _KO_VERBISH_RE = /(다|요|고|며|면|지만|는데|니까|면서|어서|아서|았|었|겠|했|해|하게|하는|하고|한다|된다|된|던|죠|까|네|군|자)$/;
@@ -804,54 +972,212 @@ function sourceFormatStats(chapters) {
   return Object.entries(n).filter(([, v]) => v > 0).map(([k, v]) => `${k} ${v} บรรทัด`).join(' · ') || '(ไม่มีเครื่องหมายพิเศษ)';
 }
 
-async function draftStyleSheet() {
+// ─── Bible ของนิยาย: สแกนต้นฉบับครั้งเดียว → ตั้งค่าทั้งเรื่อง ───
+// AI อ่านตัวอย่างต้นฉบับ (+ คำแปลที่มี) + สถิติที่คำนวณจากต้นฉบับทุกตอน แล้วเสนอ:
+//   ตั้งค่า: ภาษาต้นฉบับ (ตรวจจากตัวอักษร ไม่ใช้ AI) · แนวนิยาย (→ prompt แปล + prompt สกัดคำ + ชุดคำ) · สไตล์การแปล (preset) · คำแทนตัวผู้เล่า · เรื่องย่อ
+//   Bible: โลกของเรื่อง · นโยบายทับศัพท์ · คำประจำเรื่อง · น้ำเสียงบรรยาย · รูปแบบ · น้ำเสียงตัวละคร · กฎลงคลังศัพท์
+//   คลังศัพท์: ตัวละครหลัก + ตำแหน่งที่หมายถึงคนเดียว พร้อมเพศ
+// ผู้ใช้ตรวจ/เลือกในหน้า "สแกน Bible" ก่อนกดใช้ — ไม่มีอะไรถูกเขียนทับโดยไม่ถาม
+const BIBLE_PROMPT = `You are the lead translator and editor of a {LANG}→Thai web-novel series. Read the chapter samples and the statistics computed from the whole source, then write this novel's BIBLE: the one reference that sets the translation prompt, the glossary-extraction prompt and the app settings, so every chapter reads as if one translator did it.
+
+Decide only from evidence in the text. Never invent characters, places or terms. Where existing Thai translations or the glossary already made a choice, keep it.
+
+SETTINGS — choose exactly one value each:
+- "genre": the best-fitting id from GENRES, or "" if none fits.
+- "preset": the best-fitting translation-style id from PRESETS.
+- "narratorSelf": the Thai word the narrator uses for "I" in first-person narration and inner thoughts — exactly one of: "ฉัน" (the norm for modern and fantasy settings, also for a male narrator) · "ข้า" (the norm for ancient China, palace/court, murim and xianxia stories) · "ผม" · "gender" (ผม for a male narrator, ฉัน for a female one). Third-person narration → "ฉัน". Thai always needs one of these words, so never answer "omit". Your reason must name the word you chose.
+- "rating": the reader rating the source's language fits — "all" (no crude profanity) · "13" (mild insults) · "15" (rough speech such as กู/มึง, strong swearing) · "18" (explicit sexual content or extreme gore/profanity). Judge from the samples only.
+- "reasons": one short Thai line each for genre, preset, narratorSelf and rating, citing what in the text decided it.
+
+BIBLE TEXT — Thai, bullet lines starting with "• ", concrete, at most 8 bullets per field (terms: up to 25), "{LANG} = ไทย" pairs where useful:
+- "synopsis": 2–3 plain sentences (no bullets): premise, protagonist, setting.
+- "world": era and technology, institutions, power or rank system, and what kind of world it is. This decides word meanings, so for a role word whose dictionary sense does not fit this world, write ONLY the sense that fits ("source = Thai" with the one Thai you chose) — never list two options.
+- "translit": transliterate-vs-translate policy per category (names, places, skills/techniques, ranks/titles, game/system terms, monsters).
+- "terms": recurring terms and catchphrases that must be identical every time.
+- "narration": point of view, register, narrator self-pronoun, sentence style.
+- "format": how thoughts, system messages, sound effects and emphasis are written (use FORMAT MARKERS).
+- "voices": each main character's speech: self-pronoun, politeness level, verbal tics.
+- "glossRules": what this novel's glossary must lock and what it must skip (e.g. guild, skill and rank names; a title that always means one person and that person's gender; brands and gadgets to skip).
+
+PEOPLE — only those who appear in the samples:
+- "characters": main and recurring characters: [{"source","thai","gender":"male|female|neutral","role"}] — "source" exactly as written, "thai" following the glossary and the translit policy.
+- "titles": titles or ranks that always mean ONE specific person in this story (the academy's director who is a woman): [{"source","thai","gender","role"}]. Skip titles that several people hold.
+
+Return ONLY JSON (no markdown):
+{"genre":"","preset":"","narratorSelf":"ฉัน","rating":"15","reasons":{"genre":"","preset":"","narratorSelf":"","rating":""},"synopsis":"","world":"","translit":"","terms":"","narration":"","format":"","voices":"","glossRules":"","characters":[],"titles":[]}
+
+GENRES (id — name — description):
+{genres}
+
+PRESETS (id — name):
+{presets}
+
+GLOSSARY (already decided — keep these renderings):
+{glossary}
+
+SOURCE STATISTICS:
+{stats}
+
+CHAPTER SAMPLES ([{SHORT}] source, [TH] existing Thai translation if any):
+{samples}`;
+
+// สร้าง prompt + ข้อมูลที่ใช้ตรวจคำตอบ (แยกจากการเรียก AI เพื่อทดสอบได้)
+function buildBiblePrompt(ws, chapters) {
+  const all = (chapters || []).filter(c => c.sourceText?.trim());
+  const lang = detectSourceLang(all.slice(0, 5).map(c => c.sourceText).join('\n')) || getSourceLang(ws).code;
+  const L = SOURCE_LANGS[lang] || getSourceLang(ws);
+  const done = all.filter(c => c.translation?.trim()), pending = all.filter(c => !c.translation?.trim());
+  // ตัวอย่างกระจายทั้งเรื่อง: ตอนที่แปลแล้ว แรก/กลาง/ล่าสุด (สูงสุด 3) + ต้นฉบับที่ยังไม่แปล แรก/ล่าสุด
+  const spread = (arr, n) => [...new Set(n >= 3 ? [arr[0], arr[Math.floor((arr.length - 1) / 2)], arr[arr.length - 1]] : [arr[0], arr[arr.length - 1]])].filter(Boolean);
+  const picks = [...spread(done, 3), ...spread(pending, done.length ? 2 : 3)];
+  const samples = picks.map(c => `### ตอน #${c.chapterNum || '?'} ${c.title || ''}\n[${L.short}]\n${c.sourceText.trim().slice(0, 2200)}` +
+    (c.translation?.trim() ? `\n[TH]\n${c.translation.trim().slice(0, 2400)}` : '\n[TH] (ยังไม่แปล)')).join('\n\n');
+  const terms = sourceTermStats(all, ws?.glossary, 60, lang);
+  const stats = `ต้นฉบับ ${all.length} ตอน (${all.reduce((n, c) => n + c.sourceText.length, 0).toLocaleString()} ตัวอักษร) · แปลแล้ว ${done.length} ตอน · ภาษาที่ตรวจพบ: ${L.name}\n` +
+    `FORMAT MARKERS (บรรทัดที่ขึ้นต้นด้วย): ${sourceFormatStats(all)}\n` +
+    `RECURRING WORDS (คำ ×ครั้ง /ตอน → คำแปลในคลัง หรือ NEW):\n` +
+    (terms.map(t => `${t.ko} ×${t.count} /${t.chapters} → ${t.thai ? fixAddressGender(t.ko, t.thai) : 'NEW'}`).join('\n') || '(ไม่พบ)');
+  const genres = (typeof GENRE_PRESETS !== 'undefined' ? GENRE_PRESETS : []).filter(g => g.lang === lang).map(g => `${g.id} — ${g.name} — ${g.desc}`).join('\n') || '(none)';
+  const presets = (ws?.presets?.length ? ws.presets : SEED_PRESETS).map(p => `${p.id} — ${p.name}`).join('\n');
+  const glossary = (ws?.glossary || []).slice(0, 150).map(g => `${g.korean} = ${fixAddressGender(g.korean, g.thai)} (${g.type || ''}${g.gender ? '/' + g.gender : ''}${g.note ? ' · ' + String(g.note).slice(0, 40) : ''})`).join('\n') || '(none)';
+  const prompt = BIBLE_PROMPT.replace(/\{LANG\}/g, L.name).replace('{SHORT}', L.short)
+    .replace('{genres}', () => genres).replace('{presets}', () => presets).replace('{glossary}', () => glossary)
+    .replace('{stats}', () => stats).replace('{samples}', () => samples);
+  return { prompt, lang, picks: picks.length, termCount: terms.length, chapters: all.length };
+}
+
+// คำตอบ AI → ข้อเสนอที่ตรวจแล้ว (ค่าที่ไม่รู้จักถูกทิ้ง · ชื่อที่มีในคลังแล้วแนะนำแค่เติมเพศ)
+function parseBibleProposal(raw, ws, lang) {
+  const txt = String(raw || '').replace(/```json|```/g, '');
+  const a = txt.indexOf('{'), b = txt.lastIndexOf('}');
+  let o = null;
+  try { o = JSON.parse(txt.slice(a, b + 1)); } catch { o = a >= 0 ? tryRepairJson(txt.slice(a)) : null; }
+  if (!o || typeof o !== 'object') return null;
+  const str = v => typeof v === 'string' ? v.trim() : Array.isArray(v) ? v.map(x => '• ' + String(x).replace(/^•\s*/, '')).join('\n') : '';
+  const genreOk = (typeof GENRE_PRESETS !== 'undefined' ? GENRE_PRESETS : []).some(g => g.id === o.genre && g.lang === lang);
+  const presetOk = (ws?.presets?.length ? ws.presets : SEED_PRESETS).some(p => p.id === o.preset);
+  const fields = {};
+  for (const [k] of STYLE_SHEET_FIELDS) { const v = fixAddressGenderText(str(o[k])); if (v) fields[k] = v; }
+  const have = new Map((ws?.glossary || []).map(g => [g.korean, g]));
+  const people = [];
+  for (const [list, type] of [[o.characters, 'character'], [o.titles, 'title']]) for (const p of Array.isArray(list) ? list : []) {
+    const e = normalizeTermKeys({ ...p });
+    const src = String(e?.korean || '').trim(), thai = String(e?.thai || '').trim();
+    if (!src || !thai || /[ㄱ-ㆎ가-힣一-鿿]/.test(thai) || people.some(x => x.korean === src)) continue;
+    const gender = ['male', 'female', 'neutral'].includes(e.gender) ? e.gender : '';
+    const old = have.get(src);
+    if (old && (!gender || ['male', 'female', 'neutral'].includes(old.gender))) continue;   // มีครบแล้ว
+    people.push({ korean: src, thai: old ? old.thai : thai, type: old ? old.type : type, gender, note: String(e.role || p.role || '').trim().slice(0, 80), exists: !!old });
+  }
+  const r = o.reasons || {};
+  return {
+    lang,
+    genre: genreOk ? o.genre : '', preset: presetOk ? o.preset : '',
+    narratorSelf: ['ฉัน', 'ผม', 'ข้า', 'gender'].includes(o.narratorSelf) ? o.narratorSelf : null,
+    rating: ['all', '13', '15', '18'].includes(String(o.rating)) ? String(o.rating) : null,
+    reasons: { genre: str(r.genre), preset: str(r.preset), narratorSelf: str(r.narratorSelf), rating: str(r.rating) },
+    synopsis: str(o.synopsis).replace(/^•\s*/gm, ''), fields, people,
+  };
+}
+
+let _bibleProposal = null;
+async function scanNovelBible() {
   const ws = S.currentWs;
   if (!ws) return;
   const status = document.getElementById('wsStyleDraftStatus');
   const btn = document.getElementById('wsStyleDraftBtn');
   const all = _getSortedChapters().filter(c => c.sourceText?.trim());
   if (!all.length) { showToast('ยังไม่มีต้นฉบับ — เพิ่มตอนก่อนอย่างน้อย 1 ตอน', 'error'); return; }
-  const done = all.filter(c => c.translation?.trim());
-  const pending = all.filter(c => !c.translation?.trim());
-  // ตัวอย่างกระจายทั้งเรื่อง: ตอนที่แปลแล้ว แรก/กลาง/ล่าสุด (สูงสุด 3) + ต้นฉบับที่ยังไม่แปล แรก/ล่าสุด (สูงสุด 2)
-  const spread = (arr, n) => [...new Set(n >= 3 ? [arr[0], arr[Math.floor((arr.length - 1) / 2)], arr[arr.length - 1]] : [arr[0], arr[arr.length - 1]])].filter(Boolean);
-  const picks = [...spread(done, 3), ...spread(pending, done.length ? 2 : 3)];
-  const samples = picks.map(c => `### ตอน #${c.chapterNum || '?'} ${c.title || ''}\n[KO]\n${c.sourceText.trim().slice(0, 2200)}` +
-    (c.translation?.trim() ? `\n[TH]\n${c.translation.trim().slice(0, 2600)}` : '\n[TH] (ยังไม่แปล)')).join('\n\n');
-  const terms = sourceTermStats(all, ws.glossary);
-  const srcChars = all.reduce((n, c) => n + c.sourceText.length, 0);
-  const stats = `ต้นฉบับ ${all.length} ตอน (${srcChars.toLocaleString()} ตัวอักษร) · แปลแล้ว ${done.length} ตอน\n` +
-    `เครื่องหมายขึ้นบรรทัด: ${sourceFormatStats(all)}\n` +
-    `คำที่วนซ้ำ (คำ ×ครั้ง /ตอน → คำแปลในคลัง หรือ NEW):\n` +
-    (terms.map(t => `${t.ko} ×${t.count} /${t.chapters} → ${t.thai ? fixAddressGender(t.ko, t.thai) : 'NEW'}`).join('\n') || '(ไม่พบ)');
-  const glossary = (ws.glossary || []).slice(0, 150).map(g => `${g.korean} = ${fixAddressGender(g.korean, g.thai)} (${g.type || ''}${g.gender ? '/' + g.gender : ''}${g.note ? ' · ' + String(g.note).slice(0, 40) : ''})`).join('\n') || '(ไม่มี)';
+  const built = buildBiblePrompt(ws, all);
   const model = getProofreadModel(ws, ws.settings?.translateModel || document.getElementById('translateModel')?.value);
   if (btn) btn.disabled = true;
-  if (status) status.textContent = `🤖 คำนวณจากต้นฉบับ ${all.length} ตอน (คำวนซ้ำ ${terms.length} คำ) + ตัวอย่าง ${picks.length} ตอน + คลัง ${ws.glossary?.length || 0} คำ...`;
+  if (status) status.textContent = `🔍 สแกนต้นฉบับ ${built.chapters} ตอน (${SOURCE_LANGS[built.lang]?.th || built.lang} · คำวนซ้ำ ${built.termCount} คำ · ตัวอย่าง ${built.picks} ตอน)...`;
   try {
-    const res = await callOpenRouter({ model, temperature: 0.2, max_tokens: 8000,
-      messages: [{ role: 'user', content: langify(STYLE_SHEET_DRAFT_PROMPT, ws).replace('{glossary}', () => glossary).replace('{stats}', () => stats).replace('{samples}', () => samples) }] });
-    const raw = String(res.choices?.[0]?.message?.content || '').replace(/```json|```/g, '');
-    const a = raw.indexOf('{'), b = raw.lastIndexOf('}');
-    let obj = null;
-    try { obj = JSON.parse(raw.slice(a, b + 1)); } catch { obj = a >= 0 ? tryRepairJson(raw.slice(a)) : null; }
-    if (!obj || typeof obj !== 'object') throw new Error('อ่านคำตอบ AI ไม่ได้' + (res.choices?.[0]?.finish_reason === 'length' ? ' (token หมด)' : ''));
-    const filled = [], kept = [];
-    for (const [k, label] of STYLE_SHEET_FIELDS) {
-      const el = document.getElementById('ss-' + k);
-      const v = fixAddressGenderText(typeof obj[k] === 'string' ? obj[k].trim() : Array.isArray(obj[k]) ? obj[k].map(x => '• ' + String(x).replace(/^•\s*/, '')).join('\n') : '');
-      if (!el || !v) continue;
-      if (el.value.trim()) { kept.push(label); continue; }
-      el.value = v; filled.push(label);
-    }
-    if (status) status.textContent = filled.length
-      ? `✓ ร่างแล้ว ${filled.length} หัวข้อ${kept.length ? ` (ข้าม ${kept.length} ช่องที่มีข้อความอยู่แล้ว)` : ''} — ตรวจ/แก้แล้วกด 💾 บันทึก`
-      : (kept.length ? 'ทุกช่องมีข้อความอยู่แล้ว — ล้างช่องที่อยากให้ AI ร่างใหม่' : 'AI ไม่ได้ร่างหัวข้อใดมา');
+    const res = await callOpenRouter({ model, temperature: 0.2, max_tokens: 9000, messages: [{ role: 'user', content: built.prompt }] });
+    const p = parseBibleProposal(res.choices?.[0]?.message?.content, ws, built.lang);
+    if (!p) throw new Error('อ่านคำตอบ AI ไม่ได้' + (res.choices?.[0]?.finish_reason === 'length' ? ' (token หมด)' : ''));
+    _bibleProposal = p;
+    if (status) status.textContent = '✓ สแกนเสร็จ — ตรวจแล้วกด "ใช้ Bible นี้"';
+    openBibleReview();
   } catch (e) {
     if (status) status.textContent = '❌ ' + e.message;
   } finally {
     if (btn) btn.disabled = false;
   }
+}
+
+// ── หน้าตรวจ Bible: เลือกว่าจะใช้อะไร (ช่องที่มีข้อความเดิมไม่ติ๊กไว้ก่อน) ──
+function openBibleReview() {
+  const ws = S.currentWs, p = _bibleProposal;
+  if (!ws || !p) return;
+  const st = ws.settings || {};
+  const presets = ws.presets?.length ? ws.presets : SEED_PRESETS;
+  const gName = id => id ? (GENRE_PRESETS.find(g => g.id === id)?.name || id) : '— ไม่ใช้ —';
+  const pName = id => presets.find(x => x.id === id)?.name || id || '—';
+  const nName = v => ({ '': 'อัตโนมัติ', 'ฉัน': 'ฉัน', 'ผม': 'ผม', 'ข้า': 'ข้า', 'gender': 'ตามเพศ' })[v ?? ''] || v;
+  const row = (key, label, cur, next, reason, on) => `<label class="bible-row"><input type="checkbox" id="bb-set-${key}" ${on ? 'checked' : ''}/>
+    <span class="bible-k">${esc(label)}</span><span class="bible-v">${esc(cur)} → <b>${esc(next)}</b>${reason ? `<small>${esc(reason)}</small>` : ''}</span></label>`;
+  const rows = [];
+  if (p.lang && p.lang !== (st.sourceLang || '')) rows.push(row('lang', 'ภาษาต้นฉบับ', SOURCE_LANGS[st.sourceLang]?.th || 'อัตโนมัติ', SOURCE_LANGS[p.lang]?.th || p.lang, 'ตรวจจากตัวอักษรในต้นฉบับ', true));
+  if (p.genre !== (st.genrePreset || '') && p.genre) rows.push(row('genre', 'แนวนิยาย', gName(st.genrePreset), gName(p.genre), p.reasons.genre, true));
+  if (p.preset && p.preset !== ws.presetId) rows.push(row('preset', 'สไตล์การแปล', pName(ws.presetId), pName(p.preset), p.reasons.preset, true));
+  if (p.narratorSelf !== null && p.narratorSelf !== (st.narratorSelf || '')) rows.push(row('narr', 'คำแทนตัวผู้เล่า', nName(st.narratorSelf || ''), nName(p.narratorSelf), p.reasons.narratorSelf, true));
+  const rName = v => v ? (AGE_RATINGS[v] || v) : 'ไม่กำหนด';
+  if (p.rating && p.rating !== (st.ageRating || '')) rows.push(row('rating', 'เรตผู้อ่าน', rName(st.ageRating || ''), rName(p.rating), p.reasons.rating, !st.ageRating));
+  if (p.synopsis && p.synopsis !== (ws.description || '')) rows.push(row('desc', 'เรื่องย่อ', ws.description ? 'มีแล้ว' : '(ว่าง)', p.synopsis.slice(0, 160) + (p.synopsis.length > 160 ? '…' : ''), '', !ws.description));
+  document.getElementById('bbSettings').innerHTML = rows.join('') || '<div class="bible-empty">ตั้งค่าตรงกับที่ AI เสนออยู่แล้ว</div>';
+  const ss = ws.styleSheet || {};
+  document.getElementById('bbFields').innerHTML = STYLE_SHEET_FIELDS.filter(([k]) => p.fields[k]).map(([k, label]) => {
+    const old = String(ss[k] || '').trim();
+    return `<div class="bible-field"><label class="bible-row"><input type="checkbox" id="bb-f-${k}" ${old ? '' : 'checked'}/><span class="bible-k">${esc(label)}</span>
+      <span class="bible-v">${old ? 'มีข้อความเดิม — ติ๊กเพื่อแทนที่' : 'ใหม่'}</span></label>
+      <textarea id="bb-ft-${k}" class="editor-ta" rows="4" style="min-height:70px;font-size:0.8rem">${esc(p.fields[k])}</textarea></div>`;
+  }).join('') || '<div class="bible-empty">AI ไม่ได้เสนอหัวข้อใด</div>';
+  const typeTh = { character: 'ตัวละคร', title: 'ตำแหน่ง' }, gTh = { male: 'ชาย', female: 'หญิง', neutral: 'ไม่แน่ชัด', '': '—' };
+  document.getElementById('bbPeople').innerHTML = p.people.map((x, i) => `<label class="bible-row"><input type="checkbox" id="bb-p-${i}" checked/>
+    <span class="bible-k">${esc(x.korean)} → ${esc(x.thai)}</span><span class="bible-v">${typeTh[x.type] || x.type} · ${gTh[x.gender || '']}${x.exists ? ' · เติมเพศให้คำที่มีอยู่' : ''}${x.note ? ` · ${esc(x.note)}` : ''}</span></label>`).join('')
+    || '<div class="bible-empty">ไม่มีตัวละครใหม่ที่ต้องเพิ่ม</div>';
+  openModal('modal-bible');
+}
+
+async function applyBible() {
+  const ws = S.currentWs, p = _bibleProposal;
+  if (!ws || !p) return;
+  const on = id => !!document.getElementById(id)?.checked;
+  ws.settings = ws.settings || {};
+  const done = [];
+  if (on('bb-set-lang')) { ws.settings.sourceLang = p.lang; done.push('ภาษา'); }
+  if (on('bb-set-genre')) { ws.settings.genrePreset = p.genre; done.push('แนวนิยาย'); }
+  if (on('bb-set-preset')) { ws.presetId = p.preset; done.push('สไตล์การแปล'); }
+  if (on('bb-set-narr')) { ws.settings.narratorSelf = p.narratorSelf; done.push('คำแทนตัวผู้เล่า'); }
+  if (on('bb-set-rating')) { ws.settings.ageRating = p.rating; done.push('เรตผู้อ่าน'); }
+  if (on('bb-set-desc')) { ws.description = p.synopsis; done.push('เรื่องย่อ'); }
+  ws.styleSheet = { ...(ws.styleSheet || {}) };
+  let nf = 0;
+  for (const [k] of STYLE_SHEET_FIELDS) if (p.fields[k] && on('bb-f-' + k)) {
+    const v = document.getElementById('bb-ft-' + k)?.value.trim();
+    if (v) { ws.styleSheet[k] = v; nf++; }
+  }
+  if (nf) done.push(`Bible ${nf} หัวข้อ`);
+  if (!Array.isArray(ws.glossary)) ws.glossary = [];
+  let added = 0, filled = 0;
+  p.people.forEach((x, i) => {
+    if (!on('bb-p-' + i)) return;
+    const old = ws.glossary.find(g => g.korean === x.korean);
+    if (old) { if (x.gender && isGenderableType(old.type) && !['male', 'female', 'neutral'].includes(old.gender)) { old.gender = x.gender; filled++; } return; }
+    const e = sanitizeGlossaryEntry({ korean: x.korean, thai: x.thai, type: x.type, ...(x.gender ? { gender: x.gender } : {}), note: x.note ? `${x.note} · Bible` : 'Bible' });
+    if (e) { ws.glossary.push(e); added++; }
+  });
+  if (added || filled) done.push(`คลังศัพท์ +${added}${filled ? ` · เติมเพศ ${filled}` : ''}`);
+  S.glossaryData = ws.glossary;
+  await lsSaveWorkspace(ws);
+  closeModal('modal-bible');
+  // หน้าตั้งค่าเรื่องแสดงค่าที่เพิ่งใช้ (ไม่งั้นกด 💾 บันทึก แล้วค่าเดิมในฟอร์มจะเขียนทับ Bible)
+  if (document.getElementById('wsStyleSheetFields') && typeof renderWsSettings === 'function') try { renderWsSettings(); } catch {}
+  if (typeof renderGlossaryTable === 'function') try { renderGlossaryTable(); } catch {}
+  const status = document.getElementById('wsStyleDraftStatus');
+  if (status) status.textContent = done.length ? `✓ ใช้ Bible แล้ว: ${done.join(' · ')}` : 'ไม่ได้เลือกอะไร';
+  showToast(done.length ? `📖 ใช้ Bible แล้ว: ${done.join(' · ')}` : 'ไม่ได้เลือกอะไร', done.length ? 'success' : '');
 }
 
 // คำในคลังที่ต้นฉบับมี แต่คำแปลไม่ได้ใช้คำไทยตามคลัง → "ไม่ตรงคลัง" (ตรวจ local ไม่เสียเงิน)
@@ -937,7 +1263,7 @@ async function autoExtractGlossaryAfterTranslation(sourceText, model, chapterInf
       normalizeTermKeys(raw);
       if (!raw?.korean || !raw?.thai) return;
       raw.thai = fixSenseByContext(raw.korean, raw.thai, senseCtx);
-      const term = sanitizeGlossaryEntry({ ...raw });
+      const term = sanitizeGlossaryEntry(dropSharedTitleGender({ ...raw }, sourceText));
       if (!term) { rejected++; return; }
       const existingEntry = S.currentWs.glossary.find(g => g.korean === term.korean);
       if (existingEntry) {
@@ -1743,7 +2069,7 @@ let _frHistory = (() => { try { return JSON.parse(sessionStorage.getItem('fr_his
 
 // ─── Translation Context Memory ───
 const CTX_SUMMARY_PROMPT = `วิเคราะห์และสรุปบทนี้สำหรับใช้เป็น context ในการแปลตอนถัดไป โดยระบุ:
-1. ตัวละครที่ปรากฏ: ชื่อ, เพศ, สรรพนามที่ใช้แทนตัว (ผม/ฉัน/เรา/กู ฯลฯ)
+1. ตัวละครที่ปรากฏ: ชื่อ, เพศ (เฉพาะที่ข้อความบอกชัด — ถ้าไม่ชัดเขียน "ไม่ทราบเพศ" ห้ามเดา), สรรพนามที่ใช้แทนตัว (ผม/ฉัน/เรา/กู ฯลฯ)
 2. เหตุการณ์สำคัญ (2-3 ประโยค)
 3. อารมณ์/บรรยากาศท้ายตอน
 
@@ -1775,7 +2101,7 @@ function ctxGetPromptText(ws) {
     const label = s.compressed ? `📚 ${s.title}` : `ตอน ${s.chapterNum}${s.title ? ': ' + s.title : ''}`;
     return `[${label}]\n${s.text}`;
   });
-  return `### บริบทเรื่องที่ผ่านมา (ใช้เพื่อความสอดคล้องในการแปล — ห้ามแปลส่วนนี้)\n${parts.join('\n\n')}`;
+  return `### บริบทเรื่องที่ผ่านมา (ใช้เพื่อความสอดคล้องในการแปล — ห้ามแปลส่วนนี้ · ถ้าขัดกับ GLOSSARY ให้ยึด GLOSSARY)\n${parts.join('\n\n')}`;
 }
 
 async function ctxAddSummary(ws, chId, chapterNum, title, translatedText) {

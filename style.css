@@ -938,22 +938,22 @@ mark.glossary-term { background: rgba(91,140,255,0.2); border-bottom: 1px solid 
 
 /* ไฮไลต์คำแปลที่ตรงกับ Glossary ในโหมดอ่าน */
 #reGlossHlBtn.active { background: var(--gold); color: var(--accent-ink); }
-.re-content mark.re-gloss {
+:is(.re-content, .reader-content) mark.re-gloss {
   background: transparent; color: inherit; padding: 0 1px; border-radius: 3px;
   box-shadow: inset 0 -0.6em 0 color-mix(in srgb, currentColor 14%, transparent);
-  border-bottom: 2px solid currentColor; cursor: help;
+  border-bottom: 2px solid currentColor; cursor: pointer;
 }
-.re-content mark.re-gloss.tag-character { color: #4a86c5; }
-.re-content mark.re-gloss.tag-title     { color: #9a7d1f; }
-.re-content mark.re-gloss.tag-term      { color: #5f8a3f; }
-.re-content mark.re-gloss.tag-rank      { color: #b85636; }
-.re-content mark.re-gloss.tag-honorific { color: #8456c5; }
-.re-content mark.re-gloss.tag-place     { color: #2f9a82; }
-.re-content mark.re-gloss.tag-skill     { color: #c5772f; }
-.re-content mark.re-gloss.tag-item      { color: #4a86c5; }
-.re-content mark.re-gloss.tag-clan      { color: #a8901f; }
-.re-content mark.re-gloss.tag-monster   { color: #b83636; }
-.re-content mark.re-gloss.tag-custom    { color: var(--r-accent); }
+:is(.re-content, .reader-content) mark.re-gloss.tag-character { color: #4a86c5; }
+:is(.re-content, .reader-content) mark.re-gloss.tag-title     { color: #9a7d1f; }
+:is(.re-content, .reader-content) mark.re-gloss.tag-term      { color: #5f8a3f; }
+:is(.re-content, .reader-content) mark.re-gloss.tag-rank      { color: #b85636; }
+:is(.re-content, .reader-content) mark.re-gloss.tag-honorific { color: #8456c5; }
+:is(.re-content, .reader-content) mark.re-gloss.tag-place     { color: #2f9a82; }
+:is(.re-content, .reader-content) mark.re-gloss.tag-skill     { color: #c5772f; }
+:is(.re-content, .reader-content) mark.re-gloss.tag-item      { color: #4a86c5; }
+:is(.re-content, .reader-content) mark.re-gloss.tag-clan      { color: #a8901f; }
+:is(.re-content, .reader-content) mark.re-gloss.tag-monster   { color: #b83636; }
+:is(.re-content, .reader-content) mark.re-gloss.tag-custom    { color: var(--r-accent); }
 
 .reader-topbar, .reader-bottombar {
   display: flex;
@@ -1299,3 +1299,31 @@ img.cover-xs, img.cover-sm, img.cover-lg { display: block; }
 .ga-opt { font-size: 0.78rem; cursor: pointer; display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; }
 .ga-best { font-size: 0.66rem; color: #6FCF97; border: 1px solid rgba(111,207,151,0.4); border-radius: 999px; padding: 0 6px; }
 .ga-why { color: var(--text-muted); font-size: 0.72rem; }
+
+/* ── Bible ของนิยาย: หน้าตรวจก่อนใช้ ── */
+.bible-list { display: flex; flex-direction: column; gap: 6px; }
+.bible-row { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; font-size: 0.8rem; cursor: pointer; }
+.bible-row input { flex: none; }
+.bible-k { font-weight: 600; color: var(--text-primary); min-width: 120px; }
+.bible-v { color: var(--text-secondary); flex: 1; min-width: 180px; overflow-wrap: anywhere; }
+.bible-v small { display: block; color: var(--text-muted); font-size: 0.72rem; margin-top: 2px; }
+.bible-field { display: flex; flex-direction: column; gap: 4px; }
+.bible-empty { font-size: 0.76rem; color: var(--text-muted); }
+
+/* แตะคำที่ไฮไลต์ → ป๊อปอัปต้นฉบับ + แก้คำแปล (จอกว้าง: ลอยใต้คำ · มือถือ: แผ่นล่างจอ) */
+.gloss-pop {
+  display: none; position: fixed; z-index: 2000; width: min(360px, calc(100vw - 24px));
+  background: var(--bg-raised); color: var(--text-primary); border: 1px solid var(--border);
+  border-radius: 10px; padding: 12px; box-shadow: 0 10px 30px rgba(0,0,0,.45); font-size: 0.85rem;
+}
+.gloss-pop .gp-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.gloss-pop .gp-thai { font-size: 1.05rem; font-weight: 600; color: var(--gold); word-break: break-word; }
+.gloss-pop .gp-src { margin: 4px 0; color: var(--text-secondary); }
+.gloss-pop .gp-note { margin: 2px 0 6px; color: var(--text-muted); font-size: 0.78rem; }
+.gloss-pop .text-input { width: 100%; margin: 6px 0; }
+.gloss-pop .gp-scope { display: flex; flex-direction: column; gap: 4px; margin: 4px 0 8px; font-size: 0.8rem; color: var(--text-secondary); }
+.gloss-pop .gp-scope label { display: flex; gap: 6px; align-items: flex-start; cursor: pointer; }
+.gloss-pop .gp-actions { display: flex; justify-content: flex-end; gap: 6px; }
+@media (max-width: 639px) {
+  .gloss-pop { left: 0 !important; right: 0; bottom: 0; top: auto !important; width: 100%; border-radius: 14px 14px 0 0; padding: 14px 16px calc(14px + env(safe-area-inset-bottom)); }
+}

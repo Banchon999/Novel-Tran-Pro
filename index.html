@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"/>
-  <title>NovelTrans v13.4 Pro</title>
+  <title>NovelTrans v13.5 Pro</title>
   <!-- PWA -->
   <link rel="manifest" href="manifest.webmanifest"/>
   <meta name="theme-color" content="#111214"/>
@@ -29,7 +29,7 @@
       <span class="sb-icon"><svg class="nt-logo" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h8M8 3v2M6 5c0 4 3 7 6 8M10 5c0 3-3 7-6 9"/><path d="M13 21l4-9 4 9M14.5 18h5"/></svg></span>
       <div>
         <div class="sb-title">NovelTrans</div>
-        <div class="sb-sub">v13.4 Pro · Multi File</div>
+        <div class="sb-sub">v13.5 Pro · Multi File</div>
       </div>
     </div>
     <button class="icon-btn" onclick="closeSidebar()">✕</button>
@@ -65,7 +65,7 @@
       <div class="header-brand">
         <span class="header-icon"><svg class="nt-logo" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h8M8 3v2M6 5c0 4 3 7 6 8M10 5c0 3-3 7-6 9"/><path d="M13 21l4-9 4 9M14.5 18h5"/></svg></span>
         <span class="header-title">NovelTrans</span>
-        <span class="header-ver">v13.4 Pro</span>
+        <span class="header-ver">v13.5 Pro</span>
       </div>
     </div>
     <div class="header-right">
@@ -78,7 +78,7 @@
 
   <div id="noWsMsg" class="no-ws-msg">
     <div class="no-ws-icon">⚔</div>
-    <div class="no-ws-title">NovelTrans v13.4 Pro</div>
+    <div class="no-ws-title">NovelTrans v13.5 Pro</div>
     <div class="no-ws-sub">สร้างหรือเลือก Workspace เพื่อเริ่มแปล</div>
     <button class="btn btn-primary" onclick="openModal('modal-new-ws')">＋ สร้าง Workspace ใหม่</button>
     <button class="btn btn-ghost" style="margin-top:8px" onclick="openImportWs()">📥 Import Workspace</button>
@@ -90,7 +90,6 @@
       <button class="sub-tab" data-tab="chapters" onclick="switchTab('chapters')"><svg class="ico" viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg><span>ตอน</span></button>
       <button class="sub-tab" data-tab="read" onclick="switchTab('read')"><svg class="ico" viewBox="0 0 24 24"><path d="M2 5h6a4 4 0 0 1 4 4v11a3 3 0 0 0-3-3H2zM22 5h-6a4 4 0 0 0-4 4v11a3 3 0 0 1 3-3h7z"/></svg><span>อ่าน/แก้ไข</span></button>
       <button class="sub-tab" data-tab="glossary" onclick="switchTab('glossary')"><svg class="ico" viewBox="0 0 24 24"><path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z"/><path d="M5 17a3 3 0 0 1 3-3h11"/></svg><span>คลังศัพท์</span></button>
-      <button class="sub-tab" data-tab="styles" onclick="switchTab('styles')"><svg class="ico" viewBox="0 0 24 24"><path d="M4 20l4-1L19 8l-3-3L5 16z"/><path d="M14 7l3 3"/></svg><span>สไตล์</span></button>
       <button class="sub-tab" data-tab="settings-ws" onclick="switchTab('settings-ws')"><svg class="ico" viewBox="0 0 24 24"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg><span>ตั้งค่า</span></button>
     </div>
 
@@ -160,7 +159,6 @@
           <select id="translateProvider" class="mini-select" title="AI Provider" onchange="onProviderChange(this.value)"></select>
           <select id="translateModel" class="mini-select" onchange="onModelChange(this.value)"></select>
           <button class="btn btn-ghost btn-sm" title="ดึงรายการโมเดลจาก API ของ provider" onclick="onFetchModels(this)">🔄</button>
-          <select id="activeStyleSelect" class="mini-select" title="Style"></select>
           <label class="toggle-mini"><input type="checkbox" id="usePolish"/> Polish</label>
           <label class="toggle-mini"><input type="checkbox" id="useMemory" checked/> Memory</label>
           <label class="toggle-mini" title="ดึง context จากตอนก่อนหน้า"><input type="checkbox" id="usePrevChapter"/> Prev Ch</label>
@@ -224,7 +222,10 @@
           <button class="btn btn-sm" id="reModeEditBtn" onclick="reSetMode('edit')">✏ แก้ไข</button>
         </div>
         <button class="btn btn-secondary btn-sm" id="reTranslateBtn" onclick="reTranslateChapter()" title="แปลตอนนี้">⚡ แปลตอนนี้</button>
-        <button class="btn btn-sm" id="reGlossHlBtn" onclick="reToggleGlossHl()" title="ไฮไลต์คำแปลที่ตรงกับคลังศัพท์ (Glossary)">🖍 ไฮไลต์ศัพท์</button>
+        <button class="btn btn-sm" id="reGlossHlBtn" onclick="reToggleGlossHl()" title="ไฮไลต์คำแปลที่ตรงกับคลังศัพท์ — แตะคำเพื่อดูต้นฉบับและแก้คำแปล">🖍 ไฮไลต์ศัพท์</button>
+        <select id="reThemeSel" class="mini-select" title="ธีมหน้าอ่าน" onchange="readerSetTheme(this.value)">
+          <option value="auto">🌗 อัตโนมัติ</option><option value="light">☀ สว่าง</option><option value="sepia">📜 ซีเปีย</option><option value="dark">🌙 มืด</option>
+        </select>
         <button class="btn btn-sm" onclick="reOpenFull()" title="อ่านเต็มจอ + แปลตอนถัดไปล่วงหน้า (Prefetch)">⛶ เต็มจอ</button>
         <span id="reStatus" class="count-label"></span>
       </div>
@@ -403,12 +404,13 @@
           <div class="sf-group">
             <div class="sf-label">คำแทนตัวผู้เล่า (บรรยาย / คิดในใจ)</div>
             <select id="wsNarratorSelf" class="select-input" style="width:auto;font-size:0.78rem">
-              <option value="">ฉัน — แบบนิยายแปลส่วนใหญ่ (แนะนำ)</option>
+              <option value="">อัตโนมัติ — ฉัน · เรื่องยุทธภพ/ย้อนยุค = ข้า (แนะนำ)</option>
+              <option value="ฉัน">ฉัน (ทุกเรื่อง)</option>
               <option value="ผม">ผม</option>
               <option value="ข้า">ข้า (ย้อนยุค / มู่หลิน)</option>
               <option value="gender">ตามเพศ (ชาย = ผม · หญิง = ฉัน)</option>
             </select>
-            <div style="font-size:0.70rem;color:var(--text-muted);margin-top:6px">ใช้กับการเล่าเรื่องบุรุษที่ 1 และความคิดในใจ ‘…’ · บทพูดกับคนอื่นยังใช้ ผม/ครับ · ฉัน/ค่ะ ตามผู้พูด</div>
+            <div style="font-size:0.70rem;color:var(--text-muted);margin-top:6px">ใช้กับการเล่าเรื่องบุรุษที่ 1 และความคิดในใจ ‘…’ · บทพูดกับคนอื่นยังใช้ ผม/ครับ · ฉัน/ค่ะ ตามผู้พูด (เรื่องยุทธภพ/ย้อนยุค: ข้า + ขอรับ/เจ้าค่ะ)</div>
           </div>
 
           <!-- ── Consistency Lock (ล็อกความสม่ำเสมอสรรพนาม/ระดับภาษา) ── -->
@@ -442,18 +444,29 @@
             </div>
           </div>
 
-          <!-- ── คู่มือการแปลของนิยาย (Style Sheet + Voice) ── -->
+          <!-- ── Bible ของนิยาย (เดิม: คู่มือการแปล) — สแกนต้นฉบับแล้วตั้งค่าทั้งเรื่อง ── -->
           <div class="sf-group" style="border-top:1px solid var(--border);padding-top:10px;margin-top:2px">
             <div class="sf-label" style="margin-bottom:6px">
-              📘 คู่มือการแปลของนิยาย
-              <span style="font-size:0.70rem;color:var(--text-muted);font-weight:400"> — การตัดสินใจที่ AI ต้องยึดทุกตอน ให้อ่านเหมือนนักแปลคนเดียว</span>
+              📖 Bible ของนิยาย
+              <span style="font-size:0.70rem;color:var(--text-muted);font-weight:400"> — สแกนต้นฉบับครั้งเดียว แล้วกำหนดภาษา แนวนิยาย สไตล์การแปล คำแทนตัวผู้เล่า โลกของเรื่อง กฎลงคลังศัพท์ และตัวละคร</span>
             </div>
-            <div id="wsStyleSheetFields" style="display:flex;flex-direction:column;gap:8px"></div>
-            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px">
-              <button class="btn btn-secondary btn-sm" id="wsStyleDraftBtn" onclick="draftStyleSheet()">🤖 ร่างคู่มือจากต้นฉบับ + ตอนที่แปลแล้ว</button>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+              <button class="btn btn-primary btn-sm" id="wsStyleDraftBtn" onclick="scanNovelBible()">🔍 สแกนต้นฉบับ สร้าง Bible</button>
               <span id="wsStyleDraftStatus" style="font-size:0.72rem;color:var(--text-muted)"></span>
             </div>
-            <div style="font-size:0.70rem;color:var(--text-muted);margin-top:6px">ช่องที่เว้นว่างจะไม่ถูกส่งให้ AI · AI คำนวณคำที่วนซ้ำจากต้นฉบับทุกตอน (ใช้ได้แม้ยังไม่แปล) แล้วร่างเติมเฉพาะช่องที่ว่าง → ตรวจ/แก้แล้วกด 💾 บันทึก ด้านล่าง · ใช้กับทุกการแปล (แท็บแปล, Batch, อ่าน/แก้ไข, อ่านเต็มจอ)</div>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+              <span style="font-size:0.78rem;color:var(--text-secondary)">เรตผู้อ่าน:</span>
+              <select id="wsAgeRating" class="select-input" style="width:auto;max-width:100%;font-size:0.78rem">
+                <option value="">ไม่กำหนด (แปลตามต้นฉบับ)</option>
+                <option value="all">ทั่วไป — คำสุภาพ ไม่มีคำหยาบ</option>
+                <option value="13">13+ — คำหยาบเบา ๆ (แก · ไอ้บ้า)</option>
+                <option value="15">15+ — กู/มึง ได้ คำหยาบแรงลดลง</option>
+                <option value="18">18+ — แปลตรงตามต้นฉบับทุกคำ</option>
+              </select>
+              <span style="font-size:0.70rem;color:var(--text-muted)">คุมแค่การเลือกคำ · เนื้อหาแปลครบทุกฉากเสมอ</span>
+            </div>
+            <div id="wsStyleSheetFields" style="display:flex;flex-direction:column;gap:8px"></div>
+            <div style="font-size:0.70rem;color:var(--text-muted);margin-top:6px">ส่งเข้า prompt แปลทุกตอน (ยกเว้น "กฎลงคลังศัพท์" ที่ใช้ตอนสกัดคำ) · "โลกของเรื่อง" ใช้ทั้งตอนแปลและตอนสกัดคำ เพื่อเลือกความหมายให้ตรงเรื่อง · ช่องว่างไม่ถูกส่ง · แก้เองได้ทุกช่อง แล้วกด 💾 บันทึก</div>
           </div>
 
           <!-- ── Speaker Map (ระบุผู้พูดก่อนแปล) ── -->
@@ -462,19 +475,20 @@
               🗣 ระบุผู้พูดก่อนแปล (Speaker Map)
               <span style="font-size:0.70rem;color:var(--text-muted);font-weight:400"> — กัน ครับ/ค่ะ และ ผม/ฉัน ผิดคน</span>
             </div>
-            <label class="toggle-mini" style="gap:8px;cursor:pointer">
-              <input type="checkbox" id="wsSpeakerMap"/>
-              <span style="font-size:0.78rem;color:var(--text-secondary)">เปิดใช้ (แนะนำ)</span>
-            </label>
-            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px">
-              <span style="font-size:0.78rem;color:var(--text-secondary)">โมเดลช่วย (ระบุผู้พูด + ตรวจเพศหลังแปล):</span>
-              <select id="wsProofreadModel" class="select-input" style="width:auto;font-size:0.78rem">
-                <option value="google/gemini-3-flash-preview">Gemini 3 Flash Preview (แนะนำ · OpenRouter)</option>
-                <option value="google/gemini-3.5-flash">Gemini 3.5 Flash (OpenRouter)</option>
-                <option value="same">ใช้โมเดลเดียวกับที่แปล</option>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+              <span style="font-size:0.78rem;color:var(--text-secondary)">โหมด:</span>
+              <select id="wsSpeakerMode" class="select-input" style="width:auto;max-width:100%;font-size:0.78rem" onchange="updateSpeakerCostHint()">
+                <option value="full">ระบุผู้พูด + ตรวจเพศ (แม่นสุด)</option>
+                <option value="map">ระบุผู้พูดอย่างเดียว (ประหยัด)</option>
+                <option value="off">ปิด (ไม่เสียเพิ่ม)</option>
               </select>
             </div>
-            <div style="font-size:0.70rem;color:var(--text-muted);margin-top:6px">ก่อนแปลจะให้โมเดลช่วยระบุว่าบทพูดแต่ละบรรทัดใครพูด + ระดับภาษา (สุภาพ → ครับ/ค่ะ · ภาษาปกติ → ไม่ใส่) + ชื่อไทยของตัวละครที่ยังไม่อยู่ในคลัง (เพศจากคลังศัพท์มาก่อน) → แนบเข้า prompt → หลังแปลแก้คำลงท้าย/คำแทนตัวที่ผิดเพศให้เอง + ตรวจ เขา/เธอ ในการบรรยายซ้ำด้วยโมเดลตรวจ (รับเฉพาะคำแก้ที่เปลี่ยนแค่คำบอกเพศ) · เรียก AI เพิ่ม 1–2 ครั้งต่อตอน (ค่าใช้จ่ายเพิ่มราว 20–40%) · ถ้าไม่ได้ใช้ OpenRouter ให้เลือก "ใช้โมเดลเดียวกับที่แปล"</div>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px">
+              <span style="font-size:0.78rem;color:var(--text-secondary)">โมเดลช่วย:</span>
+              <select id="wsProofreadModel" class="select-input" style="width:auto;max-width:100%;font-size:0.78rem" onchange="onHelperModelChange(this)"></select>
+            </div>
+            <div id="wsSpeakerCost" style="font-size:0.74rem;color:var(--text-secondary);margin-top:6px"></div>
+            <div style="font-size:0.70rem;color:var(--text-muted);margin-top:6px">ก่อนแปลจะให้โมเดลช่วยระบุว่าบทพูดแต่ละบรรทัดใครพูด + ระดับภาษา (สุภาพ → ครับ/ค่ะ · ภาษาปกติ → ไม่ใส่) + ชื่อไทยของตัวละครที่ยังไม่อยู่ในคลัง (เพศจากคลังศัพท์มาก่อน) → แนบเข้า prompt → หลังแปลแก้คำลงท้าย/คำแทนตัวที่ผิดเพศให้เอง + ตรวจ เขา/เธอ ในการบรรยายซ้ำด้วยโมเดลช่วย (เฉพาะโหมดตรวจเพศ · รับเฉพาะคำแก้ที่เปลี่ยนแค่คำบอกเพศ) · โมเดลช่วยใช้ตอนสแกน Bible ด้วย · กด 🔄 ข้างช่องเลือกโมเดลแปลเพื่อดึงรายการ + ราคาล่าสุด แล้วเลือกได้ทุกโมเดล หรือ "✏️ ใส่รหัสโมเดลเอง"</div>
           </div>
 
           <!-- ── Translation Context Memory ── -->
@@ -1207,6 +1221,27 @@
 </div>
 
 <!-- GLOSSARY EXPORT MODAL -->
+<div class="modal-backdrop" id="modal-bible">
+  <div class="modal modal-wide">
+    <div class="modal-header">
+      <span>📖 Bible ของนิยาย — ตรวจก่อนใช้</span>
+      <button class="icon-btn" onclick="closeModal('modal-bible')">✕</button>
+    </div>
+    <div class="modal-body" style="gap:10px">
+      <div class="sf-label" style="margin:0">⚙ ตั้งค่าเรื่อง</div>
+      <div id="bbSettings" class="bible-list"></div>
+      <div class="sf-label" style="margin:6px 0 0">📖 Bible (แก้ข้อความได้ก่อนใช้)</div>
+      <div id="bbFields" class="bible-list"></div>
+      <div class="sf-label" style="margin:6px 0 0">📚 เพิ่มลงคลังศัพท์ (ตัวละคร + ตำแหน่งที่หมายถึงคนเดียว)</div>
+      <div id="bbPeople" class="bible-list"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-bible')">ยกเลิก</button>
+      <button class="btn btn-primary" onclick="applyBible()">✓ ใช้ Bible นี้</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-backdrop" id="modal-genre-preset">
   <div class="modal modal-wide">
     <div class="modal-header">
@@ -1609,6 +1644,7 @@
     </div>
     <div class="reader-set-group">
       <span class="reader-set-label">ธีม</span>
+      <button class="reader-theme-btn" data-theme="auto" onclick="readerSetTheme('auto')" title="ตามธีมของเครื่อง/บราวเซอร์">อัตโนมัติ</button>
       <button class="reader-theme-btn" data-theme="light" onclick="readerSetTheme('light')">สว่าง</button>
       <button class="reader-theme-btn" data-theme="sepia" onclick="readerSetTheme('sepia')">ซีเปีย</button>
       <button class="reader-theme-btn" data-theme="dark" onclick="readerSetTheme('dark')">มืด</button>

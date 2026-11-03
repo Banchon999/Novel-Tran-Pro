@@ -1,0 +1,68 @@
+{
+ "about": "ผู้อำนวยการ (ตำแหน่ง) ถูกเรียกด้วยตำแหน่งอย่างเดียว · ผู้เล่าบุรุษที่ 1 เป็นชาย · A = ตั้งเพศหญิงให้ตำแหน่ง, B = ไม่รู้เพศ, X = สกัดคำ (ตำแหน่งในคลังยังไม่มีเพศ + ตำแหน่งที่หลายคนมี)",
+ "cases": {
+  "ko": {
+   "title": "원장",
+   "narr": [
+    "이하율",
+    "อีฮายุล"
+   ],
+   "other": [
+    "엘리아",
+    "เอเลีย"
+   ],
+   "inst": [
+    "교관",
+    "ครูฝึก"
+   ],
+   "place": [
+    "시요람",
+    "ชียอรัม"
+   ],
+   "text": "\"원장님이 너를 찾으셔.\" 엘리아가 말했다.\n나는 원장실 문을 두드렸다. 원장은 창가에 서서 서류를 보고 있었다.\n\"앉게, 이하율 학생.\" 원장이 고개도 돌리지 않고 말했다.\n원장은 시요람을 세운 사람 중 하나였다. 그 앞에서는 누구라도 긴장할 수밖에 없었다.\n나는 원장의 눈치를 살폈다. 원장이 서류를 내려놓고 천천히 돌아섰다.\n\"자네 성적표를 봤네. 꽤 흥미롭더군.\"\n\"감사합니다.\" 나는 조용히 대답했다.\n원장의 목소리는 차가웠지만, 입가에는 희미한 미소가 걸려 있었다.",
+   "extractText": "\"원장님이 너를 찾으셔.\" 엘리아가 말했다.\n원장은 창가에 서서 서류를 보고 있었다. 그녀는 시요람을 세운 사람 중 하나였다.\n교관 백도현이 문 앞에서 경례를 했다. 다른 교관들도 복도에 줄지어 서 있었다.\n나는 손목의 스마트워치를 내려다보았다. 서울은 오늘도 비가 내렸다."
+  },
+  "zh": {
+   "title": "院长",
+   "narr": [
+    "林凡",
+    "หลินฝาน"
+   ],
+   "other": [
+    "艾莉亚",
+    "ไอลี่หยา"
+   ],
+   "inst": [
+    "教官",
+    "ครูฝึก"
+   ],
+   "place": [
+    "学院",
+    "สถาบัน"
+   ],
+   "text": "\"院长找你。\"艾莉亚说。\n我敲了敲院长办公室的门。院长站在窗边看文件。\n\"坐吧，林凡同学。\"院长头也不回地说。\n院长是学院的创立者之一，在院长面前，谁都会紧张。\n我偷偷观察院长的脸色。院长放下文件，慢慢转过身来。\n\"我看过你的成绩单了，挺有意思。\"\n\"谢谢您。\"我低声回答。\n院长的声音很冷，但嘴角却挂着一丝笑意。",
+   "extractText": "\"院长找你。\"艾莉亚说。\n院长站在窗边看文件。她是学院的创立者之一。\n教官白道贤在门口敬礼。其他教官也在走廊里排成一列。\n我低头看了看手腕上的智能手表。北京今天又下雨了。"
+  },
+  "en": {
+   "title": "Director",
+   "narr": [
+    "Leon Hart",
+    "เลออน ฮาร์ต"
+   ],
+   "other": [
+    "Elia",
+    "เอเลีย"
+   ],
+   "inst": [
+    "Instructor",
+    "ครูฝึก"
+   ],
+   "place": [
+    "Academy",
+    "อะคาเดมี"
+   ],
+   "text": "\"The Director wants to see you,\" Elia said.\nI knocked on the Director's door. The Director stood by the window, reading a report.\n\"Sit down, Mr. Hart,\" the Director said without turning around.\nThe Director was one of the founders of the academy. Everyone grew tense in the Director's presence.\nI watched the Director's expression carefully. The Director set the report down and slowly turned.\n\"I've read your grades. Interesting.\"\n\"Thank you, Director,\" I answered quietly.\nThe Director's voice was cold, yet a faint smile tugged at the corner of the Director's mouth.",
+   "extractText": "\"The Director wants to see you,\" Elia said.\nThe Director stood by the window, reading a report. She was one of the founders of the academy.\nInstructor Baek saluted at the door. The other instructors lined the hallway.\nI glanced at the smartwatch on my wrist. It was raining in London again."
+  }
+ }
+}
