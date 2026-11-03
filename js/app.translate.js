@@ -221,7 +221,8 @@ async function startTranslation() {
 // 2) ตอนแปล: แนบแผนที่ผู้พูดเข้า prompt
 // 3) หลังแปล: ถ้าจำนวนบทพูดไทยตรงกับต้นฉบับ → แก้คำลงท้าย/คำแทนตัวที่ผิดเพศให้อัตโนมัติ (local ไม่เสียเงิน)
 // บทพูด “…” (dq) + ความคิด/คำพูดที่นึกย้อน/ชื่อเฉพาะใน ‘…’ (sq) — เรียงตามลำดับในต้นฉบับ
-const _SRC_LINE_RE  = /[“"]([^“”"\n]{1,600})[”"]|‘([^‘’\n]{1,600})’/g;
+// ต้นฉบับพิมพ์เครื่องหมายกลับด้าน/ปนกันได้ ("…“ · ”…”) → ยังนับเป็นบทพูด (เดิมหลุด → ลำดับบทพูดเลื่อน แผนที่จับคู่ผิดบรรทัด)
+const _SRC_LINE_RE  = /[“"”]([^“”"\n]{1,600})[”"“]|‘([^‘’\n]{1,600})’/g;
 const _TH_DQ_RE     = /([“"「])([^“”"「」\n]{1,600})([”"」])/g;
 const _TH_ANY_RE    = /([“"「‘])([^“”"「」‘’\n]{1,600})([”"」’])/g;
 
@@ -282,22 +283,34 @@ async function buildSpeakerMap(text, model, ws = S.currentWs) {
     .replace('{lines}', lines.map((l, i) => l.kind === 'dq' ? `Q${i + 1}: “${l.q}”` : `Q${i + 1}: ‘${l.q}’ (single quotes: thought / recalled speech / a named term — for a term use speaker "-")`).join('\n'));
   try {
     // โมเดลราคาถูกบางครั้งตอบว่าง/JSON อ่านไม่ได้ (วัดจริง: Gemini 2.5 Flash Lite 2 ใน 12 ครั้ง) → ลองใหม่ 1 ครั้ง (เสียเงินเพิ่มเฉพาะตอนล้มเหลว)
-    let arr = null, names = [];
+    let arr = null, names = [], why = '';
+    // ใช้โมเดลตรวจ (แรงกว่าโมเดลแปลราคาถูก) — ระบุผู้พูด/ถอดชื่อไทยแม่นกว่า · Flash Lite บางรุ่นถอดชื่อเป็นอักษรเกาหลี ("카일")
+    let useModel = getProofreadModel(ws, model);
     for (let attempt = 0; attempt < 2 && !Array.isArray(arr); attempt++) {
-      const res = await callOpenRouter({
-        // ใช้โมเดลตรวจ (แรงกว่าโมเดลแปลราคาถูก) — ระบุผู้พูด/ถอดชื่อไทยแม่นกว่า · Flash Lite บางรุ่นถอดชื่อเป็นอักษรเกาหลี ("카일")
-        model: getProofreadModel(ws, model), temperature: 0,
-        max_tokens: Math.max(6000, lines.length * 80 + 3000),   // เผื่อโมเดลที่คิดก่อนตอบ (reasoning)
-        messages: [{ role: 'user', content: prompt }],
-      });
+      let res;
+      try {
+        res = await callOpenRouter({
+          model: useModel, temperature: 0,
+          max_tokens: Math.max(6000, lines.length * 80 + 3000),   // เผื่อโมเดลที่คิดก่อนตอบ (reasoning)
+          messages: [{ role: 'user', content: prompt }],
+        });
+      } catch (e) {
+        if (e?.name === 'AbortError') throw e;
+        // โมเดลช่วยติด rate limit / เซิร์ฟเวอร์ล่ม (วัดจริง: Gemini 2.5 Flash Lite ติด 429 ต่อกันหลายครั้ง → ตอนนั้นแปลโดยไม่มีแผนที่เลย)
+        // → รอบสองใช้โมเดลแปลแทน (ผู้ใช้จ่ายค่าโมเดลนี้อยู่แล้ว)
+        why = String(e?.message || e).slice(0, 80);
+        if (model && model !== useModel) useModel = model;
+        continue;
+      }
       ({ arr, names } = _parseSpeakerMapJson((res.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim()));
+      if (!Array.isArray(arr)) why = 'โมเดลตอบไม่เป็นรูปแบบที่อ่านได้';
     }
-    if (!Array.isArray(arr)) return null;
+    if (!Array.isArray(arr)) { _speakerMapFailed(why); return null; }
     // ชื่อที่ยังไม่อยู่ในคลังศัพท์ → ให้ตัวแปลมีตัวสะกดไทย (ตอนแรกของเรื่องคลังว่าง → โมเดลมักทิ้งชื่อเกาหลีไว้ เช่น "อา리아")
     const known = new Set((ws?.glossary || []).map(g => g.korean).filter(Boolean));
     const reg = archaicSpeechInfo(ws, text);
     names = names.map(normalizeTermKeys).filter(n => n && typeof n.korean === 'string' && typeof n.thai === 'string' && n.korean.trim() && n.thai.trim()
-      && !known.has(n.korean.trim()) && ![...known].some(k => k.length > 1 && n.korean.includes(k)) && text.includes(n.korean.trim()) && !/[\uac00-\ud7a3\u3131-\u318e\u4e00-\u9fff]/.test(n.thai))
+      && !known.has(n.korean.trim()) && _nameKeepsGlossary(n, ws?.glossary) && text.includes(n.korean.trim()) && !/[\uac00-\ud7a3\u3131-\u318e\u4e00-\u9fff]/.test(n.thai))
       .slice(0, 20).map(n => ({ korean: n.korean.trim(), thai: n.thai.trim(), gender: n.gender === 'male' || n.gender === 'female' ? n.gender : 'unknown' }));
     const out = lines.map(({ q, kind, pos }, i) => {
       const e = arr.find(x => +x.q === i + 1) || {};
@@ -312,9 +325,25 @@ async function buildSpeakerMap(text, model, ws = S.currentWs) {
     out.names = names;
     return out;
   } catch (e) {
-    console.warn('[speakerMap]', e);
+    if (e?.name === 'AbortError') return null;
+    _speakerMapFailed(String(e?.message || e).slice(0, 80));
     return null;
   }
+}
+
+// แผนที่ผู้พูดล้มเหลว → เดิมเงียบ (แค่ console) ผู้ใช้ไม่รู้ว่าตอนนั้นแปลโดยไม่มีแผนที่ · เตือนครั้งเดียวต่อ 30 วิ (แปลหลายตอนไม่ขึ้นรัว)
+function _speakerMapFailed(why) {
+  console.warn('[speakerMap]', why);
+  const now = Date.now();
+  if (typeof showToast !== 'function' || now - (_speakerMapFailed.at || 0) < 30000) return;
+  _speakerMapFailed.at = now;
+  showToast(`⚠ ระบุผู้พูดไม่สำเร็จ${why ? ` (${why})` : ''} — ตอนนี้แปลต่อโดยไม่มีแผนที่ผู้พูด · ถ้าเป็นบ่อยลองเปลี่ยนโมเดลช่วยใน ⚙ Workspace`, 'error');
+}
+
+// ชื่อเต็มที่มีคำในคลังอยู่ข้างใน (엘리아 스레이드 ⊃ 엘리아) → เก็บไว้ได้ ถ้าคำแปลใช้คำไทยตามคลัง (เอเลีย สเลด)
+// เดิมทิ้งทุกชื่อที่มีคำในคลังอยู่ → ตัวแปลไม่รู้ชื่อเต็ม แปลครึ่งเดียวจนอักษรเกาหลีหลุด ("เอเลีย ส레이ด")
+function _nameKeepsGlossary(n, glossary) {
+  return (glossary || []).every(g => !g.korean || g.korean.length < 2 || !n.korean.includes(g.korean) || (g.thai && n.thai.includes(g.thai)));
 }
 
 // อ่าน JSON ของแผนที่ผู้พูดแบบทนทาน — โมเดลเล็ก (เคสจริง: gemma-4-26b) ตอบ JSON เสียนิดเดียว (`],"⏎ "names"`) แล้วทั้งแผนที่ถูกทิ้ง
@@ -492,8 +521,27 @@ function repairHangulNames(thaiText, map, ws = S.currentWs) {
   const pairs = new Map();
   for (const g of (ws?.glossary || [])) if (g.korean && g.thai && !/[\uac00-\ud7a3]/.test(g.thai)) pairs.set(g.korean, g.thai);
   for (const n of (map?.names || [])) if (!pairs.has(n.korean)) pairs.set(n.korean, n.thai);
+  // ชื่อหลายคำ (엘리아 스레이드 = เอเลีย สเลด) → จับคู่ทีละคำด้วย เมื่อจำนวนคำเท่ากัน
+  for (const [k, v] of [...pairs]) {
+    const ks = k.split(/\s+/), vs = String(v).split(/\s+/);
+    if (ks.length > 1 && ks.length === vs.length) ks.forEach((w, i) => { if (/^[\uac00-\ud7a3]{2,}$/.test(w) && !pairs.has(w)) pairs.set(w, vs[i]); });
+  }
   const fixes = [];
-  const text = t.replace(/[\uac00-\ud7a3]+/g, run => {
+  // ชื่อที่แปลไปครึ่งคำ ("ส레이ด" = 스레이드) → แทนทั้งคำด้วยคำไทยของคำนั้น (หาจากคำในคู่ที่มีอักษรเกาหลีชุดนี้อยู่)
+  // ไทยไม่เว้นวรรคระหว่างคำ → แทนเฉพาะส่วนที่เป็นชื่อ: ท้ายของข้อความไทยก่อนหน้าที่ตรงกับต้นคำ ("ส") + อักษรเกาหลี + ต้นของข้อความถัดไปที่ตรงกับท้ายคำ ("ด")
+  let mixedFixed = t.replace(/([ก-๎]*)([가-힣]+)([ก-๎]*)/g, (tok, pre, run, post) => {
+    if (!pre && !post) return tok;   // อักษรเกาหลีล้วน → ขั้นถัดไป
+    const words = [...pairs.keys()].filter(k => /^[가-힣]+$/.test(k) && k.includes(run) && k.length > run.length);
+    if (words.length !== 1) return tok;
+    const th = pairs.get(words[0]);
+    let p = 0, m = 0;
+    for (let k = Math.min(pre.length, th.length - 1); k > 0; k--) if (pre.endsWith(th.slice(0, k))) { p = k; break; }
+    for (let k = Math.min(post.length, th.length - 1 - p); k > 0; k--) if (post.startsWith(th.slice(th.length - k))) { m = k; break; }
+    const out = pre.slice(0, pre.length - p) + th + post.slice(m);
+    fixes.push({ from: tok, to: out, name: true });
+    return out;
+  });
+  const text = mixedFixed.replace(/[\uac00-\ud7a3]+/g, run => {
     if (pairs.has(run)) { fixes.push({ from: run, to: pairs.get(run), name: true }); return pairs.get(run); }
     // ชื่อ + คำชี้ (은/는/이/가/을/를/의/에게/와/과/도) ที่โมเดลคัดลอกมาทั้งก้อน
     const m = run.match(/^(.+?)(은|는|이|가|을|를|의|에게|와|과|도)$/);
@@ -693,7 +741,6 @@ function speakerModeSettings(mode) {
 // ตอนนิยายยุทธภพจริง 2 ตอน (146 บทพูด) เทียบกับ Gemini 3 Flash Preview: ตรงกัน · ระบุเพศสลับ (ชาย↔หญิง) = 0 ทุกตัวในกลุ่มนี้
 const HELPER_MODEL_PICKS = [
   ['google/gemma-4-26b-a4b-it', 'Gemma 4 26B', 'ถูกสุด ~1/17 ของ Flash Preview · ตรง 145/146 · ช้ากว่า (~10 วิ/ตอน)'],
-  ['google/gemini-2.5-flash-lite', 'Gemini 2.5 Flash Lite', 'ถูก + เร็ว · ตรง 141/146 · บางครั้งตอบว่าง (แอปลองใหม่ให้)'],
   ['google/gemini-3.1-flash-lite', 'Gemini 3.1 Flash Lite', 'เร็ว · ตรง 139/146'],
   ['google/gemini-3-flash-preview', 'Gemini 3 Flash Preview', 'แม่นสุด (ค่าเริ่มต้นเดิม)'],
 ];
@@ -703,6 +750,8 @@ const HELPER_MODEL_AVOID = {
   'openai/gpt-5-nano': 'ตอนยาวล้มเหลว (หมดเวลา)',
   'qwen/qwen3.8-flash': 'ตอนยาวล้มเหลว (หมดเวลา)',
   'deepseek/deepseek-v3.2': 'ตอนยาวล้มเหลว',
+  // ตอนจริงของผู้ใช้ (ตอน 3): ใส่บทผู้หญิง 2 บรรทัดให้ตัวเอกชาย ซ้ำ 3/3 รอบ (Gemma / 3.1 Flash Lite / 3 Flash Preview ถูกหมด) → ตัวแก้เปลี่ยน ค่ะ ที่ถูกอยู่แล้วเป็น ครับ · ติด rate limit ฝั่ง Google บ่อย
+  'google/gemini-2.5-flash-lite': 'บางตอนใส่ผู้พูดผิดจน ค่ะ กลายเป็น ครับ · ติด rate limit บ่อย',
 };
 function helperModelRate(id) {
   const prov = typeof getProvider === 'function' ? getProvider() : 'openrouter';
