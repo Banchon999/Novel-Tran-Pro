@@ -530,6 +530,20 @@ const { chromium } = require(process.env.PLAYWRIGHT_PATH || 'playwright');
   ok('old preset removal never overrides a genre the user chose', gp.keepGenre && gp.onlyLegacy);
   ok('presets the user edited are kept untouched', gp.userEdited);
 
+  // 22) ชื่อหลายคำสะกดตามคลัง (아트라 = อัทรา แต่ชื่อเต็มได้ อาทรา ไคลด์) · ทั้งสองทิศ · คำประสมที่ไม่ใช่ชื่อไม่แตะ
+  const al = await ev(() => {
+    const g = [{ korean: '아트라', thai: 'อัทรา', type: 'character' }, { korean: '엘리아 스레이드', thai: 'เอเลีย สเลด', type: 'character' }, { korean: '북부', thai: 'ทิศเหนือ', type: 'place' }];
+    return {
+      full: alignNameWithGlossary({ korean: '아트라 클라이드', thai: 'อาทรา ไคลด์', type: 'character' }, g) === 'อัทรา ไคลด์',
+      short: alignNameWithGlossary({ korean: '스레이드', thai: 'สเรย์ด', type: 'character' }, g) === 'สเลด',
+      safe: alignNameWithGlossary({ korean: '북부 대공', thai: 'แกรนด์ดยุก ทางเหนือ', type: 'title' }, g) === 'แกรนด์ดยุก ทางเหนือ'
+        && alignNameWithGlossary({ korean: '아트라 교수', thai: 'ศาสตราจารย์อาทรา', type: 'character' }, g) === 'ศาสตราจารย์อาทรา'
+        && alignNameWithGlossary({ korean: '카일', thai: 'ไคล์', type: 'character' }, g) === 'ไคล์',
+    };
+  });
+  ok('multi-word names reuse the glossary spelling of each part (both directions)', al.full && al.short);
+  ok('name alignment leaves non-names and mismatched word counts alone', al.safe);
+
   ok('no page errors', errors.length === 0); if (errors.length) console.log(errors);
   await browser.close(); process.exit(fail ? 1 : 0);
 })();
