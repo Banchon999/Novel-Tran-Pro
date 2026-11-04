@@ -1214,7 +1214,7 @@ async function applyBible() {
     if (!on('bb-p-' + i)) return;
     const old = ws.glossary.find(g => g.korean === x.korean);
     if (old) { if (x.gender && isGenderableType(old.type) && !['male', 'female', 'neutral'].includes(old.gender)) { old.gender = x.gender; filled++; } return; }
-    const e = sanitizeGlossaryEntry({ korean: x.korean, thai: x.thai, type: x.type, ...(x.gender ? { gender: x.gender } : {}), note: x.note ? `${x.note} · Bible` : 'Bible' });
+    const e = sanitizeGlossaryEntry({ korean: x.korean, thai: alignNameWithGlossary(x, ws.glossary), type: x.type, ...(x.gender ? { gender: x.gender } : {}), note: x.note ? `${x.note} · Bible` : 'Bible' });
     if (e) { ws.glossary.push(e); added++; }
   });
   if (added || filled) done.push(`คลังศัพท์ +${added}${filled ? ` · เติมเพศ ${filled}` : ''}`);
@@ -1312,6 +1312,7 @@ async function autoExtractGlossaryAfterTranslation(sourceText, model, chapterInf
       normalizeTermKeys(raw);
       if (!raw?.korean || !raw?.thai) return;
       raw.thai = fixSenseByContext(raw.korean, raw.thai, senseCtx);
+      raw.thai = alignNameWithGlossary(raw, S.currentWs.glossary);
       const term = sanitizeGlossaryEntry(dropSharedTitleGender({ ...raw }, sourceText));
       if (!term) { rejected++; return; }
       const existingEntry = S.currentWs.glossary.find(g => g.korean === term.korean);

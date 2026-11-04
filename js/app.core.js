@@ -708,6 +708,32 @@ const SENSE_TRAPS = [
 // 검 ในโลกปัจจุบัน/อนาคต/ฮันเตอร์ = ดาบ · กระบี่ ใช้เฉพาะโลกยุทธภพแบบจีน — AI ชอบติด "กระบี่" มาจากนิยายจีนกำลังภายใน
 // (เคสจริง: เรื่องเกิดใหม่ยุคอนาคตมีดันเจี้ยน แต่คลังได้ 검성 = ราชันกระบี่) → ต้นฉบับเกาหลี + ไม่มีร่องรอยยุทธภพ → เปลี่ยนเป็น ดาบ
 const MURIM_SETTING_RE = /무림|무협|강호|문파|세가|무공|내공|단전|검법|초식|협객|정파|사파|마교|구파일방|경공|장문인|사형|사매|武林|江湖|宗门|门派|修炼|丹田|真气|灵气|มู่หลิน|ยุทธภพ|ยุทธจักร|กำลังภายใน|บำเพ็ญ|wuxia|xianxia|murim|cultivation/i;
+// ชื่อตัวละครหลายคำ: แต่ละคำต้องสะกดตรงกับคลัง (เคสจริง: 아트라 = อัทรา แต่ 아트라 클라이드 = อาทรา ไคลด์ → คนอ่านจำไม่ได้ว่าเป็นคนเดียวกัน)
+// · คำใหม่เป็นชื่อเต็ม → คำที่มีในคลังแล้วใช้ตัวสะกดของคลัง · คำใหม่เป็นชื่อเดี่ยว → ใช้ตัวสะกดจากชื่อเต็มในคลัง (ถ้าทุกชื่อเต็มสะกดตรงกัน)
+// เฉพาะ type character และจำนวนคำต้นฉบับ = จำนวนคำไทย (ชื่อเรียงคำตรงกัน · คำประสมอื่นลำดับคำไทยมักกลับด้าน จึงไม่แตะ)
+function alignNameWithGlossary(term, glossary) {
+  const ko = String(term?.korean || '').trim(), th = String(term?.thai || '').trim();
+  if (!ko || !th || term?.type !== 'character') return th;
+  const norm = s => s.toLowerCase(), kw = ko.split(/\s+/), tw = th.split(/\s+/);
+  const chars = (glossary || []).filter(g => g?.type === 'character' && g.korean && g.thai && norm(g.korean.trim()) !== norm(ko));
+  if (kw.length >= 2 && kw.length === tw.length) {
+    kw.forEach((w, i) => {
+      const g = chars.find(x => !/\s/.test(x.korean.trim()) && !/\s/.test(x.thai.trim()) && norm(x.korean.trim()) === norm(w));
+      if (g) tw[i] = g.thai.trim();
+    });
+    return tw.join(' ');
+  }
+  if (kw.length === 1 && tw.length === 1) {
+    const found = new Set();
+    for (const g of chars) {
+      const gk = g.korean.trim().split(/\s+/), gt = g.thai.trim().split(/\s+/);
+      if (gk.length >= 2 && gk.length === gt.length) gk.forEach((w, i) => { if (norm(w) === norm(ko)) found.add(gt[i]); });
+    }
+    if (found.size === 1) return [...found][0];
+  }
+  return th;
+}
+
 function fixSenseByContext(source, thai, context) {
   const k = String(source || '').trim(), t = String(thai || '');
   if (t.includes('กระบี่') && /[가-힣]/.test(k) && !MURIM_SETTING_RE.test(String(context || ''))) return t.split('กระบี่').join('ดาบ');
