@@ -21,7 +21,7 @@ const PROVIDERS = {
     buildRequest({ model, messages, temperature, max_tokens, stream, key }) {
       return {
         url: 'https://openrouter.ai/api/v1/chat/completions',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}`, 'HTTP-Referer': location.origin, 'X-Title': 'NovelTrans v13.5.3 Pro' },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}`, 'HTTP-Referer': location.origin, 'X-Title': 'NovelTrans v14.0.0 Pro' },
         body: { model, messages, temperature, max_tokens, stream },
       };
     },
@@ -147,7 +147,16 @@ function getProvider() {
 // ไม่ส่ง argument = key ของ provider ปัจจุบัน (call-site เดิมทั้งหมดใช้ได้ต่อ)
 function getApiKey(provider) {
   const prov = PROVIDERS[provider || getProvider()] || PROVIDERS.openrouter;
+  if (prov.getKey) return prov.getKey();          // premium: session ของบัญชี ไม่ใช่ key ที่ผู้ใช้ใส่
   return localStorage.getItem(prov.lsKey) || '';
+}
+
+// key ที่ใช้ยิงจริง — provider ที่มี resolveKey (premium) ต่ออายุ session ก่อนทุกครั้ง
+async function resolveApiKey(provName) {
+  const prov = PROVIDERS[provName];
+  const key = prov.resolveKey ? await prov.resolveKey() : getApiKey(provName);
+  if (!key) throw new Error(prov.missingKeyMessage ? prov.missingKeyMessage() : `ยังไม่ได้ตั้ง API Key ของ ${prov.label} — ไปที่ ⚙ ตั้งค่า`);
+  return key;
 }
 
 // แปลง HTTP error เป็นข้อความไทยที่บอกสาเหตุ + วิธีแก้
@@ -158,6 +167,7 @@ async function aiHttpError(prov, res) {
     msg = err.error?.message || err.message || '';
   } catch {}
   const s = res.status;
+  if (prov.serverMessages && msg) return new Error(`${prov.label}: ${msg}`);   // เซิร์ฟเวอร์เราเอง ข้อความไทยอยู่แล้ว
   if (s === 401 || s === 403) return new Error(`🔑 ${prov.label}: API Key ไม่ถูกต้องหรือหมดสิทธิ์${msg ? ` — ${msg}` : ''}`);
   if (s === 429) {
     const retry = res.headers.get('retry-after');
@@ -176,8 +186,7 @@ function aiNetworkError(prov, provName) {
 async function aiCall({ model, messages, temperature = 0.7, max_tokens = 2000 }) {
   const provName = getProvider();
   const prov = PROVIDERS[provName];
-  const key = getApiKey(provName);
-  if (!key) throw new Error(`ยังไม่ได้ตั้ง API Key ของ ${prov.label} — ไปที่ ⚙ ตั้งค่า`);
+  const key = await resolveApiKey(provName);
 
   const req = prov.buildRequest({ model, messages, temperature, max_tokens, stream: false, key });
   let res;
@@ -192,6 +201,7 @@ async function aiCall({ model, messages, temperature = 0.7, max_tokens = 2000 })
   const data = await res.json();
   const usage = prov.extractUsage(data);
   addCosts(usage.inTok, usage.outTok, model, provName);
+  prov.afterCall?.();
   const fr = data.choices?.[0]?.finish_reason || data.candidates?.[0]?.finishReason || data.stop_reason || '';
   const finish_reason = /^(length|MAX_TOKENS|max_tokens)$/.test(fr) ? 'length' : fr;
   return { choices: [{ message: { content: prov.extractText(data) }, finish_reason }], usage: data.usage || usage, _raw: data };
@@ -204,8 +214,7 @@ const callOpenRouter = aiCall;
 async function aiStream({ model, messages, temperature = 0.7, max_tokens = 2000 }, onChunk, onUsage, signal) {
   const provName = getProvider();
   const prov = PROVIDERS[provName];
-  const key = getApiKey(provName);
-  if (!key) throw new Error(`ยังไม่ได้ตั้ง API Key ของ ${prov.label} — ไปที่ ⚙ ตั้งค่า`);
+  const key = await resolveApiKey(provName);
 
   const req = prov.buildRequest({ model, messages, temperature, max_tokens, stream: true, key });
   let res;
@@ -261,18 +270,24 @@ async function aiStream({ model, messages, temperature = 0.7, max_tokens = 2000 
     }
   }
   reader.cancel().catch(() => {});
+  prov.afterCall?.();
   if (truncated) throw new Error(`${prov.label}: คำแปลถูกตัดเพราะยาวเกิน max_tokens — ลองแบ่ง chunk ให้เล็กลง`);
   return fullText;
 }
 
 // ── Provider / Model selection UI ──
 function defaultModelFor(provName) {
+  if (PROVIDERS[provName].defaultModel) return PROVIDERS[provName].defaultModel();
   return provName === 'openrouter' ? 'deepseek/deepseek-chat' : PROVIDERS[provName].models[0][1][0][0];
 }
 
 function renderProviderSelect(sel, current) {
   if (!sel) return;
-  sel.innerHTML = Object.entries(PROVIDERS).map(([id, p]) =>
+  // provider ที่ไม่พร้อมบนเว็บนี้ (premium บน zip/static host) ซ่อน · premium ขึ้นก่อน
+  const list = Object.entries(PROVIDERS)
+    .filter(([id, p]) => !p.available || p.available() || id === current)
+    .sort(([a], [b]) => (b === 'premium') - (a === 'premium'));
+  sel.innerHTML = list.map(([id, p]) =>
     `<option value="${id}">${p.label}${getApiKey(id) ? '' : ' ⚠'}</option>`).join('');
   sel.value = current;
 }
@@ -323,7 +338,7 @@ async function onProviderChange(p) {
   await lsSaveWorkspace(S.currentWs);
   renderProviderUI();
   checkHealth();
-  if (!getApiKey(p)) showToast(`ยังไม่มี API Key ของ ${PROVIDERS[p].label} — ตั้งได้ที่ ⚙ ตั้งค่า API Key`, '');
+  if (!getApiKey(p)) showToast(PROVIDERS[p].missingKeyMessage ? PROVIDERS[p].missingKeyMessage() : `ยังไม่มี API Key ของ ${PROVIDERS[p].label} — ตั้งได้ที่ ⚙ ตั้งค่า API Key`, '');
 }
 
 async function onModelChange(v) {
@@ -384,7 +399,7 @@ async function fetchModels(provName) {
   const prov = PROVIDERS[provName];
   if (!prov || !prov.testEndpoint) throw new Error('provider ไม่รองรับการ fetch');
   const key = getApiKey(provName);
-  if (!key) throw new Error(`ยังไม่ได้ตั้ง API Key ของ ${prov.label}`);
+  if (!key && !prov.publicModels) throw new Error(`ยังไม่ได้ตั้ง API Key ของ ${prov.label}`);
   const { url, headers } = prov.testEndpoint(key);
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), getTimeoutMs('chunk'));

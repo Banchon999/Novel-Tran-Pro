@@ -131,7 +131,7 @@ async function streamSegment(text, contextSegs, options, onChunk, onDone) {
   }
 
   const key = getApiKey();
-  if (!key) throw new Error('ยังไม่ได้ตั้ง API Key — ไปที่ ⚙ ตั้งค่า');
+  if (!key) throw new Error(noKeyMsg());
 
   const glossaryStr = buildGlossaryStr(wsGlossary);
   const contextStr = buildContextStr(contextSegs, contextSegs.length);
@@ -1397,7 +1397,7 @@ async function translateAllStream(text) {
   });
 
   const key = getApiKey();
-  if (!key) { showToast('ยังไม่ได้ตั้ง API Key', 'error'); setTranslating(false); showProgress(false); return; }
+  if (!key) { showToast(noKeyMsg(), 'error'); setTranslating(false); showProgress(false); return; }
 
   const doTranslate = async () => {
   output.innerHTML = '';
@@ -1602,7 +1602,7 @@ async function translateChunked(text, options) {
 
   const styleNote = options.customStylePrompt ? `STYLE GUIDE:\n${options.customStylePrompt}\n` : '';
   const key = getApiKey();
-  if (!key) { showToast('ยังไม่ได้ตั้ง API Key', 'error'); setTranslating(false); showProgress(false); return; }
+  if (!key) { showToast(noKeyMsg(), 'error'); setTranslating(false); showProgress(false); return; }
 
   let completedTranslations = [];
   let startIdx = 0;
@@ -1922,7 +1922,7 @@ function hideHighlight() {
 function openApiSettings() {
   const c = document.getElementById('apiKeysContainer');
   const active = getProvider();
-  c.innerHTML = Object.entries(PROVIDERS).map(([id, p]) => `
+  c.innerHTML = Object.entries(PROVIDERS).filter(([, p]) => p.lsKey).map(([id, p]) => `
     <div class="sf-group" style="border-bottom:1px solid var(--border);padding-bottom:10px;margin-bottom:10px">
       <div class="sf-label">${p.label}${id === active ? ' <span style="color:var(--gold);font-size:0.68rem">← ใช้อยู่</span>' : ''}</div>
       <input id="apiKey-${id}" type="password" class="text-input" placeholder="${p.keyPlaceholder}"/>
@@ -1940,7 +1940,7 @@ function openApiSettings() {
       </div>
     </div>`;
   // เติมค่า key เดิมผ่าน .value (เลี่ยงปัญหา escape ใน attribute)
-  for (const [id, p] of Object.entries(PROVIDERS)) {
+  for (const [id, p] of Object.entries(PROVIDERS).filter(([, p]) => p.lsKey)) {
     const el = document.getElementById('apiKey-' + id);
     if (el) el.value = localStorage.getItem(p.lsKey) || '';
   }
@@ -1950,7 +1950,7 @@ function openApiSettings() {
 
 function saveApiKey() {
   let saved = 0;
-  for (const [id, p] of Object.entries(PROVIDERS)) {
+  for (const [id, p] of Object.entries(PROVIDERS).filter(([, p]) => p.lsKey)) {
     const el = document.getElementById('apiKey-' + id);
     if (!el) continue;
     const v = el.value.trim();

@@ -870,7 +870,7 @@ async function startBatchChapters() {
   const log = document.getElementById('bchLog');
   document.getElementById('bchProgressBox').style.display = 'block';
   log.innerHTML = '';
-  if (!getApiKey()) { showToast('ยังไม่ได้ตั้ง API Key', 'error'); setTranslating(false); btn.disabled = false; return; }
+  if (!getApiKey()) { showToast(noKeyMsg(), 'error'); setTranslating(false); btn.disabled = false; return; }
   const n = selectedChapters.length;
 
   // ── Summary cache: chapterId → summary string ──

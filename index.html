@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"/>
-  <title>NovelTrans v13.5.3 Pro</title>
+  <title>NovelTrans v14.0.0 Pro</title>
   <!-- PWA -->
   <link rel="manifest" href="manifest.webmanifest"/>
   <meta name="theme-color" content="#111214"/>
@@ -29,7 +29,7 @@
       <span class="sb-icon"><svg class="nt-logo" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h8M8 3v2M6 5c0 4 3 7 6 8M10 5c0 3-3 7-6 9"/><path d="M13 21l4-9 4 9M14.5 18h5"/></svg></span>
       <div>
         <div class="sb-title">NovelTrans</div>
-        <div class="sb-sub">v13.5.3 Pro · Multi File</div>
+        <div class="sb-sub">v14.0.0 Pro · Multi File</div>
       </div>
     </div>
     <button class="icon-btn" onclick="closeSidebar()">✕</button>
@@ -41,6 +41,10 @@
     </div>
     <div class="cost-mini" id="costMini">$0.000000</div>
   </div>
+  <!-- บัญชี / Premium (แสดงเมื่อเว็บมีระบบบัญชี — /api/config) -->
+  <div class="sb-section acc-section" id="accSection" style="display:none"><div id="accBox"></div></div>
+  <!-- Sync ข้ามเครื่อง: Premium → คลาวด์ · ฟรี → Google Drive -->
+  <div class="sb-section acc-section" id="syncSection" style="display:none"><div id="syncBox"></div></div>
   <div class="sb-section sb-ws-section">
     <div class="sb-label-row">
       <span class="sb-label">WORKSPACES</span>
@@ -65,7 +69,7 @@
       <div class="header-brand">
         <span class="header-icon"><svg class="nt-logo" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h8M8 3v2M6 5c0 4 3 7 6 8M10 5c0 3-3 7-6 9"/><path d="M13 21l4-9 4 9M14.5 18h5"/></svg></span>
         <span class="header-title">NovelTrans</span>
-        <span class="header-ver">v13.5.3 Pro</span>
+        <span class="header-ver">v14.0.0 Pro</span>
       </div>
     </div>
     <div class="header-right">
@@ -78,7 +82,7 @@
 
   <div id="noWsMsg" class="no-ws-msg">
     <div class="no-ws-icon">⚔</div>
-    <div class="no-ws-title">NovelTrans v13.5.3 Pro</div>
+    <div class="no-ws-title">NovelTrans v14.0.0 Pro</div>
     <div class="no-ws-sub">สร้างหรือเลือก Workspace เพื่อเริ่มแปล</div>
     <button class="btn btn-primary" onclick="openModal('modal-new-ws')">＋ สร้าง Workspace ใหม่</button>
     <button class="btn btn-ghost" style="margin-top:8px" onclick="openImportWs()">📥 Import Workspace</button>
@@ -559,6 +563,39 @@
 </div>
 
 <!-- MODALS -->
+<div class="modal-backdrop" id="modal-account">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-header"><span>👤 บัญชี NovelTrans</span><button class="icon-btn" onclick="closeModal('modal-account')">✕</button></div>
+    <div class="modal-body">
+      <div class="sf-group"><div class="sf-label">อีเมล</div><input id="accEmail" type="email" class="text-input" autocomplete="email" placeholder="you@example.com"/></div>
+      <div class="sf-group"><div class="sf-label">รหัสผ่าน</div><input id="accPassword" type="password" class="text-input" autocomplete="current-password" placeholder="อย่างน้อย 6 ตัวอักษร" onkeydown="if(event.key==='Enter')accSignIn()"/></div>
+      <div class="acc-auth-btns">
+        <button class="btn btn-primary" onclick="accSignIn()">เข้าสู่ระบบ</button>
+        <button class="btn btn-secondary" onclick="accSignUp()">สมัครสมาชิก</button>
+      </div>
+      <button id="accGoogleBtn" class="btn btn-ghost acc-google" onclick="accGoogle()">G&nbsp; เข้าสู่ระบบด้วย Google</button>
+      <div style="text-align:right;margin-top:6px"><button class="btn-xs" onclick="accForgot()">ลืมรหัสผ่าน</button></div>
+      <div id="accMsg" class="acc-msg"></div>
+      <div class="acc-muted" style="margin-top:10px">ไม่ต้องมีบัญชีก็ใช้ได้ (ใส่ API Key เอง) · บัญชีใช้สำหรับ ⭐ Premium และ sync นิยายข้ามเครื่อง</div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="modal-premium-request">
+  <div class="modal" style="max-width:440px">
+    <div class="modal-header"><span>⭐ ขอ Premium</span><button class="icon-btn" onclick="closeModal('modal-premium-request')">✕</button></div>
+    <div class="modal-body">
+      <div class="acc-muted" style="margin-bottom:10px">Premium: แปลด้วย AI ในตัวได้ทันที ไม่ต้องมี API Key · sync นิยายขึ้นคลาวด์อัตโนมัติ · แอดมินจะติดต่อกลับเพื่อเปิดสิทธิ์</div>
+      <div class="sf-group"><div class="sf-label">ช่องทางติดต่อ *</div><input id="premReqContact" type="text" class="text-input" maxlength="200" placeholder="LINE ID / Facebook / อีเมล"/></div>
+      <div class="sf-group"><div class="sf-label">ข้อความถึงแอดมิน</div><textarea id="premReqNote" class="text-input" rows="3" maxlength="1000" placeholder="เช่น แปลนิยายเรื่องอะไร ประมาณกี่ตอนต่อเดือน"></textarea></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-premium-request')">ยกเลิก</button>
+      <button class="btn btn-primary" onclick="submitPremiumRequest()">ส่งคำขอ</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-backdrop" id="modal-new-ws">
   <div class="modal">
     <div class="modal-header"><span>＋ สร้าง Workspace ใหม่</span><button class="icon-btn" onclick="closeModal('modal-new-ws')">✕</button></div>
@@ -1679,6 +1716,8 @@
 <script src="js/app.tools.js"></script>
 <script src="js/app.reader-presets.js"></script>
 <script src="js/app.glossary-ai.js"></script>
+<script src="js/app.account.js"></script>
+<script src="js/app.sync.js"></script>
 <!-- PWA: register service worker (เปิดแบบ http(s):// เท่านั้น — file:// จะไม่ทำงาน) -->
 <script>
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
