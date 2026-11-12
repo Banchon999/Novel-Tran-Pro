@@ -262,6 +262,18 @@ async function setup(browser, { premium, googleClientId = '' }) {
     await ctx.close();
   }
 
+  // ═══ 2.5) กลับมาจากลิงก์อีเมลที่หมดอายุ → แจ้งภาษาไทย + ล้าง URL ═══
+  {
+    const { ctx, page, log } = await setup(browser, { premium: false });
+    await page.goto('about:blank');   // เปลี่ยนแค่ #hash ไม่ทำให้โหลดหน้าใหม่ → ออกไปก่อน
+    await page.goto(BASE + '/index.html#error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired');
+    await page.waitForTimeout(1500);
+    const r = await page.evaluate(() => ({ hash: location.hash, toast: [...document.querySelectorAll('.toast, #toast')].map(x => x.textContent).join('|') }));
+    ok('ลิงก์อีเมลหมดอายุ → แจ้งเป็นภาษาไทย + ล้าง #error ออกจาก URL', r.hash === '' && /หมดอายุ/.test(r.toast), r);
+    ok('ไม่มี error ในหน้า (ลิงก์หมดอายุ)', log.errors.length === 0, log.errors);
+    await ctx.close();
+  }
+
   // ═══ 3) เว็บที่ไม่มี /api (zip / static host) → ไม่มีอะไรเปลี่ยน ═══
   {
     const ctx = await browser.newContext({ serviceWorkers: 'block' });
