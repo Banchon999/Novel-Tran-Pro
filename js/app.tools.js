@@ -542,36 +542,46 @@ function getTagClass(type) {
 // ─── Duplicate Check (รองรับทุกภาษา) ───
 let _lastSubstrPairs = [];
 
-// เป็น "คำเกาหลี" หรือไม่ — ต้องมีอักษรฮันกึล (Hangul) และต้องไม่มีคานะญี่ปุ่น
-// ใช้กรองการตรวจคำซ้อน (substring) ให้ทำเฉพาะคำเกาหลีเท่านั้น
-function isKoreanTerm(s) {
-  if (!s) return false;
-  if (/[぀-ヿ]/.test(s)) return false;                       // มีฮิรางานะ/คาตากานะ = ญี่ปุ่น
-  return /[가-힣ᄀ-ᇿ㄰-㆏ꥠ-꥿]/.test(s); // มีฮันกึล
+// อักษรของคำต้นฉบับ — คำซ้อนเทียบเฉพาะคำที่อักษรเดียวกัน (เกาหลี / จีน / อังกฤษ-ละติน) · ญี่ปุ่นไม่ตรวจ
+// เดิมตรวจแต่เกาหลี → คลังภาษาอังกฤษ/จีนไม่เคยเห็นคำซ้อน (เช่น "Atra" ⊂ "Atra Clyde")
+function _termScript(s) {
+  if (!s) return null;
+  if (/[\u3040-\u30ff]/.test(s)) return null;
+  if (/[\uac00-\ud7a3\u1100-\u11ff\u3130-\u318f\ua960-\ua97f]/.test(s)) return 'ko';
+  if (/[\u3400-\u9fff\uf900-\ufaff]/.test(s)) return 'zh';
+  if (/[a-z\u00c0-\u024f]/i.test(s)) return 'latin';
+  return null;
 }
+function isKoreanTerm(s) { return _termScript(s) === 'ko'; }
 
-// ตรวจว่า `full` เป็น "คำซ้อน" ของ `sub` หรือไม่ — ตรวจเฉพาะคำเกาหลีเท่านั้น
-// (ทั้ง sub และ full ต้องเป็นคำเกาหลี — คำภาษาอื่นจะข้ามไป ไม่ถือเป็นคำซ้อน)
-// • รูปแบบมีเว้นวรรค: นับเฉพาะเมื่อ sub เป็น token ต้น/ท้ายที่ขอบคำ
-// • รูปแบบไม่เว้นวรรค (ปกติของเกาหลี): นับเมื่อส่วนที่เกินสั้น (≤3 อักษร — มักเป็นคำชี้/คำต่อท้าย)
+// ตรวจว่า `full` เป็น "คำซ้อน" ของ `sub` หรือไม่ (รับ key ที่ normalize แล้ว)
+// • เกาหลี/จีน มีเว้นวรรค: sub เป็นคำเต็มที่ขอบคำ
+// • เกาหลี/จีน ไม่เว้นวรรค: sub อยู่ต้นหรือท้าย และส่วนเกินสั้น (≤3 อักษร — คำชี้/คำต่อท้าย/ยศ) · จีนต้องยาว ≥2 อักษร (อักษรเดียวเช่นแซ่ ชนแทบทุกคำ)
+// • อังกฤษ: sub เป็นคำเต็ม (ขอบคำทั้งสองข้าง) ที่ตำแหน่งใดก็ได้ · รวมพหูพจน์/'s · sub ต้องมีตัวอักษร ≥2
 function isSubstringDup(sub, full) {
   if (!sub || !full || sub === full || !full.includes(sub)) return false;
-  if (!isKoreanTerm(sub) || !isKoreanTerm(full)) return false;       // ตรวจแต่เกาหลี
+  const sc = _termScript(sub);
+  if (!sc || sc !== _termScript(full)) return false;
+  if (sc === 'latin') {
+    if ((sub.match(/[a-z\u00c0-\u024f]/gi) || []).length < 2) return false;
+    const e = sub.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp('(^|[^\\p{L}\\p{N}])' + e + "(?:s|es|'s|’s)?($|[^\\p{L}\\p{N}])", 'u').test(full);
+  }
+  if (sc === 'zh' && [...sub].length < 2) return false;
   const hasSpaces = /\s/.test(sub) || /\s/.test(full);
   if (hasSpaces) {
     return full.startsWith(sub + ' ') || full.endsWith(' ' + sub) || full.includes(' ' + sub + ' ');
   }
   const idx   = full.indexOf(sub);
-  const extra = full.length - sub.length; // จำนวนอักษรส่วนเกินรวม
-  // ต้องเป็น prefix หรือ suffix (ขอบใดขอบหนึ่งตรงกัน) และส่วนเกินสั้น
+  const extra = [...full].length - [...sub].length; // จำนวนอักษรส่วนเกินรวม
   const isEdge = (idx === 0) || (idx + sub.length === full.length);
   return isEdge && extra <= 3;
 }
 
-// normalize คำเกาหลีก่อนเทียบ: รวม Unicode เป็น NFC + ตัดอักขระล่องหน (zero-width) + trim
-// (กันคำที่ "ดูเหมือนกัน" แต่ byte ต่างกัน เลยตรวจไม่เจอ)
+// normalize คำต้นฉบับก่อนเทียบ: รวม Unicode เป็น NFC + ตัดอักขระล่องหน (zero-width) + ยุบช่องว่าง + ไม่สนตัวพิมพ์ใหญ่-เล็ก
+// (กันคำที่ "ดูเหมือนกัน" แต่ byte ต่างกัน · อังกฤษ "Atra" กับ "atra" = คำเดียวกัน — เกาหลี/จีนไม่มีตัวพิมพ์ใหญ่-เล็ก ผลเหมือนเดิม)
 function _normGlossKey(s) {
-  return (s || '').normalize('NFC').replace(/[​-‍﻿]/g, '').trim();
+  return (s || '').normalize('NFC').replace(/[\u200b-\u200d\ufeff]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
 }
 
 let _dupExactGroups = [];   // [{ key, korean, entries:[{korean,thai}], count }]
@@ -593,14 +603,15 @@ function computeGlossaryDuplicates() {
   // substring pairs (เทียบจาก key ที่ unique แล้ว)
   const uniqKeys = [...map.keys()];
   const firstThai = {};
-  for (const [k, es] of map) firstThai[k] = es[0].thai || '';
+  const firstText = {};   // ข้อความตามที่ผู้ใช้พิมพ์ (โชว์/ส่ง AI) — key ใช้แค่เทียบ
+  for (const [k, es] of map) { firstThai[k] = es[0].thai || ''; firstText[k] = String(es[0].korean || '').trim(); }
   const pairs = [];
   for (let i = 0; i < uniqKeys.length; i++) {
     for (let j = 0; j < uniqKeys.length; j++) {
       if (i === j) continue;
       if (isSubstringDup(uniqKeys[i], uniqKeys[j])) {
-        if (!pairs.some(p => p.sub === uniqKeys[i] && p.full === uniqKeys[j])) {
-          pairs.push({ sub: uniqKeys[i], full: uniqKeys[j], subThai: firstThai[uniqKeys[i]], fullThai: firstThai[uniqKeys[j]] });
+        if (!pairs.some(p => p.sub === firstText[uniqKeys[i]] && p.full === firstText[uniqKeys[j]])) {
+          pairs.push({ sub: firstText[uniqKeys[i]], full: firstText[uniqKeys[j]], subThai: firstThai[uniqKeys[i]], fullThai: firstThai[uniqKeys[j]] });
         }
       }
     }
@@ -621,8 +632,13 @@ function _dupRev() {
   ws.dupReviewed.pairs = ws.dupReviewed.pairs || {};
   return ws.dupReviewed;
 }
-function _pairKey(p) { return p.sub + _DUP_SEP + p.full; }
-function isDupReviewed(kind, key) { return !!_dupRev()[kind][key]; }
+function _pairKey(p) { return _normGlossKey(p.sub) + _DUP_SEP + _normGlossKey(p.full); }
+function isDupReviewed(kind, key) {
+  const r = _dupRev()[kind];
+  if (r[key]) return true;
+  // รายการที่ทำเครื่องหมายไว้ก่อน key ไม่สนตัวพิมพ์ (คำอังกฤษเดิมเก็บตามตัวพิมพ์) — เทียบแบบ normalize
+  return Object.keys(r).some(k => (kind === 'exact' ? _normGlossKey(k) : k.split(_DUP_SEP).map(_normGlossKey).join(_DUP_SEP)) === key);
+}
 
 async function dupMarkReviewed(kind, idx, on = true) {
   if (!S.currentWs) return;
@@ -646,7 +662,7 @@ async function dupMarkAllReviewed(kind) {
 async function dupMarkPairsReviewed(pairs) {
   if (!S.currentWs || !pairs?.length) return;
   const rev = _dupRev();
-  pairs.forEach(p => { if (p?.sub && p?.full) rev.pairs[_pairKey({ sub: String(p.sub).trim(), full: String(p.full).trim() })] = true; });
+  pairs.forEach(p => { if (p?.sub && p?.full) rev.pairs[_pairKey({ sub: String(p.sub), full: String(p.full) })] = true; });
   await lsSaveWorkspace(S.currentWs);
 }
 function dupToggleShowReviewed() { _dupShowReviewed = !_dupShowReviewed; renderDupPanel(); }
@@ -899,7 +915,8 @@ async function aiResolveSubstrDups() {
     }
 
     const before = S.currentWs.glossary.length;
-    S.currentWs.glossary = S.currentWs.glossary.filter(g => !toDelete.has(g.korean.trim()));
+    const delKeys = new Set([...toDelete].map(_normGlossKey));
+    S.currentWs.glossary = S.currentWs.glossary.filter(g => !delKeys.has(_normGlossKey(g.korean)));
     S.glossaryData = S.currentWs.glossary;
     await lsSaveWorkspace(S.currentWs);
     renderGlossaryTable();
@@ -930,9 +947,9 @@ async function aiResolveSubstrDups() {
 // ─── ตรวจทาน #2: แก้คำแปลของคู่ substring ให้สอดคล้องกัน (รองรับเกาหลี) ───
 // ปัญหา: คำสั้น (겁화="กอบฮวา") ถูกแปลคนละแบบกับตอนที่อยู่ในคำยาว (겁화 가문="ตระกูลเพลิงกัลป์")
 // → ให้ AI เลือกคำแปลที่ถูกต้องของส่วนที่ใช้ร่วมกัน แล้วแก้ทั้งสอง entry ให้ตรงกัน (ไม่แตะภาษาเกาหลี)
-const DUP_FIX_PROMPT = `You are a Thai glossary consistency editor for a Korean→Thai webnovel glossary.
-Each item is a pair where the shorter Korean term (sub) appears inside the longer Korean term (full).
-Your job: find pairs where the shared Korean part is translated INCONSISTENTLY between the two Thai entries, then rewrite BOTH Thai entries so the shared part is rendered IDENTICALLY.
+const DUP_FIX_PROMPT = `You are a Thai glossary consistency editor for a webnovel glossary (source → Thai; the source terms may be Korean, Chinese or English).
+Each item is a pair where the shorter source term (sub) appears inside the longer source term (full).
+Your job: find pairs where the shared source part is translated INCONSISTENTLY between the two Thai entries, then rewrite BOTH Thai entries so the shared part is rendered IDENTICALLY.
 
 Inconsistency example:
 - sub:  겁화 = "กอบฮวา"            (raw transliteration)
@@ -942,9 +959,9 @@ Decide ONE best Thai for 겁화 and apply it to both:
   → 겁화 = "เพลิงกัลป์", 겁화 가문 = "ตระกูลเพลิงกัลป์"
 
 RULES:
-- Pick the single best canonical Thai for the SHARED Korean part. Prefer the meaning-based rendering already used inside the compound over a raw transliteration that doesn't match; otherwise keep whatever reads best and is most consistent.
+- Pick the single best canonical Thai for the SHARED source part. Prefer the meaning-based rendering already used inside the compound over a raw transliteration that doesn't match; otherwise keep whatever reads best and is most consistent.
 - Rewrite subThai and fullThai so the shared part is spelled the same in both. Keep the extra word(s) of the longer term (e.g. 가문 → ตระกูล) intact.
-- NEVER change the Korean. Only change the Thai.
+- NEVER change the source terms. Only change the Thai. For person names (e.g. English "Atra" vs "Atra Clyde"), the given name must be spelled the same in both.
 - If a pair is ALREADY consistent (the sub's Thai already appears inside the full's Thai), or the two legitimately differ and need no change, set action = "ok" and leave the Thai as given.
 
 PAIRS (JSON):
@@ -1001,8 +1018,8 @@ async function aiFixSubstrConsistency() {
     if (!d || d.action !== 'fix') return;
     const sub = (d.sub || '').trim(), full = (d.full || '').trim();
     const st = (d.subThai || '').trim(), ft = (d.fullThai || '').trim();
-    if (sub && st) newThaiByKorean.set(sub, st);
-    if (full && ft) newThaiByKorean.set(full, ft);
+    if (sub && st) newThaiByKorean.set(_normGlossKey(sub), st);
+    if (full && ft) newThaiByKorean.set(_normGlossKey(full), ft);
     changeList.push({ sub, full, st, ft, reason: d.reason || '' });
   });
 
@@ -1020,7 +1037,7 @@ async function aiFixSubstrConsistency() {
   try {
     let updated = 0;
     S.currentWs.glossary.forEach(g => {
-      const k = (g.korean || '').trim();
+      const k = _normGlossKey(g.korean);
       if (newThaiByKorean.has(k)) {
         const nt = newThaiByKorean.get(k);
         if ((g.thai || '').trim() !== nt) { g.thai = nt; updated++; }

@@ -544,6 +544,33 @@ const { chromium } = require(process.env.PLAYWRIGHT_PATH || 'playwright');
   ok('multi-word names reuse the glossary spelling of each part (both directions)', al.full && al.short);
   ok('name alignment leaves non-names and mismatched word counts alone', al.safe);
 
+  // 23) 🔎 ซ้ำ + ช่องค้นหา รองรับทุกภาษา: อังกฤษไม่สนตัวพิมพ์ · คำซ้อนอังกฤษ/จีน (เดิมเฉพาะเกาหลี) · เกาหลีเหมือนเดิม
+  const dp = await ev(async () => {
+    const r = {};
+    const w = { id: 'dp' + Date.now(), name: 'dp', customStyles: [], chapters: [], settings: { sourceLang: 'en' }, createdAt: Date.now(), glossary: [
+      { korean: 'Atra', thai: 'อัทรา', type: 'character' }, { korean: 'atra ', thai: 'อาทรา', type: 'character' },
+      { korean: 'Atra Clyde', thai: 'อาทรา ไคลด์', type: 'character' }, { korean: 'Sword', thai: 'ดาบ', type: 'item' }, { korean: 'Swordsman', thai: 'นักดาบ', type: 'rank' },
+      { korean: 'Guild', thai: 'กิลด์', type: 'org' }, { korean: "Guild's", thai: 'ของกิลด์', type: 'org' }, { korean: 'Al', thai: 'อัล', type: 'character' }, { korean: 'Al Capone', thai: 'อัล คาโปน', type: 'character' },
+      { korean: '林动', thai: 'หลินต้ง', type: 'character' }, { korean: '林动道', thai: 'วิถีหลินต้ง', type: 'skill' }, { korean: '林', thai: 'หลิน', type: 'clan' }, { korean: '林家', thai: 'ตระกูลหลิน', type: 'clan' },
+      { korean: '아트라', thai: 'อัทรา', type: 'character' }, { korean: '아트라 클라이드', thai: 'อาทรา ไคลด์', type: 'character' }, { korean: '검', thai: 'ดาบ', type: 'item' }, { korean: '검기', thai: 'ปราณดาบ', type: 'skill' },
+    ] };
+    await lsSaveWorkspace(w); await selectWorkspace(w.id);
+    const { exactGroups, pairs } = computeGlossaryDuplicates();
+    const has = (a, b) => pairs.some(p => p.sub === a && p.full === b);
+    r.exact = exactGroups.length === 1 && exactGroups[0].count === 2 && exactGroups[0].korean === 'Atra';
+    r.en = has('Atra', 'Atra Clyde') && has('Guild', "Guild's") && !has('Sword', 'Swordsman') && has('Al', 'Al Capone');
+    r.zh = has('林动', '林动道') && !pairs.some(p => p.sub === '林');
+    r.ko = has('아트라', '아트라 클라이드') && has('검', '검기');
+    r.mixed = !pairs.some(p => /[가-힣]/.test(p.sub) !== /[가-힣]/.test(p.full));
+    document.getElementById('glossarySearch').value = 'Atra'; renderGlossaryTable();
+    r.search = [...document.querySelectorAll('#glossaryTableBody tr')].filter(t => /atra/i.test(t.textContent)).length === 3;
+    document.getElementById('glossarySearch').value = ''; renderGlossaryTable();
+    return r;
+  });
+  ok('duplicate check: English exact duplicates ignore letter case', dp.exact);
+  ok('duplicate check: English and Chinese nested terms found (was Korean only), Korean unchanged', dp.en && dp.zh && dp.ko && dp.mixed);
+  ok('glossary search box finds English terms typed with capitals', dp.search);
+
   ok('no page errors', errors.length === 0); if (errors.length) console.log(errors);
   await browser.close(); process.exit(fail ? 1 : 0);
 })();
