@@ -322,3 +322,23 @@
 | `js/app.glossary-ai.js` | แนวนิยาย (ชุดคำ + แนวทางการแปล), AI วิเคราะห์คลังศัพท์ + อันดับโมเดลตามภาษา |
 | `sw.js` / `manifest.webmanifest` | PWA |
 | `serve.sh` | เปิด local server (Termux) |
+
+---
+
+## 17. บัญชี · Premium · Sync (เวอร์ชันเว็บ)
+`js/app.account.js`, `js/app.sync.js`, `admin.html`, `api/`, `supabase/migrations/` · วิธี deploy: [`docs/DEPLOY.md`](docs/DEPLOY.md)
+
+| ระบบ | รายละเอียด |
+|---|---|
+| **เปิด/ปิดอัตโนมัติ** | โหลด `api/config` ไม่ได้ (zip / static host) → ซ่อนบัญชี/sync/Premium ทั้งหมด แอปทำงานแบบเดิม |
+| **บัญชี** | Supabase Auth: อีเมล+รหัสผ่าน (ยืนยันอีเมล) · Google · ลืมรหัสผ่าน · session เก็บที่ localStorage `nt8_auth` |
+| **⭐ Premium provider** | `PROVIDERS.premium` → `api/ai` ด้วย access token · โมเดลจาก `api/models` · ข้อความ error ไทยจากเซิร์ฟเวอร์ · อัปเดตโควต้าหลังเรียก |
+| **`api/ai`** | ตรวจ JWT → `premium_check` (Premium? โมเดลอยู่ในรายการ? โควต้าเหลือ?) → OpenRouter (stream ได้) → `record_usage` ด้วยต้นทุนจริง (`usage.cost`) · ผู้ใช้กดหยุดกลางทาง = ประมาณจาก token · `max_tokens ≤ 16000` |
+| **สิทธิ์** | ทั้งหมดในฐานข้อมูล (RLS + ฟังก์ชัน SECURITY DEFINER) · เซิร์ฟเวอร์ใช้แค่ publishable key + JWT ผู้ใช้ (ไม่มี service-role key) |
+| **Sync** | engine เดียว adapter 2 ตัว: `SupabaseSync` (Premium, `workspaces/{uid}/{wsId}.json`) · `DriveSync` (ฟรี, appDataFolder) · เกาะ `lsSaveWorkspace`/`lsDeleteWorkspace` · หน่วง 4 วิ (สูงสุด 30 วิ) · ดึงเมื่อเปิดแอป/กลับมาที่แท็บ/ออนไลน์ |
+| **กันข้อมูลหาย** | remote ไม่มี → อัปโหลด (ไม่ลบในเครื่อง) · แก้ทั้งสองฝั่ง → ถาม + เก็บอีกฝั่งเป็น "(สำเนาเครื่องนี้)" · Premium หมดอายุ → ยังอ่าน/ลบบนคลาวด์ได้ แต่เขียนไม่ได้ |
+| **แอดมิน** | `admin.html`: สถิติเดือนนี้ · ผู้ใช้ (+วัน / ไม่หมดอายุ / โควต้า / ยกเลิก) · คำขอ Premium · รายการโมเดล + โควต้าเริ่มต้น · แอดมิน = `admins` หรือ `admin_emails` (อีเมลที่ยืนยันแล้ว) |
+| **ทดสอบ** | `tests/api/run-api.js` (proxy) · `tests/e2e/account.js` (บัญชี/Premium/sync, mock ทั้งหมด) — รันรวมใน `tests/e2e/run.sh` |
+
+**Storage keys เพิ่ม:** `nt8_auth` (session) · `nt8_sync_gdrive` (เปิด sync Drive) · `nt8_sync_cloud_off` (ปิด sync คลาวด์) · sessionStorage `nt8_gdrive_tok` · IDB meta `sync_state_supabase` / `sync_state_gdrive`
+

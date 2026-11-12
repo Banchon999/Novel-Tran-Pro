@@ -64,6 +64,7 @@ NovelTrans เอาวิธีที่ทีมแปลมืออาชี
 - 🔒 **ข้อมูลอยู่ในเครื่องคุณ** — เก็บใน IndexedDB ของเบราว์เซอร์, API Key ไม่ส่งไปที่อื่นนอกจากผู้ให้บริการ AI
 - 💾 **สำรอง/กู้คืน 1 คลิก** — Backup ทุกเรื่องเป็นไฟล์เดียว
 - 💸 **ประหยัด** — แสดงต้นทุนจริงทุกครั้ง · Gemini Flash Lite ประมาณ $0.001–0.01 ต่อตอน (ขึ้นกับความยาว)
+- ⭐ **Premium (เวอร์ชันเว็บ)** — แปลได้ทันทีไม่ต้องมี API Key + sync นิยายขึ้นคลาวด์ · ผู้ใช้ฟรี sync ผ่าน Google Drive ของตัวเองได้
 
 ## 🚀 เริ่มใช้ใน 1 นาที
 
@@ -107,7 +108,9 @@ python3 -m http.server 8080
 
 <details><summary><b>ข้อมูลนิยายของฉันถูกส่งไปที่ไหนบ้าง?</b></summary>
 
-ไม่มีเซิร์ฟเวอร์ของ NovelTrans เลย — แอปทำงานในเบราว์เซอร์ของคุณทั้งหมด ข้อความจะถูกส่งไปที่ผู้ให้บริการ AI ที่คุณเลือกเท่านั้น (ตอนกดแปล)
+ใช้แบบใส่ API Key เอง (ไฟล์ zip หรือเว็บโดยไม่ล็อกอิน) — แอปทำงานในเบราว์เซอร์ของคุณทั้งหมด ข้อความถูกส่งไปที่ผู้ให้บริการ AI ที่คุณเลือกเท่านั้น (ตอนกดแปล)
+
+ใช้ ⭐ Premium — ข้อความที่แปลผ่านเซิร์ฟเวอร์ของเว็บ (`/api/ai`) ไปยัง OpenRouter และนิยายถูก sync ขึ้นคลาวด์ (Supabase) ของเว็บ · เชื่อม Google Drive — นิยายเก็บใน Drive ของคุณเอง
 </details>
 
 <details><summary><b>เปลี่ยนเครื่อง / ล้างเบราว์เซอร์ ข้อมูลหายไหม?</b></summary>
@@ -141,8 +144,15 @@ js/app.translate.js     แกนการแปล, คลังศัพท์
 js/app.reader-presets.js  อ่านเต็มจอ, Prefetch, Preset
 js/app.review-batch.js  แปลหลายตอน, ส่งออก, นำเข้า EPUB
 js/app.tools.js         ส่งออก EPUB, เครื่องมือคลังศัพท์, ธีม
-tests/                  ชุดวัดความต่อเนื่องและเพศ (ใช้ AI จริง)
+js/app.account.js       บัญชี (Supabase Auth), provider ⭐ Premium, ขอ Premium
+js/app.sync.js          sync ข้ามเครื่อง: Supabase Storage (Premium) / Google Drive (ฟรี)
+admin.html              หน้าแอดมิน: เปิดสิทธิ์ Premium, โควต้า, โมเดล
+api/                    Vercel Functions: config, models, ai (proxy Premium → OpenRouter)
+supabase/migrations/    ตาราง + สิทธิ์ (RLS) + ฟังก์ชันตรวจโควต้า
+tests/                  ชุดวัดความต่อเนื่องและเพศ (ใช้ AI จริง) · e2e + API (mock)
 ```
+
+**Deploy ขึ้นเว็บพร้อมระบบบัญชี/Premium:** ดู [`docs/DEPLOY.md`](docs/DEPLOY.md)
 
 รายละเอียดระบบทั้งหมด: [`SYSTEMS.md`](SYSTEMS.md) · ประวัติการพัฒนา: [`docs/HISTORY.md`](docs/HISTORY.md)
 

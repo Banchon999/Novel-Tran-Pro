@@ -123,7 +123,7 @@ function renderUsers() {
           <button class="btn-xs" onclick="grantAsk('${u.id}')">+ กำหนดวัน…</button>
           <button class="btn-xs" onclick="grant('${u.id}', 0)">ไม่หมดอายุ</button>
           <button class="btn-xs" onclick="setQuota('${u.id}', ${Number(u.quota_usd) || 0})">โควต้า…</button>
-          ${u.plan === 'premium' ? `<button class="btn-xs" onclick="revoke('${u.id}', '${esc(u.email)}')">ยกเลิก Premium</button>` : ''}
+          ${u.plan === 'premium' ? `<button class="btn-xs" onclick="revoke('${u.id}')">ยกเลิก Premium</button>` : ''}
         </div>
       </div>`;
     }).join('')}`;
@@ -173,7 +173,8 @@ async function setQuota(uid, cur) {
   await rpc('admin_set_quota', { p_uid: uid, p_quota: q });
   loadAll();
 }
-async function revoke(uid, email) {
+async function revoke(uid) {
+  const email = A.users.find(u => u.id === uid)?.email || '';
   if (!confirm(`ยกเลิก Premium ของ ${email}?`)) return;
   await rpc('admin_revoke_premium', { p_uid: uid });
   loadAll();
