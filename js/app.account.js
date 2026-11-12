@@ -69,6 +69,7 @@ async function accInit() {
   if (!ACC.config?.accounts) { syncInit(); return; }   // ไม่มีระบบบัญชี แต่อาจมี Google Drive
 
   document.getElementById('accSection').style.display = '';
+  accHandleAuthRedirectError();
   accRender();
   try {
     await loadScriptOnce(SUPABASE_JS_URL);
@@ -92,6 +93,18 @@ async function accInit() {
   loadPremiumModels();
   ACC.ready = true;
   syncInit();
+}
+
+// กลับมาจากลิงก์ในอีเมล/ล็อกอิน Google ที่ล้มเหลว (#error=...&error_code=otp_expired) → บอกผู้ใช้เป็นภาษาไทย + ล้าง URL
+function accHandleAuthRedirectError() {
+  const h = new URLSearchParams(location.hash.slice(1));
+  const code = h.get('error_code') || h.get('error');
+  if (!code) return;
+  const msg = code === 'otp_expired'
+    ? 'ลิงก์ในอีเมลหมดอายุหรือถูกใช้ไปแล้ว — ลองเข้าสู่ระบบ หรือกด "ลืมรหัสผ่าน" เพื่อขอลิงก์ใหม่'
+    : 'ยืนยันตัวตนไม่สำเร็จ: ' + (h.get('error_description') || code);
+  history.replaceState(null, '', location.pathname + location.search);
+  setTimeout(() => showToast(msg, 'error'), 400);
 }
 
 async function loadPremiumModels() {
