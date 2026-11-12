@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="robots" content="noindex"/>
+  <title>NovelTrans Admin</title>
+  <link rel="icon" type="image/svg+xml" href="icon.svg"/>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="style.css"/>
+  <style>
+    .adm { max-width: 980px; margin: 0 auto; padding: 18px 16px 60px; }
+    .adm h1 { font-size: 1.15rem; font-weight: 600; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .adm h1 a { font-size: 0.75rem; color: var(--text-muted); font-weight: 400; margin-left: auto; }
+    .adm-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin: 16px 0; }
+    .adm-stat { background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; }
+    .adm-stat b { display: block; font-size: 1.3rem; font-variant-numeric: tabular-nums; }
+    .adm-stat span { font-size: 0.72rem; color: var(--text-muted); }
+    .adm-tabs { display: flex; gap: 6px; border-bottom: 1px solid var(--border); margin-bottom: 14px; overflow-x: auto; }
+    .adm-tab { background: none; border: none; border-bottom: 2px solid transparent; color: var(--text-muted); padding: 8px 12px; cursor: pointer; font: inherit; font-size: 0.85rem; white-space: nowrap; }
+    .adm-tab.on { color: var(--text-primary); border-bottom-color: var(--gold); }
+    .adm-card { background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; margin-bottom: 8px; }
+    .adm-card.pending { border-color: var(--warn); }
+    .adm-top { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .adm-email { font-weight: 500; overflow-wrap: anywhere; }
+    .adm-meta { font-size: 0.74rem; color: var(--text-muted); margin-top: 4px; line-height: 1.6; overflow-wrap: anywhere; }
+    .adm-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+    .badge { font-size: 0.64rem; font-weight: 700; padding: 2px 7px; border-radius: 999px; border: 1px solid var(--border); color: var(--text-muted); }
+    .badge.prem { color: var(--gold-light); border-color: var(--gold); }
+    .badge.warn { color: var(--warn); border-color: var(--warn); }
+    .badge.bad { color: var(--crimson-light); border-color: var(--crimson-light); }
+    .adm-search { display: flex; gap: 8px; margin-bottom: 12px; }
+    .adm-search input { flex: 1; min-width: 0; }
+    .adm-msg { text-align: center; color: var(--text-muted); padding: 40px 10px; line-height: 1.8; }
+    .adm textarea { width: 100%; font-family: var(--font-mono); font-size: 0.8rem; }
+    .adm .sf-group { margin-bottom: 12px; }
+    .adm .hint { font-size: 0.72rem; color: var(--text-muted); margin-top: 4px; line-height: 1.6; }
+  </style>
+</head>
+<body>
+<div class="adm">
+  <h1>🛠 NovelTrans Admin <a href="index.html">← กลับไปหน้าแอป</a></h1>
+  <div id="admRoot"><div class="adm-msg">กำลังโหลด...</div></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script>
+const A = { sb: null, tab: 'users', users: [], reqs: [], cfg: null };
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const usd = v => '$' + (Number(v) || 0).toFixed(Number(v) < 0.01 && Number(v) > 0 ? 4 : 2);
+const dt = ts => ts ? new Date(ts).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' }) : '—';
+const d = ts => ts ? new Date(ts).toLocaleDateString('th-TH', { dateStyle: 'medium' }) : '—';
+const msg = html => { $('admRoot').innerHTML = `<div class="adm-msg">${html}</div>`; };
+
+async function rpc(fn, args) {
+  const { data, error } = await A.sb.rpc(fn, args || {});
+  if (error) { alert('ผิดพลาด: ' + error.message); throw error; }
+  return data;
+}
+
+async function init() {
+  let cfg;
+  try { cfg = await (await fetch('api/config', { cache: 'no-store' })).json(); } catch { return msg('โหลดค่าระบบไม่สำเร็จ'); }
+  if (!cfg.accounts) return msg('เว็บนี้ยังไม่ได้ตั้งค่าระบบบัญชี (SUPABASE_URL / SUPABASE_ANON_KEY)');
+  A.sb = supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey, { auth: { persistSession: true, storageKey: 'nt8_auth' } });
+  const { data } = await A.sb.auth.getSession();
+  if (!data.session) return msg('ยังไม่ได้เข้าสู่ระบบ — <a href="index.html">เข้าสู่ระบบที่หน้าแอป</a> (เมนู ☰ → 👤) แล้วกลับมาหน้านี้');
+  const me = await rpc('my_account');
+  if (!me?.is_admin) return msg(`บัญชี ${esc(me?.email)} ไม่ใช่แอดมิน`);
+  render();
+  loadAll();
+}
+
+async function loadAll() {
+  const [stats, users, reqs, cfgRows] = await Promise.all([
+    rpc('admin_stats'), rpc('admin_list_users', { p_q: A._q || '', p_limit: 500 }), rpc('admin_list_requests'),
+    A.sb.from('app_config').select('*').eq('id', 1).then(r => r.data),
+  ]);
+  A.stats = stats; A.users = users || []; A.reqs = reqs || []; A.cfg = cfgRows?.[0] || null;
+  render();
+}
+
+function render() {
+  const s = A.stats || {};
+  const pend = (A.reqs || []).filter(r => r.status === 'pending').length;
+  $('admRoot').innerHTML = `
+    <div class="adm-stats">
+      <div class="adm-stat"><b>${s.users ?? '…'}</b><span>ผู้ใช้ทั้งหมด</span></div>
+      <div class="adm-stat"><b>${s.premium ?? '…'}</b><span>Premium ใช้งานอยู่</span></div>
+      <div class="adm-stat"><b>${s.pending_requests ?? '…'}</b><span>คำขอรออนุมัติ</span></div>
+      <div class="adm-stat"><b>${s.month_cost_usd !== undefined ? usd(s.month_cost_usd) : '…'}</b><span>ต้นทุน AI เดือนนี้ (${s.month_requests ?? 0} ครั้ง)</span></div>
+    </div>
+    <div class="adm-tabs">
+      <button class="adm-tab ${A.tab === 'users' ? 'on' : ''}" onclick="A.tab='users';render()">👥 ผู้ใช้</button>
+      <button class="adm-tab ${A.tab === 'reqs' ? 'on' : ''}" onclick="A.tab='reqs';render()">⭐ คำขอ Premium${pend ? ` (${pend})` : ''}</button>
+      <button class="adm-tab ${A.tab === 'cfg' ? 'on' : ''}" onclick="A.tab='cfg';render()">⚙ โมเดล / โควต้า</button>
+    </div>
+    <div id="admTab"></div>`;
+  ({ users: renderUsers, reqs: renderReqs, cfg: renderCfg })[A.tab]();
+}
+
+function renderUsers() {
+  const q = A._q || '';
+  $('admTab').innerHTML = `
+    <div class="adm-search">
+      <input id="admQ" class="text-input" placeholder="ค้นหาอีเมล / ชื่อ" value="${esc(q)}" onkeydown="if(event.key==='Enter'){A._q=this.value;loadAll()}"/>
+      <button class="btn btn-secondary" onclick="A._q=$('admQ').value;loadAll()">ค้นหา</button>
+    </div>
+    ${A.users.length ? '' : '<div class="adm-msg">ไม่พบผู้ใช้</div>'}
+    ${A.users.map(u => {
+      const expired = u.plan === 'premium' && !u.premium_active;
+      const badge = u.premium_active ? '<span class="badge prem">⭐ PREMIUM</span>' : expired ? '<span class="badge bad">หมดอายุ</span>' : '<span class="badge">FREE</span>';
+      return `<div class="adm-card ${u.pending_request ? 'pending' : ''}">
+        <div class="adm-top"><span class="adm-email">${esc(u.email)}</span>${badge}${u.pending_request ? '<span class="badge warn">ขอ Premium</span>' : ''}</div>
+        <div class="adm-meta">
+          ${u.display_name ? esc(u.display_name) + ' · ' : ''}สมัคร ${d(u.created_at)} · ใช้ล่าสุด ${dt(u.last_used)}<br>
+          ${u.plan === 'premium' ? `Premium ถึง: <b>${u.premium_until ? d(u.premium_until) : 'ไม่มีวันหมดอายุ'}</b> · ` : ''}
+          ใช้เดือนนี้ ${usd(u.used_usd)} / โควต้า ${usd(u.quota_usd)}
+        </div>
+        <div class="adm-actions">
+          <button class="btn-xs" onclick="grant('${u.id}', 30)">+30 วัน</button>
+          <button class="btn-xs" onclick="grantAsk('${u.id}')">+ กำหนดวัน…</button>
+          <button class="btn-xs" onclick="grant('${u.id}', 0)">ไม่หมดอายุ</button>
+          <button class="btn-xs" onclick="setQuota('${u.id}', ${Number(u.quota_usd) || 0})">โควต้า…</button>
+          ${u.plan === 'premium' ? `<button class="btn-xs" onclick="revoke('${u.id}', '${esc(u.email)}')">ยกเลิก Premium</button>` : ''}
+        </div>
+      </div>`;
+    }).join('')}`;
+}
+
+function renderReqs() {
+  $('admTab').innerHTML = A.reqs.length ? A.reqs.map(r => `
+    <div class="adm-card ${r.status === 'pending' ? 'pending' : ''}">
+      <div class="adm-top"><span class="adm-email">${esc(r.email)}</span>
+        <span class="badge ${r.status === 'pending' ? 'warn' : r.status === 'done' ? 'prem' : 'bad'}">${{ pending: 'รอ', done: 'อนุมัติแล้ว', rejected: 'ปฏิเสธ' }[r.status]}</span></div>
+      <div class="adm-meta">📞 ${esc(r.contact) || '—'}<br>${esc(r.note) || '<i>ไม่มีข้อความ</i>'}<br>ส่งเมื่อ ${dt(r.created_at)}</div>
+      ${r.status === 'pending' ? `<div class="adm-actions">
+        <button class="btn-xs" onclick="grant('${r.user_id}', 30)">✓ เปิด Premium 30 วัน</button>
+        <button class="btn-xs" onclick="grantAsk('${r.user_id}')">✓ กำหนดวัน…</button>
+        <button class="btn-xs" onclick="resolveReq(${r.id}, 'rejected')">✕ ปฏิเสธ</button>
+      </div>` : ''}
+    </div>`).join('') : '<div class="adm-msg">ยังไม่มีคำขอ</div>';
+}
+
+function renderCfg() {
+  const c = A.cfg;
+  if (!c) { $('admTab').innerHTML = '<div class="adm-msg">โหลดค่าไม่สำเร็จ</div>'; return; }
+  const lines = (c.premium_models || []).map(m => `${m.id} | ${m.name || ''}`).join('\n');
+  $('admTab').innerHTML = `
+    <div class="sf-group"><div class="sf-label">โมเดลที่ Premium ใช้ได้ (บรรทัดละ 1 ตัว: <code>model-id | ชื่อที่แสดง</code>)</div>
+      <textarea id="cfgModels" class="text-input" rows="9">${esc(lines)}</textarea>
+      <div class="hint">ใช้ id ของ OpenRouter (openrouter.ai/models) · โมเดลแพง = โควต้าหมดเร็ว · ผู้ใช้เลือกได้เฉพาะในรายการนี้</div></div>
+    <div class="sf-group"><div class="sf-label">โมเดลเริ่มต้น</div><input id="cfgDefault" class="text-input" value="${esc(c.default_model)}"/></div>
+    <div class="sf-group"><div class="sf-label">โควต้าเริ่มต้นของผู้ใช้ใหม่ (USD/เดือน)</div><input id="cfgQuota" type="number" step="0.5" min="0" class="text-input" style="max-width:160px" value="${Number(c.default_quota_usd)}"/>
+      <div class="hint">มีผลกับผู้ใช้ที่สมัครใหม่ · ผู้ใช้เดิมแก้รายคนในแท็บผู้ใช้ · โควต้ารีเซ็ตทุกต้นเดือน (เวลาไทย)</div></div>
+    <button class="btn btn-primary" onclick="saveCfg()">บันทึก</button>`;
+}
+
+async function grant(uid, days, quota = null) {
+  await rpc('admin_set_premium', { p_uid: uid, p_days: days, p_quota: quota });
+  loadAll();
+}
+function grantAsk(uid) {
+  const days = parseInt(prompt('เพิ่ม Premium กี่วัน? (นับต่อจากวันหมดอายุเดิมถ้ายังไม่หมด)', '30'));
+  if (days > 0) grant(uid, days);
+}
+async function setQuota(uid, cur) {
+  const v = prompt('โควต้า AI ต่อเดือน (USD)', String(cur));
+  if (v === null) return;
+  const q = parseFloat(v);
+  if (!(q >= 0)) return alert('ตัวเลขไม่ถูกต้อง');
+  await rpc('admin_set_quota', { p_uid: uid, p_quota: q });
+  loadAll();
+}
+async function revoke(uid, email) {
+  if (!confirm(`ยกเลิก Premium ของ ${email}?`)) return;
+  await rpc('admin_revoke_premium', { p_uid: uid });
+  loadAll();
+}
+async function resolveReq(id, status) {
+  await rpc('admin_resolve_request', { p_id: id, p_status: status });
+  loadAll();
+}
+async function saveCfg() {
+  const models = $('cfgModels').value.split('\n').map(l => l.trim()).filter(Boolean).map(l => {
+    const [id, ...rest] = l.split('|');
+    return { id: id.trim(), name: rest.join('|').trim() || id.trim() };
+  }).filter(m => m.id);
+  await rpc('admin_set_config', { p_models: models, p_default_model: $('cfgDefault').value.trim(), p_default_quota: parseFloat($('cfgQuota').value) });
+  alert('บันทึกแล้ว ✓');
+  loadAll();
+}
+
+init();
+</script>
+</body>
+</html>

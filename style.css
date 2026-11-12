@@ -1327,3 +1327,20 @@ img.cover-xs, img.cover-sm, img.cover-lg { display: block; }
 @media (max-width: 639px) {
   .gloss-pop { left: 0 !important; right: 0; bottom: 0; top: auto !important; width: 100%; border-radius: 14px 14px 0 0; padding: 14px 16px calc(14px + env(safe-area-inset-bottom)); }
 }
+
+/* ─── บัญชี / Premium / Sync ─── */
+.acc-section { display: flex; flex-direction: column; gap: 6px; }
+.acc-section .sb-action-btn { margin: 0; }
+.acc-email { font-size: 0.78rem; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 4px; }
+.acc-muted { font-size: 0.7rem; color: var(--text-muted); line-height: 1.5; margin-top: 3px; }
+.acc-badge { display: inline-block; font-size: 0.64rem; font-weight: 700; letter-spacing: 0.06em; padding: 2px 7px; border-radius: 999px; border: 1px solid var(--border); color: var(--text-muted); }
+.acc-badge.acc-premium { color: var(--gold-light); border-color: var(--gold); background: rgba(91,140,255,0.12); }
+.acc-quota { height: 5px; border-radius: 3px; background: var(--bg-hover); overflow: hidden; margin-top: 6px; }
+.acc-quota-bar { height: 100%; background: var(--gold); transition: width 0.3s; }
+.acc-row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.acc-row a.btn-xs { text-decoration: none; display: inline-flex; align-items: center; }
+.acc-req-btn { margin-top: 6px !important; color: var(--gold-light); border-color: var(--gold); }
+.acc-login-btn { color: var(--gold-light); }
+.acc-auth-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 4px; }
+.acc-google { width: 100%; margin-top: 8px; }
+.acc-msg { font-size: 0.76rem; margin-top: 8px; min-height: 1em; line-height: 1.5; }

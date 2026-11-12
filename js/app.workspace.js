@@ -65,12 +65,13 @@ function checkHealth() {
   const txt = document.getElementById('statusText');
   const provName = getProvider();
   const label = PROVIDERS[provName].label;
+  const prov = PROVIDERS[provName];
   if (getApiKey(provName)) {
     dot.className = 'status-dot ok';
-    txt.textContent = `${label}: Key พร้อมใช้`;
+    txt.textContent = prov.getKey ? `${label}: พร้อมใช้` : `${label}: Key พร้อมใช้`;
   } else {
     dot.className = 'status-dot error';
-    txt.textContent = `${label}: ยังไม่ได้ตั้ง Key`;
+    txt.textContent = prov.missingKeyMessage ? `${label}: ${prov.missingKeyMessage().split(' — ')[0]}` : `${label}: ยังไม่ได้ตั้ง Key`;
   }
 }
 

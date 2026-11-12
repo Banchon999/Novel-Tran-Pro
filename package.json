@@ -1,0 +1,9 @@
+{
+  "name": "noveltrans",
+  "private": true,
+  "description": "NovelTrans — static web app + Vercel Functions (api/)",
+  "engines": { "node": "22.x" },
+  "scripts": {
+    "test": "node tests/api/run-api.js && bash tests/e2e/run.sh"
+  }
+}

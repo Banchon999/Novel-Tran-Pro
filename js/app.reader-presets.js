@@ -699,7 +699,7 @@ async function reTranslateChapter() {
   const ch = S.currentWs?.chapters?.find(c => c.id === reState.chapterId);
   if (!ch) return;
   if (!ch.sourceText?.trim()) { showToast('ตอนนี้ไม่มีต้นฉบับให้แปล', 'error'); return; }
-  if (!getApiKey()) { showToast('ยังไม่ได้ตั้ง API Key — ไปที่ ⚙ ตั้งค่า', 'error'); return; }
+  if (!getApiKey()) { showToast(noKeyMsg(), 'error'); return; }
   if (S.translating) { showToast('มีงานแปลอื่นทำงานอยู่ — รอสักครู่', 'error'); return; }
   const btn = document.getElementById('reTranslateBtn');
   const content = document.getElementById('reContent');
@@ -1038,7 +1038,7 @@ function readerCancelPrefetch() {
 async function readerTranslateCurrent() {
   const ch = S.currentWs?.chapters?.find(c => c.id === rState.chapterId);
   if (!ch || !ch.sourceText?.trim()) return;
-  if (!getApiKey()) { showToast('ยังไม่ได้ตั้ง API Key — ไปที่ ⚙ ตั้งค่า', 'error'); return; }
+  if (!getApiKey()) { showToast(noKeyMsg(), 'error'); return; }
   if (S.translating) { showToast('มีงานแปลอื่นทำงานอยู่ — รอสักครู่แล้วลองใหม่', 'error'); return; }
   if (rState.prefetch.state === 'TRANSLATING') readerCancelPrefetch();
 

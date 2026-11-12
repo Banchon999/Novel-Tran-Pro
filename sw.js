@@ -3,7 +3,7 @@
    - cache-first สำหรับไฟล์ static ของแอพ (same-origin GET) + อัปเดตเบื้องหลัง
    - ไม่ยุ่งกับการเรียก API (POST / cross-origin) — ปล่อยผ่านเครือข่ายตรง
    ** เพิ่มเลขเวอร์ชันทุกครั้งที่แก้ไฟล์ app shell เพื่อบังคับอัปเดต cache ** */
-const CACHE = 'noveltrans-v13-5-3';
+const CACHE = 'noveltrans-v14-0-0';
 
 const APP_SHELL = [
   './',
@@ -20,7 +20,13 @@ const APP_SHELL = [
   './js/app.tools.js',
   './js/app.reader-presets.js',
   './js/app.glossary-ai.js',
+  './js/app.account.js',
+  './js/app.sync.js',
 ];
+
+// cross-origin ที่ cache ได้ = ไฟล์ static (ฟอนต์ / ไลบรารีที่ล็อกเวอร์ชัน) เท่านั้น
+// ห้าม cache Supabase / Google Drive / AI API — ข้อมูลนิยายและสถานะบัญชีต้องสดเสมอ
+const STATIC_HOSTS = ['fonts.googleapis.com', 'fonts.gstatic.com', 'cdn.jsdelivr.net'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(
@@ -47,6 +53,8 @@ self.addEventListener('fetch', (e) => {
 
   const url = new URL(req.url);
   const sameOrigin = url.origin === self.location.origin;
+  if (sameOrigin && url.pathname.startsWith('/api/')) return;   // API ของเว็บ (config, models) → เครือข่ายตรง
+  if (!sameOrigin && !STATIC_HOSTS.includes(url.hostname)) return;
 
   // navigation (เปิดหน้า) → network-first แล้ว fallback เป็น index.html ที่ cache ไว้ (offline)
   if (req.mode === 'navigate') {
@@ -73,7 +81,7 @@ self.addEventListener('fetch', (e) => {
     return;
   }
 
-  // cross-origin (เช่น Google Fonts) → stale-while-revalidate; เจ้าอื่น (API) ที่ fail ก็ปล่อย error ปกติ
+  // cross-origin static (ฟอนต์, supabase-js) → stale-while-revalidate
   e.respondWith(
     caches.match(req).then((cached) => {
       const network = fetch(req).then((res) => {
