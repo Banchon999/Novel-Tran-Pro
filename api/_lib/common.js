@@ -28,7 +28,8 @@ async function rpc(fn, args, token) {
   const anon = env('SUPABASE_ANON_KEY');
   const r = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', apikey: anon, Authorization: `Bearer ${token || anon}` },
+    // publishable key ใส่แค่ apikey · Authorization ใส่เฉพาะ JWT ของผู้ใช้
+    headers: { 'Content-Type': 'application/json', apikey: anon, ...(token ? { Authorization: `Bearer ${token}` } : {}) },
     body: JSON.stringify(args || {}),
   });
   const text = await r.text();
@@ -40,7 +41,7 @@ async function rpc(fn, args, token) {
 async function restSelect(path) {
   const anon = env('SUPABASE_ANON_KEY');
   const r = await fetch(`${env('SUPABASE_URL').replace(/\/+$/, '')}/rest/v1/${path}`, {
-    headers: { apikey: anon, Authorization: `Bearer ${anon}` },
+    headers: { apikey: anon },
   });
   if (!r.ok) throw new Error(`Supabase HTTP ${r.status}`);
   return r.json();
