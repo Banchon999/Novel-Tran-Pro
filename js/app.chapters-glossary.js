@@ -355,8 +355,10 @@ function renderGlossaryTable(filter, typeFilter, sortBy) {
   const tbody = document.getElementById('glossaryTableBody');
   let data = [...(S.glossaryData || [])];
   if (filter) {
-    const q = filter.toLowerCase();
-    data = data.filter(g => g.korean.includes(q) || g.thai.includes(q) || (g.note || '').toLowerCase().includes(q));
+    const q = filter.normalize('NFC').toLowerCase();
+    // เทียบแบบไม่สนตัวพิมพ์ใหญ่-เล็กทั้งสองฝั่ง (เดิม lower แค่คำค้น → ค้นคำอังกฤษ "Atra" ไม่เจอ "Atra")
+    const low = v => String(v || '').normalize('NFC').toLowerCase();
+    data = data.filter(g => low(g.korean).includes(q) || low(g.thai).includes(q) || low(g.note).includes(q));
   }
   if (typeFilter) data = data.filter(g => g.type === typeFilter);
 
